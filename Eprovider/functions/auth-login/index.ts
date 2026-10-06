@@ -1,0 +1,2 @@
+import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider";
+export default edge(async ctx=>{const input=await body<{employee_id:string;password:string}>(ctx.request);const employee_id=required(input.employee_id,"employee_id");required(input.password,"password");await mcp("select_rows",{table:"users",filter:{employee_id},limit:1});return ok({otp_required:true,message:"Verification code requested"})});

@@ -1,0 +1,1 @@
+create table if not exists claims (id uuid primary key default gen_random_uuid(), employee_id uuid not null references employees(id), claim_type text not null, amount numeric(14,2) not null, reason text, status text not null default 'Pending', approved_by uuid references users(id), approved_at timestamptz, created_at timestamptz not null default now());

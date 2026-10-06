@@ -1,0 +1,4 @@
+project_id = "7ae4f84b-d3f0-4256-9f3c-10a51354db2d"
+api_url = "http://supa.eprovider.site"
+tenant_schema = "tenant_7ae4f84bd3f042569f3c10a51354db2d"
+# Runtime secrets are managed in eProvider secret cloud, never in this file.

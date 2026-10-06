@@ -1,0 +1,1 @@
+create table if not exists audit_logs (id uuid primary key default gen_random_uuid(), action text not null, actor_id uuid references users(id), entity text not null, entity_id text, metadata jsonb not null default '{}'::jsonb, created_at timestamptz not null default now());

@@ -1,0 +1,3 @@
+export class HttpError extends Error { constructor(public status:number, public code:string, message:string){super(message)} }
+export function publicError(error:unknown):Response { const e=error instanceof HttpError?error:new HttpError(500,"INTERNAL_ERROR","Internal server error"); return json({error:{code:e.code,message:e.message}},e.status) }
+export function json(body:unknown,status=200,headers:HeadersInit={}):Response{return new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json",...headers}})}

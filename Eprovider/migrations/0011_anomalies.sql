@@ -1,0 +1,1 @@
+create table if not exists payroll_anomalies (id uuid primary key default gen_random_uuid(), payroll_item_id uuid references payroll_items(id), anomaly_type text not null, severity text not null, details jsonb not null default '{}'::jsonb, status text not null default 'Open', created_at timestamptz not null default now());

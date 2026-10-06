@@ -1,0 +1,4 @@
+import type {RequestContext,PbmsRole,Role} from "./types"; import {HttpError} from "./errors";
+export function context(request:Request):RequestContext { const auth=request.headers.get("authorization")??""; const apiKey=request.headers.get("apikey"); const role:Role=auth.startsWith("Bearer ")? (apiKey?"authenticated":"authenticated") : apiKey?"anon":"anon"; const userId=request.headers.get("x-pbms-user-id")??undefined; const pbmsRole=(request.headers.get("x-pbms-role") as PbmsRole|undefined); return {request,role,userId,pbmsRole}; }
+export function requireAuth(ctx:RequestContext){if(ctx.role!=="authenticated"&&ctx.role!=="service_role")throw new HttpError(401,"UNAUTHENTICATED","Authentication is required")}
+export function requirePbmsRole(ctx:RequestContext,roles:PbmsRole[]){requireAuth(ctx);if(!ctx.pbmsRole||!roles.includes(ctx.pbmsRole))throw new HttpError(403,"FORBIDDEN","Insufficient permissions")}

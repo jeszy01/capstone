@@ -1,0 +1,1 @@
+import {insertRow} from "./database"; export async function audit(action:string,actorId:string|undefined,entity:string,entityId:string|undefined,metadata:Record<string,unknown>={}){await insertRow("audit_logs",{action,actor_id:actorId??null,entity,entity_id:entityId??null,metadata,created_at:new Date().toISOString()})}

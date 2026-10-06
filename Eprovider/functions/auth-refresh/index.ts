@@ -1,0 +1,2 @@
+import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider";
+export default edge(async ctx=>{const input=await body<{refresh_token:string}>(ctx.request);const refresh_token=required(input.refresh_token,"refresh_token");return ok(await mcp("run_sql",{query:"select 1 as refresh_boundary",refresh_token}))});

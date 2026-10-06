@@ -1,0 +1,7 @@
+export type Role = "anon" | "authenticated" | "service_role" | "agent";
+export type PbmsRole = "admin" | "hr_staff";
+export interface RequestContext { request: Request; role: Role; userId?: string; pbmsRole?: PbmsRole; }
+export interface AttendanceRecord { id:string; employee_id:string; attendance_date:string; status:string; time_in?:string|null; time_out?:string|null; late_minutes:number; undertime_minutes:number; overtime_minutes:number; source:string; created_at:string; }
+export interface Employee { id:string; employee_number:string; first_name:string; middle_name?:string|null; last_name:string; email?:string|null; phone?:string|null; address?:string|null; birth_date?:string|null; hire_date:string; employment_status:string; employment_type?:string|null; position?:string|null; department?:string|null; salary_grade_id?:string|null; status:string; created_at:string; updated_at:string; deleted_at?:string|null; }
+export interface PayrollInput { employee_id:string; period_start:string; period_end:string; daily_rate:number; days_worked:number; absent_days:number; late_minutes:number; undertime_minutes:number; overtime_hours:number; rest_overtime_hours:number; paid_leave_days:number; unpaid_leave_days:number; holiday_pay:number; other_earnings:number; withholding_tax:number; other_deductions:number; }
+export interface PayrollResult { basic_pay:number; overtime_pay:number; leave_pay:number; gross_pay:number; late_deduction:number; undertime_deduction:number; statutory_deductions:number; other_deductions:number; total_deductions:number; net_pay:number; }

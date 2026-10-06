@@ -1,0 +1,1 @@
+create table if not exists users (id uuid primary key default gen_random_uuid(), employee_id text unique not null, email text unique, role text not null check (role in ('admin','hr_staff')), status text not null default 'active', last_login_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now());

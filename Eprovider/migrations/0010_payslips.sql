@@ -1,0 +1,1 @@
+create table if not exists payslips (id uuid primary key default gen_random_uuid(), payroll_item_id uuid not null references payroll_items(id), employee_id uuid not null references employees(id), storage_object_id text, issued_at timestamptz not null default now());

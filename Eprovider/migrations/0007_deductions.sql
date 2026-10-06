@@ -1,0 +1,1 @@
+create table if not exists payroll_deductions (id uuid primary key default gen_random_uuid(), payroll_item_id uuid not null references payroll_items(id), deduction_type text not null, amount numeric(14,2) not null, created_at timestamptz not null default now());

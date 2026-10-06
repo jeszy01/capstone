@@ -1,0 +1,2 @@
+import {edge} from "../../lib/function"; import {requirePbmsRole} from "../../lib/auth"; import {body} from "../../lib/validation"; import {ok} from "../../lib/response"; import {calculatePayroll} from "../../lib/payroll-engine"; import type {PayrollInput} from "../../lib/types";
+export default edge(async ctx=>{requirePbmsRole(ctx,["admin","hr_staff"]);if(ctx.request.method!=="POST")return new Response("Method Not Allowed",{status:405});const input=await body<PayrollInput>(ctx.request);return ok(calculatePayroll(input))});
