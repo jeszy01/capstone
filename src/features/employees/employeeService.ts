@@ -1,0 +1,1 @@
+import type {Employee} from '../../types/domain'; import {employeeRepository} from './employeeRepository'; export const employeeService={getAll:()=>employeeRepository.list(),create:(e:Employee)=>employeeRepository.create(e),update:(e:Employee)=>employeeRepository.update(e),remove:(id:string)=>employeeRepository.remove(id)};

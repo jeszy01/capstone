@@ -1,0 +1,3 @@
+import type {AttendanceRecord,AttendanceSchedule} from '../../types/domain'; import {numberValue} from '../../utils/storage';
+const mins=(time:string)=>{if(!time)return 0;const [h,m]=time.split(':').map(Number);return h*60+m};
+export function calculateAttendance(r:AttendanceRecord,s:AttendanceSchedule){const zero={late:0,under:0,ot:0};if(r.status!=='Present'||!r.timeIn)return zero;const late=Math.max(0,mins(r.timeIn)-mins(s.start));if(!r.timeOut)return{...zero,late};const out=mins(r.timeOut),extra=Math.max(0,out-mins(s.end));return{late,under:Math.max(0,mins(s.end)-out),ot:extra>=numberValue(s.otMin)?extra:0}}

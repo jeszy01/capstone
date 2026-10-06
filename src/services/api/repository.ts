@@ -1,0 +1,2 @@
+import {read,write} from '../../utils/storage';
+export function localRepository<T extends {id:number|string}>(key:string,seed:T[]=[]){return{list:async()=>read<T[]>(key,seed),create:async(item:T)=>{const next=[...read<T[]>(key,seed),item];write(key,next);return item},update:async(item:T)=>{const next=read<T[]>(key,seed).map(x=>x.id===item.id?item:x);write(key,next);return item},remove:async(id:T['id'])=>write(key,read<T[]>(key,seed).filter(x=>x.id!==id))}}

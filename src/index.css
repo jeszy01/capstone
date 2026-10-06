@@ -1,0 +1,2 @@
+@import "tailwindcss";
+*,*::before,*::after{box-sizing:border-box}html,body,#root{height:100%;margin:0}body{font-family:Inter,system-ui,sans-serif;color:#141c3a;background:#f4f6fa;-webkit-font-smoothing:antialiased}
