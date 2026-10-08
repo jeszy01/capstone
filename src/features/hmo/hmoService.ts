@@ -15,5 +15,6 @@ export const hmoService={
   createEnrollment:(v:Partial<HmoEnrollment>)=>post<HmoEnrollment>('enrollments',v),
   createDependent:(v:Partial<HmoDependent>)=>post<HmoDependent>('dependents',v),
   createUtilization:(v:Partial<HmoUtilization>)=>post<HmoUtilization>('utilizations',v),
-  updateEnrollment:(id:string,v:Partial<HmoEnrollment>)=>patch<HmoEnrollment>('enrollments',id,v)
+  updateEnrollment:(id:string,v:Partial<HmoEnrollment>)=>patch<HmoEnrollment>('enrollments',id,v),
+  updateDependent:(id:string,v:Partial<HmoDependent>)=>patch<HmoDependent>('dependents',id,v)
 };
