@@ -12,7 +12,7 @@ function toServer(e:Employee){const parts=e.name.trim().split(/\s+/);const first
 
 export const employeeService={
  getAll:async()=>{const r=await apiClient.get<Envelope<ServerEmployee[]>>(employeePath());return r.data.map(fromServer)},
- create:async(e:Employee)=>{const r=await apiClient.post<Envelope<ServerEmployee>>(employeePath(),toServer(e));return fromServer(r.data)},
- update:async(e:Employee)=>{const r=await apiClient.put<Envelope<{id:string}>>(`${employeePath()}/${e.id}`,toServer(e));return {...e,id:r.data.id}},
+ create:async(e:Employee)=>{const r=await apiClient.post<ReturnType<typeof toServer>,Envelope<ServerEmployee>>(employeePath(),toServer(e));return fromServer(r.data.data)},
+ update:async(e:Employee)=>{const r=await apiClient.put<ReturnType<typeof toServer>,Envelope<{id:string}>>(`${employeePath()}/${e.id}`,toServer(e));return {...e,id:r.data.id}},
  remove:async(id:string)=>{await apiClient.delete(`${employeePath()}/${id}`)}
 };
