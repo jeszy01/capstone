@@ -10,6 +10,7 @@ export const hmoService={
   enrollments:()=>get<HmoEnrollment>('enrollments'),
   dependents:()=>get<HmoDependent>('dependents'),
   utilizations:()=>get<HmoUtilization>('utilizations'),
+  createProvider:(v:Partial<HmoProvider>)=>post<HmoProvider>('providers',v),
   createPlan:(v:Partial<HmoPlan>)=>post<HmoPlan>('plans',v),
   createEnrollment:(v:Partial<HmoEnrollment>)=>post<HmoEnrollment>('enrollments',v),
   createDependent:(v:Partial<HmoDependent>)=>post<HmoDependent>('dependents',v),
