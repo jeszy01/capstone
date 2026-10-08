@@ -4,6 +4,7 @@ import {body,required} from "../../lib/validation";
 import {ok,created,noContent} from "../../lib/response";
 import {listRows,insertRow,updateRows,deleteRows} from "../../lib/database";
 import {audit} from "../../lib/audit";
+import {HttpError} from "../../lib/errors";
 
 const resources = new Set(["providers","plans","enrollments","dependents","utilizations"]);
 const tableFor=(resource:string)=>`hmo_${resource}`;
