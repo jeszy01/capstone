@@ -1,0 +1,6 @@
+{
+  "required_role": "anon",
+  "authentication": "PBMS JWT verified by verifiedEdge before all employee reads and writes",
+  "authorization": "Active users table record with admin or hr_staff role; client role headers ignored",
+  "entrypoint": "default export; do not call Deno.serve in the uploaded handler"
+}
