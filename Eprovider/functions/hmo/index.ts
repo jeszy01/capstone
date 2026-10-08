@@ -27,7 +27,7 @@ export default edge(async ctx=>{
     return created(row);
   }
   if(!id) return new Response("ID is required",{status:400});
-  if(ctx.request.method==="PATCH"){
+  if(ctx.request.method==="PATCH" || ctx.request.method==="PUT"){
     const input=await body<Record<string,unknown>>(ctx.request);
     await updateRows(table,{id},{...input,updated_at:new Date().toISOString()});
     await audit(`hmo.${resource}.updated`,ctx.userId,table,id);
