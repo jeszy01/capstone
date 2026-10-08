@@ -30,7 +30,18 @@ export default edge(async ctx=>{
   if(!id) return new Response("ID is required",{status:400});
   if(ctx.request.method==="PATCH" || ctx.request.method==="PUT"){
     const input=await body<Record<string,unknown>>(ctx.request);
-    await updateRows(table,{id},{...input,updated_at:new Date().toISOString()});
+    const values={...input,updated_at:new Date().toISOString()};
+    if(resource==="enrollments" && input.status){
+      const allowed=["Pending","Submitted","Active","Rejected","Terminated","Expired"];
+      if(!allowed.includes(String(input.status))) throw new HttpError(400,"INVALID_HMO_STATUS","Invalid enrollment status");
+      if(input.status==="Active") values.activated_at=new Date().toISOString();
+      if(input.status==="Terminated") values.terminated_at=new Date().toISOString();
+    }
+    if(resource==="dependents" && input.status){
+      const allowed=["Pending","Submitted","Active","Rejected","Terminated","Expired"];
+      if(!allowed.includes(String(input.status))) throw new HttpError(400,"INVALID_HMO_STATUS","Invalid dependent status");
+    }
+    await updateRows(table,{id},values);
     await audit(`hmo.${resource}.updated`,ctx.userId,table,id);
     return ok({id});
   }
