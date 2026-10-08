@@ -4,11 +4,7 @@ import {hmoTabs} from '../../features/hmo/hmoNavigation';
 export interface NavItem{label:string;to:string;icon?:LucideIcon;children?:NavItem[]}
 export const overview:NavItem[]=[{label:'Dashboard',to:'/dashboard',icon:LayoutGrid}];
 export const modules:NavItem[]=[
- {label:'Employees',to:'/employees',icon:Users,children:[
-  {label:'Employee Directory',to:'/employees'},
-  {label:'Departments',to:'/employees/departments'},
-  {label:'Positions',to:'/employees/positions'},
- ]},
+ {label:'Employees',to:'/employees',icon:Users},
  {label:'Payroll Management',to:'/payroll',icon:Wallet,children:[
   {label:'Payroll',to:'/payroll'},{label:'Timesheet',to:'/timesheet'},
   {label:'Deductions',to:'/deductions'},{label:'Payslip',to:'/payslip'},
@@ -34,6 +30,7 @@ export const modules:NavItem[]=[
 export const titles={
  ...Object.fromEntries([...overview,...modules.flatMap(m=>m.children??[m])].map(i=>[i.to,i.label])),
  ...Object.fromEntries(hmoTabs.map(tab=>[tab.to,tab.label])),
+ '/employees':'Employee Directory',
  '/hmo-benefits/dependents':'Dependents',
  '/hmo-benefits':'HMO & Benefits',
 } as Record<string,string>;
