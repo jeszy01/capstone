@@ -1,21 +1,31 @@
 import {apiClient} from '../../services/api/apiClient';
 import type {HmoDependent,HmoEnrollment,HmoPlan,HmoProvider,HmoUtilization} from './hmoTypes';
 type Envelope<T>={data:T};
+type ServerProvider={id:string;name:string;contact_person?:string|null;contact_number?:string|null;status:HmoProvider['status']};
+type ServerPlan={id:string;provider_id:string;name:string;coverage_start:string;coverage_end:string;annual_benefit_limit:number|null;inpatient:boolean;outpatient:boolean;emergency:boolean;preventive_care:boolean;dental:boolean;employee_company_share:number;employee_member_share:number;dependent_company_share:number;dependent_member_share:number;employee_monthly_premium:number|null;dependent_monthly_premium:number|null;collect_employee_share_via_payroll:boolean;status:HmoPlan['status']};
+type ServerEnrollment={id:string;plan_id:string;employee_id:string;eligibility_date:string|null;effective_date:string;expiration_date:string|null;status:HmoEnrollment['status'];activated_at?:string|null;terminated_at?:string|null};
+type ServerDependent={id:string;enrollment_id:string;name:string;relationship:string;date_of_birth:string|null;eligibility_status:HmoDependent['eligibilityStatus'];effective_date:string|null;expiration_date:string|null;status:HmoDependent['status']};
+type ServerUtilization={id:string;enrollment_id:string;dependent_id:string|null;service_date:string;service_type:string;amount_used:number;status:HmoUtilization['status'];remarks:string|null};
 const get=<T>(resource:string)=>apiClient.get<Envelope<T[]>>(`/hmo/${resource}`).then(r=>r.data);
 const post=<T>(resource:string,value:Partial<T>)=>apiClient.post<Envelope<T>>(`/hmo/${resource}`,value).then(r=>r.data);
 const patch=<T>(resource:string,id:string,value:Partial<T>)=>apiClient.put<Envelope<{id:string}>>(`/hmo/${resource}/${id}`,value).then(r=>r.data);
+const provider=(x:ServerProvider):HmoProvider=>({id:x.id,name:x.name,contactPerson:x.contact_person??null,contactNumber:x.contact_number??null,status:x.status});
+const plan=(x:ServerPlan):HmoPlan=>({id:x.id,providerId:x.provider_id,name:x.name,coverageStart:x.coverage_start,coverageEnd:x.coverage_end,annualBenefitLimit:x.annual_benefit_limit==null?null:Number(x.annual_benefit_limit),inpatient:x.inpatient,outpatient:x.outpatient,emergency:x.emergency,preventiveCare:x.preventive_care,dental:x.dental,employeeCompanyShare:Number(x.employee_company_share),employeeMemberShare:Number(x.employee_member_share),dependentCompanyShare:Number(x.dependent_company_share),dependentMemberShare:Number(x.dependent_member_share),employeeMonthlyPremium:x.employee_monthly_premium==null?null:Number(x.employee_monthly_premium),dependentMonthlyPremium:x.dependent_monthly_premium==null?null:Number(x.dependent_monthly_premium),collectEmployeeShareViaPayroll:x.collect_employee_share_via_payroll,status:x.status});
+const enrollment=(x:ServerEnrollment):HmoEnrollment=>({id:x.id,planId:x.plan_id,employeeId:x.employee_id,eligibilityDate:x.eligibility_date,effectiveDate:x.effective_date,expirationDate:x.expiration_date,status:x.status,activatedAt:x.activated_at??null,terminatedAt:x.terminated_at??null});
+const dependent=(x:ServerDependent):HmoDependent=>({id:x.id,enrollmentId:x.enrollment_id,name:x.name,relationship:x.relationship,dateOfBirth:x.date_of_birth,eligibilityStatus:x.eligibility_status,effectiveDate:x.effective_date,expirationDate:x.expiration_date,status:x.status});
+const utilization=(x:ServerUtilization):HmoUtilization=>({id:x.id,enrollmentId:x.enrollment_id,dependentId:x.dependent_id,serviceDate:x.service_date,serviceType:x.service_type,amountUsed:Number(x.amount_used),status:x.status,remarks:x.remarks});
 export const hmoService={
-  providers:()=>get<HmoProvider>('providers'),
-  plans:()=>get<HmoPlan>('plans'),
-  enrollments:()=>get<HmoEnrollment>('enrollments'),
-  dependents:()=>get<HmoDependent>('dependents'),
-  utilizations:()=>get<HmoUtilization>('utilizations'),
-  createProvider:(v:Partial<HmoProvider>)=>post<HmoProvider>('providers',v),
-  createPlan:(v:Partial<HmoPlan>)=>post<HmoPlan>('plans',v),
-  createEnrollment:(v:Partial<HmoEnrollment>)=>post<HmoEnrollment>('enrollments',v),
-  createDependent:(v:Partial<HmoDependent>)=>post<HmoDependent>('dependents',v),
-  createUtilization:(v:Partial<HmoUtilization>)=>post<HmoUtilization>('utilizations',v),
-  updateEnrollment:(id:string,v:Partial<HmoEnrollment>)=>patch<HmoEnrollment>('enrollments',id,v),
-  updateDependent:(id:string,v:Partial<HmoDependent>)=>patch<HmoDependent>('dependents',id,v),
-  getPayrollDeduction:async(employeeId:string)=>{const [plans,enrollments,dependents]=await Promise.all([hmoService.plans(),hmoService.enrollments(),hmoService.dependents()]);const enrollment=enrollments.find(e=>e.employeeId===employeeId&&e.status==='Active');if(!enrollment)return 0;const plan=plans.find(p=>p.id===enrollment.planId&&p.status==='Active');if(!plan||!plan.collectEmployeeShareViaPayroll)return 0;const principal=Number(plan.employeeMonthlyPremium??0)*Number(plan.employeeMemberShare??0)/100;const depCount=dependents.filter(d=>d.enrollmentId===enrollment.id&&d.status==='Active').length;const dependentsMonthly=depCount*Number(plan.dependentMonthlyPremium??0)*Number(plan.dependentMemberShare??0)/100;return Math.round(((principal+dependentsMonthly)/2)*100)/100}
+ providers:async()=>get<ServerProvider>('providers').then(x=>x.map(provider)),
+ plans:async()=>get<ServerPlan>('plans').then(x=>x.map(plan)),
+ enrollments:async()=>get<ServerEnrollment>('enrollments').then(x=>x.map(enrollment)),
+ dependents:async()=>get<ServerDependent>('dependents').then(x=>x.map(dependent)),
+ utilizations:async()=>get<ServerUtilization>('utilizations').then(x=>x.map(utilization)),
+ createProvider:(v:Partial<HmoProvider>)=>post<HmoProvider>('providers',{name:v.name,contact_person:v.contactPerson,contact_number:v.contactNumber,status:v.status}),
+ createPlan:(v:Partial<HmoPlan>)=>post<HmoPlan>('plans',{provider_id:v.providerId,name:v.name,coverage_start:v.coverageStart,coverage_end:v.coverageEnd,annual_benefit_limit:v.annualBenefitLimit,inpatient:v.inpatient,outpatient:v.outpatient,emergency:v.emergency,preventive_care:v.preventiveCare,dental:v.dental,employee_company_share:v.employeeCompanyShare,employee_member_share:v.employeeMemberShare,dependent_company_share:v.dependentCompanyShare,dependent_member_share:v.dependentMemberShare,employee_monthly_premium:v.employeeMonthlyPremium,dependent_monthly_premium:v.dependentMonthlyPremium,collect_employee_share_via_payroll:v.collectEmployeeShareViaPayroll,status:v.status}),
+ createEnrollment:(v:Partial<HmoEnrollment>)=>post<HmoEnrollment>('enrollments',{plan_id:v.planId,employee_id:v.employeeId,eligibility_date:v.eligibilityDate,effective_date:v.effectiveDate,expiration_date:v.expirationDate,status:v.status}),
+ createDependent:(v:Partial<HmoDependent>)=>post<HmoDependent>('dependents',{enrollment_id:v.enrollmentId,name:v.name,relationship:v.relationship,date_of_birth:v.dateOfBirth,eligibility_status:v.eligibilityStatus,effective_date:v.effectiveDate,expiration_date:v.expirationDate,status:v.status}),
+ createUtilization:(v:Partial<HmoUtilization>)=>post<HmoUtilization>('utilizations',{enrollment_id:v.enrollmentId,dependent_id:v.dependentId,service_date:v.serviceDate,service_type:v.serviceType,amount_used:v.amountUsed,status:v.status,remarks:v.remarks}),
+ updateEnrollment:(id:string,v:Partial<HmoEnrollment>)=>patch<HmoEnrollment>('enrollments',id,{status:v.status}),
+ updateDependent:(id:string,v:Partial<HmoDependent>)=>patch<HmoDependent>('dependents',id,{status:v.status,eligibility_status:v.eligibilityStatus}),
+ getPayrollDeduction:async(employeeId:string)=>{const [plans,enrollments,dependents]=await Promise.all([hmoService.plans(),hmoService.enrollments(),hmoService.dependents()]);const e=enrollments.find(x=>x.employeeId===employeeId&&x.status==='Active');if(!e)return 0;const p=plans.find(x=>x.id===e.planId&&x.status==='Active');if(!p||!p.collectEmployeeShareViaPayroll)return 0;const principal=Number(p.employeeMonthlyPremium??0)*Number(p.employeeMemberShare??0)/100;const depCount=dependents.filter(d=>d.enrollmentId===e.id&&d.status==='Active').length;const dependentsMonthly=depCount*Number(p.dependentMonthlyPremium??0)*Number(p.dependentMemberShare??0)/100;return Math.round(((principal+dependentsMonthly)/2)*100)/100}
 };
