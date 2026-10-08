@@ -99,3 +99,5 @@ create index if not exists idx_hmo_enrollments_employee on hmo_enrollments(emplo
 create index if not exists idx_hmo_dependents_enrollment on hmo_dependents(enrollment_id);
 create index if not exists idx_hmo_utilizations_enrollment on hmo_utilizations(enrollment_id);
 create index if not exists idx_hmo_utilizations_service_date on hmo_utilizations(service_date);
+
+insert into hmo_providers (name,status) values ('Maxicare','Active') on conflict do nothing;
