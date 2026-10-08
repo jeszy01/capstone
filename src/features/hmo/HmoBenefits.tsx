@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState} from 'react';
-import {Plus,Pencil,HeartPulse} from 'lucide-react';
+import {Plus,HeartPulse} from 'lucide-react';
 import {Button,Card,Empty,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import {employeeService} from '../employees/employeeService';
 import type {Employee} from '../../types/domain';
