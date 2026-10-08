@@ -4,7 +4,7 @@ A clean React + TypeScript + Vite implementation of the reference payroll and be
 
 ## Architecture
 
-UI components use feature hooks/services, feature services use repositories, and repositories can switch between local development persistence and the centralized `/api/...` client. Browser code has no privileged credentials and only reads the safe `VITE_API_BASE_URL` setting.
+UI components use feature hooks/services, feature services use repositories, and repositories can switch between local development persistence and the centralized `/api/...` client. Browser code has no privileged credentials. Frontend API calls use the configured eProvider function endpoint; no build-time API URL or privileged key is required.
 
 ## Commands
 
