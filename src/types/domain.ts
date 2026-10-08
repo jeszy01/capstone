@@ -1,5 +1,5 @@
 export type EmployeeStatus='Active'|'Inactive'|'On Leave';
-export interface User{ id:string; employeeId:string; name:string; role:'Admin'|'Employee' }
+export interface User{ id:string; employeeId:string; name:string; role:'Admin'|'HR Staff' }
 export interface Session{token:string;user:User}
 export interface Employee{id:string;employeeNo:string;name:string;email:string|null;position:string;department:string;dateHired:string;basicSalary:number;positionRate:number;status:EmployeeStatus}
 export type AttendanceStatus='Present'|'Absent'|'On Leave'|'Day Off';

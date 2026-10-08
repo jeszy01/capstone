@@ -1,0 +1,7 @@
+export type HmoStatus='Draft'|'Active'|'Expiring'|'Expired'|'Archived';
+export type HmoEnrollmentStatus='Pending'|'Submitted'|'Active'|'Rejected'|'Terminated'|'Expired';
+export interface HmoProvider{id:string;name:string;contactPerson?:string|null;contactNumber?:string|null;status:'Active'|'Inactive'|'Archived';}
+export interface HmoPlan{id:string;providerId:string;name:string;coverageStart:string;coverageEnd:string;annualBenefitLimit:number|null;inpatient:boolean;outpatient:boolean;emergency:boolean;preventiveCare:boolean;dental:boolean;employeeCompanyShare:number;employeeMemberShare:number;dependentCompanyShare:number;dependentMemberShare:number;employeeMonthlyPremium:number|null;dependentMonthlyPremium:number|null;collectEmployeeShareViaPayroll:boolean;status:HmoStatus;}
+export interface HmoEnrollment{id:string;planId:string;employeeId:string;eligibilityDate:string|null;effectiveDate:string;expirationDate:string|null;status:HmoEnrollmentStatus;activatedAt?:string|null;terminatedAt?:string|null;}
+export interface HmoDependent{id:string;enrollmentId:string;name:string;relationship:string;dateOfBirth:string|null;eligibilityStatus:'Pending'|'Eligible'|'Not Eligible';effectiveDate:string|null;expirationDate:string|null;status:HmoEnrollmentStatus;}
+export interface HmoUtilization{id:string;enrollmentId:string;dependentId:string|null;serviceDate:string;serviceType:string;amountUsed:number;status:'Recorded'|'Voided';remarks:string|null;}
