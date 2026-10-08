@@ -16,5 +16,6 @@ export const hmoService={
   createDependent:(v:Partial<HmoDependent>)=>post<HmoDependent>('dependents',v),
   createUtilization:(v:Partial<HmoUtilization>)=>post<HmoUtilization>('utilizations',v),
   updateEnrollment:(id:string,v:Partial<HmoEnrollment>)=>patch<HmoEnrollment>('enrollments',id,v),
-  updateDependent:(id:string,v:Partial<HmoDependent>)=>patch<HmoDependent>('dependents',id,v)
+  updateDependent:(id:string,v:Partial<HmoDependent>)=>patch<HmoDependent>('dependents',id,v),
+  getPayrollDeduction:async(employeeId:string)=>{const [plans,enrollments,dependents]=await Promise.all([hmoService.plans(),hmoService.enrollments(),hmoService.dependents()]);const enrollment=enrollments.find(e=>e.employeeId===employeeId&&e.status==='Active');if(!enrollment)return 0;const plan=plans.find(p=>p.id===enrollment.planId&&p.status==='Active');if(!plan||!plan.collectEmployeeShareViaPayroll)return 0;const principal=Number(plan.employeeMonthlyPremium??0)*Number(plan.employeeMemberShare??0)/100;const depCount=dependents.filter(d=>d.enrollmentId===enrollment.id&&d.status==='Active').length;const dependentsMonthly=depCount*Number(plan.dependentMonthlyPremium??0)*Number(plan.dependentMemberShare??0)/100;return Math.round(((principal+dependentsMonthly)/2)*100)/100}
 };
