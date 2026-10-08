@@ -8,7 +8,7 @@ const functionBase=(import.meta.env.VITE_EPROVIDER_FUNCTION_BASE_URL as string|u
 const employeePath=()=>functionBase?'/employees': '/employees';
 
 function fromServer(e:ServerEmployee):Employee{return {id:e.id,employeeNo:e.employee_number,name:[e.first_name,e.middle_name,e.last_name].filter(Boolean).join(' '),email:e.email??null,position:e.position??'',department:e.department??'',dateHired:e.hire_date,basicSalary:Number(e.basic_salary??0),positionRate:Number(e.position_rate??0),status:(['Active','Inactive','On Leave'].includes(e.status)?e.status:'Active') as Employee['status']};}
-function toServer(e:Employee){const parts=e.name.trim().split(/\s+/);const first_name=parts.shift()??'';const last_name=parts.pop()??first_name;return {employee_number:e.employeeNo,first_name,middle_name:parts.join(' ')||null,last_name,email:e.email,position:e.position,department:e.department,hire_date:e.dateHired,employment_status:e.status,status:e.status,basic_salary:e.basic_salary??0,position_rate:e.position_rate??0};}
+function toServer(e:Employee){const parts=e.name.trim().split(/\s+/);const first_name=parts.shift()??'';const last_name=parts.pop()??first_name;return {employee_number:e.employeeNo,first_name,middle_name:parts.join(' ')||null,last_name,email:e.email,position:e.position,department:e.department,hire_date:e.dateHired,employment_status:e.status,status:e.status,basic_salary:e.basicSalary,position_rate:e.positionRate};}
 
 export const employeeService={
  getAll:async()=>{const r=await apiClient.get<Envelope<ServerEmployee[]>>(employeePath());return r.data.map(fromServer)},
