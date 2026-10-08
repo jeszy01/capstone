@@ -20,10 +20,10 @@ describe('HMO presentation navigation',()=>{
     expect(titles['/hmo-benefits']).toBe('HMO & Benefits');
   });
 
-  it('uses the existing collapsible sidebar group with the same tab destinations',()=>{
+  it('groups benefit modules while retaining HMO details as internal tabs',()=>{
     const hmo=modules.find(item=>item.label==='HMO & Benefits');
     expect(hmo?.to).toBe('/hmo-benefits');
-    expect(hmo?.children).toEqual(hmoTabs.map(({label,to})=>({label,to})));
+    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Employee Benefits',to:'/hmo-benefits/employee-benefits'},{label:'Dependents',to:'/hmo-benefits/dependents'},{label:'Government Benefits',to:'/hmo-benefits/government-benefits'},{label:'Benefits History',to:'/hmo-benefits/benefits-history'}]);
   });
 
   it('leaves the Claims & Reimbursement navigation unchanged',()=>{

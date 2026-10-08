@@ -11,10 +11,10 @@ import type {HmoDependent,HmoEnrollment,HmoPlan,HmoProvider,HmoUtilization} from
 const today=()=>new Date().toISOString().slice(0,10);
 const money=(n:number|null|undefined)=>n==null?'—':new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP',maximumFractionDigits:2}).format(n);
 
-export default function HmoBenefits(){
+export default function HmoBenefits({section='hmo'}:{section?:'hmo'|'dependents'|'history'}){
  const {pathname}=useLocation();
  const navigate=useNavigate();
- const tab=hmoTabForPath(pathname);
+ const tab=section==='dependents'?'dependents':section==='history'?'history':hmoTabForPath(pathname);
  const [providers,setProviders]=useState<HmoProvider[]>([]),[plans,setPlans]=useState<HmoPlan[]>([]),[enrollments,setEnrollments]=useState<HmoEnrollment[]>([]),[dependents,setDependents]=useState<HmoDependent[]>([]),[utilizations,setUtilizations]=useState<HmoUtilization[]>([]),[employees,setEmployees]=useState<Employee[]>([]);
  const [loading,setLoading]=useState(true),[planModal,setPlanModal]=useState(false),[enrollModal,setEnrollModal]=useState(false),[dependentModal,setDependentModal]=useState(false),[utilModal,setUtilModal]=useState(false);
  const load=async()=>{setLoading(true);try{const [p,pl,e,d,u,emp]=await Promise.all([hmoService.providers(),hmoService.plans(),hmoService.enrollments(),hmoService.dependents(),hmoService.utilizations(),employeeService.getAll()]);setProviders(p);setPlans(pl);setEnrollments(e);setDependents(d);setUtilizations(u);setEmployees(emp)}catch(error){console.error(error)}finally{setLoading(false)}};
@@ -27,7 +27,7 @@ export default function HmoBenefits(){
  // Use the same header, tabs, Card and Empty styling as Claims & Reimbursement.
  return <div>
   <div className="flex items-start justify-between gap-4">
-   <div><h1 className="m-0 text-[22px] font-semibold">HMO & Benefits</h1><p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Manage the company HMO plan, employee enrollment, dependents, utilization, and history.</p></div>
+   <div><h1 className="m-0 text-[22px] font-semibold">{section==='dependents'?'Dependents':section==='history'?'Benefits History':'HMO'}</h1><p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Manage the company HMO plan, employee enrollment, dependents, utilization, and history.</p></div>
    {!loading&&<>
     {tab==='plan'&&!activePlan&&<Button onClick={()=>setPlanModal(true)}><Plus size={15}/>Create HMO Plan</Button>}
     {tab==='enrollment'&&<Button disabled={!employees.length||!plans.some(p=>p.status==='Active'||p.status==='Draft')} onClick={()=>setEnrollModal(true)}><Plus size={15}/>Enroll Employee</Button>}
@@ -35,8 +35,8 @@ export default function HmoBenefits(){
     {tab==='utilization'&&<Button disabled={!enrollments.some(e=>e.status==='Active')} onClick={()=>setUtilModal(true)}><Plus size={15}/>Record Utilization</Button>}
    </>}
   </div>
-  <div className="mt-5 flex flex-wrap gap-2 border-b border-[#e3e7ef] pb-3" role="tablist" aria-label="HMO & Benefits sections">{hmoTabs.map(({id,label,to})=><button key={id} id={`hmo-tab-${id}`} role="tab" aria-selected={tab===id} aria-controls="hmo-panel" onClick={()=>navigate(to)} className={`rounded-lg px-3 py-2 text-[13px] font-semibold ${tab===id?'bg-[#2f6b86] text-white':'text-[#6b7794] hover:bg-[#f6f8fb]'}`}>{label}</button>)}</div>
-  <div id="hmo-panel" role="tabpanel" aria-labelledby={`hmo-tab-${tab}`}>
+  {section==='hmo'&&<div className="mt-5 flex flex-wrap gap-2 border-b border-[#e3e7ef] pb-3" role="tablist" aria-label="HMO & Benefits sections">{hmoTabs.map(({id,label,to})=><button key={id} id={`hmo-tab-${id}`} role="tab" aria-selected={tab===id} aria-controls="hmo-panel" onClick={()=>navigate(to)} className={`rounded-lg px-3 py-2 text-[13px] font-semibold ${tab===id?'bg-[#2f6b86] text-white':'text-[#6b7794] hover:bg-[#f6f8fb]'}`}>{label}</button>)}</div>}
+  <div id="hmo-panel" role="tabpanel" aria-labelledby={section==='hmo'?`hmo-tab-${tab}`:undefined} aria-label={section==='hmo'?undefined:section==='dependents'?'Dependents':'Benefits History'}>
   {loading?<Card className="mt-4"><Empty>Loading HMO records…</Empty></Card>:<>
    {tab==='plan'&&<PlanSection provider={activeProvider} plan={activePlan}/>}
    {tab==='enrollment'&&<EnrollmentSection enrollments={enrollments} plans={plans} employeeMap={employeeMap}/>}
