@@ -7,7 +7,7 @@ function fromServer(e:ServerEmployee):Employee{return {id:e.id,employeeNo:e.empl
 function toServer(e:Employee){const parts=e.name.trim().split(/\s+/);const first_name=parts.shift()??'';const last_name=parts.pop()??first_name;return {employee_number:e.employeeNo,first_name,middle_name:parts.join(' ')||null,last_name,email:e.email,position:e.position,department:e.department,hire_date:e.dateHired,employment_status:e.status,status:e.status,basic_salary:e.basicSalary,position_rate:e.positionRate};}
 export const employeeService={
  getAll:async()=>{const r=await apiClient.get<Envelope<ServerEmployee[]>>(employeePath());return r.data.map(fromServer)},
- create:async(e:Employee)=>{const r=await apiClient.post<ReturnType<typeof toServer>,Envelope<ServerEmployee>>(employeePath(),toServer(e));return fromServer(r.data.data)},
+ create:async(e:Employee)=>{const r=await apiClient.post<ReturnType<typeof toServer>,Envelope<ServerEmployee>>(employeePath(),toServer(e));return fromServer(r.data)},
  update:async(e:Employee)=>{const r=await apiClient.put<ReturnType<typeof toServer>,Envelope<{id:string}>>(`${employeePath()}/${e.id}`,toServer(e));return {...e,id:r.data.id}},
  remove:async(id:string)=>{await apiClient.delete(`${employeePath()}/${id}`)}
 };
