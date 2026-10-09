@@ -4,6 +4,7 @@ import {Button,Card,Empty} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {employeeName,normalizeClaims,saveClaims,statusClass} from '../features/claims/claimsTypes';
+import {recordAudit} from '../features/audit/auditService';
 import type {ExpenseClaim} from '../features/claims/claimsTypes';
 import {peso} from '../utils/storage';
 
@@ -17,7 +18,7 @@ export default function Reimbursement(){
   const update=(id:string,patch:Partial<ExpenseClaim>)=>setClaims(current=>{const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);return next});
   const forReimbursement=claims.filter(item=>item.approvalStatus==='Approved'&&item.paymentStatus==='Unpaid');
   const history=claims.filter(item=>item.paymentStatus!=='Unpaid');
-  const process=(claim:ExpenseClaim)=>{const next=processReimbursement(claim);if(next){update(claim.id,next);setTab('history')}};
+  const process=(claim:ExpenseClaim)=>{const next=processReimbursement(claim);if(next){update(claim.id,next);recordAudit({action:'Processed reimbursement',module:'Reimbursement',description:`Processed reimbursement for claim ${claim.claimNumber} (${peso(claim.amount)}).`});setTab('history')}};
   return <div>
     <div><h1 className="m-0 text-[22px] font-semibold">Reimbursement</h1><p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Pay employees back for approved company and business expense claims.</p></div>
     <div className="mt-5 flex flex-wrap gap-2 border-b border-[#e3e7ef] pb-3">

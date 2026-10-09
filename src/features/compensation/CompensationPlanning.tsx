@@ -3,6 +3,7 @@ import {Eye,Plus,Pencil} from 'lucide-react';
 import {Button,Card,Empty,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import {employeeService} from '../employees/employeeService';
 import type {Employee,PayrollInput} from '../../types/domain';
+import {recordAudit} from '../audit/auditService';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {
   activeCompensations,adjustmentTypes,applyApprovedProposals,compensationEmployeeLabel,
@@ -99,8 +100,8 @@ export default function CompensationPlanning({section}:{section:Section}){
   },[assignments,proposals,history,date]);
 
   const openAssignment=(assignment?:EmployeeCompensation)=>{setEditing(assignment??null);setModal('employee');setError('')};
-  const saveGrade=(grade:SalaryGrade)=>{const next=editingGrade?grades.map(item=>item.id===grade.id?grade:item):[...grades,grade];if(persist([['compensation:salary-grades',next]])){setGrades(next);setModal(null);setEditingGrade(null)}};
-  const deactivateGrade=(grade:SalaryGrade)=>{const next=grades.map(item=>item.id===grade.id?{...item,status:'Inactive' as const}:item);if(persist([['compensation:salary-grades',next]]))setGrades(next)};
+  const saveGrade=(grade:SalaryGrade)=>{const next=editingGrade?grades.map(item=>item.id===grade.id?grade:item):[...grades,grade];if(persist([['compensation:salary-grades',next]])){recordAudit({action:editingGrade?'Updated salary grade':'Created salary grade',module:'Compensation Planning',description:`${editingGrade?'Updated':'Created'} salary grade ${grade.code}.`});setGrades(next);setModal(null);setEditingGrade(null)}};
+  const deactivateGrade=(grade:SalaryGrade)=>{const next=grades.map(item=>item.id===grade.id?{...item,status:'Inactive' as const}:item);if(persist([['compensation:salary-grades',next]])){recordAudit({action:'Deactivated salary grade',module:'Compensation Planning',description:`Deactivated salary grade ${grade.code}.`});setGrades(next)}};
   const saveAssignment=(assignment:EmployeeCompensation)=>{
     const employee=findCompensationEmployee(employees,assignment.employeeId);
     if(!employee){setError('The linked employee record is unavailable. Reload employee records before saving.');return}
@@ -110,16 +111,16 @@ export default function CompensationPlanning({section}:{section:Section}){
     const changed=!previous||previous.fixedSalary!==assignment.fixedSalary||previous.salaryCode!==assignment.salaryCode||previous.effectiveDate!==assignment.effectiveDate;
     if(!changed){setModal(null);setEditing(null);return}
     const nextHistory=changed?[...history,{id:crypto.randomUUID(),employeeId:assignment.employeeId,source:'Employee Compensation',type:'Basic Salary',previousSalary:previous?.fixedSalary??0,newSalary:assignment.fixedSalary,adjustmentAmount:assignment.fixedSalary-(previous?.fixedSalary??0),reason:previous?'Compensation assignment update':'Initial compensation assignment',effectiveDate:assignment.effectiveDate,status:assignment.effectiveDate>date?'Scheduled':'Applied',recordedAt:new Date().toISOString(),...(assignment.effectiveDate<=date?{appliedAt:assignment.effectiveDate}:{}),assignmentId:assignment.id}]:history;
-    if(persist([['compensation:employee-assignments',next],['compensation:history',nextHistory]])){setAssignments(next);setHistory(nextHistory);setModal(null);setEditing(null)}
+    if(persist([['compensation:employee-assignments',next],['compensation:history',nextHistory]])){recordAudit({action:'Updated compensation',module:'Compensation Planning',description:`Updated ${employee.name}'s compensation to ${peso(assignment.fixedSalary)}, effective ${assignment.effectiveDate}.`});setAssignments(next);setHistory(nextHistory);setModal(null);setEditing(null)}
   };
-  const saveProposal=(proposal:CompensationProposal)=>{const next=[...proposals,proposal];if(persist([['compensation:proposals',next]])){setProposals(next);setModal(null)}};
+  const saveProposal=(proposal:CompensationProposal)=>{const next=[...proposals,proposal];if(persist([['compensation:proposals',next]])){recordAudit({action:'Submitted compensation proposal',module:'Compensation Planning',description:`Submitted a ${proposal.type} proposal for ${employeeLabel(proposal.employeeId)}.`});setProposals(next);setModal(null)}};
   const approveProposal=(proposal:CompensationProposal)=>{
     if(proposal.status!=='Pending HR Review')return;
     const next=proposals.map(item=>item.id===proposal.id?{...item,status:'Approved' as const}:item);
-    if(persist([['compensation:proposals',next]]))setProposals(next);
+    if(persist([['compensation:proposals',next]])){recordAudit({action:'Approved compensation proposal',module:'Compensation Planning',description:`Approved a ${proposal.type} proposal for ${employeeLabel(proposal.employeeId)}.`});setProposals(next)}
   };
-  const saveBonus=(bonus:BonusIncentive)=>{const next=[...bonuses,bonus];if(persist([['compensation:bonuses-incentives',next]])){setBonuses(next);setModal(null)}};
-  const approveBonus=(bonus:BonusIncentive)=>{const next=bonuses.map(item=>item.id===bonus.id?{...item,status:'Approved' as const}:item);if(persist([['compensation:bonuses-incentives',next]]))setBonuses(next)};
+  const saveBonus=(bonus:BonusIncentive)=>{const next=[...bonuses,bonus];if(persist([['compensation:bonuses-incentives',next]])){recordAudit({action:'Created bonus plan',module:'Compensation Planning',description:`Created a ${bonus.type} plan for ${employeeLabel(bonus.employeeId)}.`});setBonuses(next);setModal(null)}};
+  const approveBonus=(bonus:BonusIncentive)=>{const next=bonuses.map(item=>item.id===bonus.id?{...item,status:'Approved' as const}:item);if(persist([['compensation:bonuses-incentives',next]])){recordAudit({action:'Approved bonus plan',module:'Compensation Planning',description:`Approved a ${bonus.type} plan for ${employeeLabel(bonus.employeeId)}.`});setBonuses(next)}};
   const showAssignment=(assignment:EmployeeCompensation)=>setDetails({title:'Employee Compensation Details',fields:[['Employee',employeeLabel(assignment.employeeId,assignment.employeeName)],['Employee reference',assignment.employeeId],['Position',assignment.position],['Department',findCompensationEmployee(employees,assignment.employeeId)?.department||assignment.department||'Not recorded'],['Basic Salary',peso(assignment.fixedSalary)],['Daily Rate',peso(assignment.dailyRate)],['Effective Date',assignment.effectiveDate],['Status',assignment.effectiveDate>date?'Scheduled':'Effective']]});
 
   return <div>

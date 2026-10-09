@@ -1,16 +1,15 @@
 import {useState} from 'react';
-import {Check,ClipboardList,Save,ShieldCheck,UserRound} from 'lucide-react';
+import {Check,ClipboardList,RefreshCw,Save,ShieldCheck,UserRound} from 'lucide-react';
 import {Card,Empty,TextInput,button} from '../components/common/ui';
 import {getCurrentUser} from '../features/auth/authService';
 import {read,write} from '../utils/storage';
-
-type AuditEvent={id:string;timestamp:string;user?:string;action:string;module?:string;description?:string;ipDevice?:string;detail?:string};
+import {readAuditEvents,recordAudit} from '../features/audit/auditService';
 
 export function UserAccountSettings(){
  const user=getCurrentUser();
  const[displayName,setDisplayName]=useState(()=>read<string>('admin:displayName',user?.name||'Admin'));
  const[saved,setSaved]=useState(false);
- const save=(event:React.FormEvent)=>{event.preventDefault();write('admin:displayName',displayName.trim()||'Admin');setSaved(true);window.setTimeout(()=>setSaved(false),2200)};
+ const save=(event:React.FormEvent)=>{event.preventDefault();const nextName=displayName.trim()||'Admin';write('admin:displayName',nextName);recordAudit({action:'Updated profile',module:'Account Settings',description:`Changed administrator display name to ${nextName}.`});setSaved(true);window.setTimeout(()=>setSaved(false),2200)};
  return <div>
   <h1 className="m-0 text-[22px] font-semibold">User &amp; Account Settings</h1>
   <p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Manage the signed-in administrator profile and account details.</p>
@@ -24,16 +23,16 @@ export function UserAccountSettings(){
 }
 
 export function LogsAudits(){
- const events=read<AuditEvent[]>('audit:events',[]).map(event=>({
+ const[events,setEvents]=useState(()=>readAuditEvents().map(event=>({
   ...event,
   user:event.user||'Admin',
   module:event.module||'—',
-  description:event.description||event.detail||'—',
+  description:event.description||'—',
   ipDevice:event.ipDevice||'—',
- }));
+ })));
  return <div>
   <h1 className="m-0 text-[22px] font-semibold">Logs &amp; Audits</h1>
   <p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Review recorded administrator activity and system audit events.</p>
-  <Card className="mt-5"><div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600"><ClipboardList size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">Audit activity</h2><p className="m-0 mt-1 text-[12px] text-slate-500">Events are shown in reverse chronological order.</p></div></div><div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[980px] text-left text-[13px]"><thead><tr className="border-b border-slate-200 bg-[#f7f9fc] text-[11px] uppercase tracking-wide text-slate-500"><th scope="col" className="px-4 py-3">Date/time</th><th scope="col" className="px-4 py-3">User</th><th scope="col" className="px-4 py-3">Action</th><th scope="col" className="px-4 py-3">Module</th><th scope="col" className="px-4 py-3">Description</th><th scope="col" className="px-4 py-3">IP/device</th></tr></thead><tbody>{events.length===0?<tr><td colSpan={6}><Empty>No audit events have been recorded yet.</Empty></td></tr>:[...events].reverse().map(event=><tr key={event.id} className="border-b border-slate-100 last:border-0"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{event.timestamp}</td><td className="px-4 py-3 font-medium text-slate-800">{event.user}</td><td className="px-4 py-3 font-medium text-slate-800">{event.action}</td><td className="px-4 py-3 text-slate-500">{event.module}</td><td className="min-w-[260px] px-4 py-3 text-slate-600">{event.description}</td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{event.ipDevice}</td></tr>)}</tbody></table></div></Card>
+  <Card className="mt-5"><div className="mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600"><ClipboardList size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">Audit activity</h2><p className="m-0 mt-1 text-[12px] text-slate-500">Events are shown in reverse chronological order.</p></div></div><button type="button" className={button} onClick={()=>setEvents(readAuditEvents().map(event=>({...event,user:event.user||'Admin',module:event.module||'—',description:event.description||'—',ipDevice:event.ipDevice||'—'})))}><RefreshCw size={15}/>Refresh</button></div><div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[980px] text-left text-[13px]"><thead><tr className="border-b border-slate-200 bg-[#f7f9fc] text-[11px] uppercase tracking-wide text-slate-500"><th scope="col" className="px-4 py-3">Date/time</th><th scope="col" className="px-4 py-3">User</th><th scope="col" className="px-4 py-3">Action</th><th scope="col" className="px-4 py-3">Module</th><th scope="col" className="px-4 py-3">Description</th><th scope="col" className="px-4 py-3">IP/device</th></tr></thead><tbody>{events.length===0?<tr><td colSpan={6}><Empty>No audit events have been recorded yet.</Empty></td></tr>:[...events].reverse().map(event=><tr key={event.id} className="border-b border-slate-100 last:border-0"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{event.timestamp}</td><td className="px-4 py-3 font-medium text-slate-800">{event.user}</td><td className="px-4 py-3 font-medium text-slate-800">{event.action}</td><td className="px-4 py-3 text-slate-500">{event.module}</td><td className="min-w-[260px] px-4 py-3 text-slate-600">{event.description}</td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{event.ipDevice}</td></tr>)}</tbody></table></div></Card>
  </div>;
 }
