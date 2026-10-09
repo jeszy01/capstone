@@ -1,6 +1,6 @@
-import {edge} from "../../lib/function";
+import {verifiedEdge} from "../../lib/verified-function";
 import {requirePbmsRole} from "../../lib/auth";
-import {body,required} from "../../lib/validation";
+import {body} from "../../lib/validation";
 import {ok,created,noContent} from "../../lib/response";
 import {listRows,insertRow,updateRows,deleteRows} from "../../lib/database";
 import {audit} from "../../lib/audit";
@@ -9,7 +9,7 @@ import {HttpError} from "../../lib/errors";
 const resources = new Set(["providers","plans","enrollments","dependents","utilizations"]);
 const tableFor=(resource:string)=>`hmo_${resource}`;
 
-export default edge(async ctx=>{
+export default verifiedEdge(async ctx=>{
   requirePbmsRole(ctx,["admin","hr_staff"]);
   const url=new URL(ctx.request.url);
   const parts=url.pathname.split("/").filter(Boolean);
