@@ -57,3 +57,16 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .pbms-dark table thead{background:#1e293b!important}
 .pbms-dark table tbody tr:hover{background:#1e293b}
 .pbms-dark .hover\:bg-slate-50:hover{background-color:#1e293b!important}
+.pbms-dark .pbms-shell h1,.pbms-dark .pbms-shell h2,.pbms-dark .pbms-shell h3{color:#f1f5f9!important}
+.pbms-dark [class~="text-[#17345b]"]{color:#93c5fd!important}
+.pbms-dark [class~="text-[#2f6b86]"]{color:#67c1e8!important}
+.pbms-dark [class~="text-[#6b7794]"]{color:#cbd5e1!important}
+.pbms-dark [class~="border-[#e3e7ef]"],.pbms-dark [class~="border-[#eef1f6]"],.pbms-dark [class~="border-[#f6f8fb]"]{border-color:#334155!important}
+.pbms-dark .text-blue-600{color:#60a5fa!important}
+.pbms-dark .text-blue-800{color:#93c5fd!important}
+.pbms-dark .bg-blue-50{background:#172554!important;color:#93c5fd!important}
+.pbms-dark .bg-indigo-50{background:#1e1b4b!important;color:#a5b4fc!important}
+.pbms-dark .bg-emerald-50{background:#052e2b!important;color:#6ee7b7!important}
+.pbms-dark .bg-amber-50{background:#451a03!important;color:#fbbf24!important}
+.pbms-dark .bg-red-50{background:#450a0a!important;color:#fca5a5!important}
+.pbms-dark [class~="bg-[#f3f5f9]"],.pbms-dark [class~="bg-[#f7f9fc]"]{background:#1e293b!important}
