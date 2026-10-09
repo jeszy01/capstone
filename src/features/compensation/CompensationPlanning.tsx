@@ -2,8 +2,8 @@ import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Eye,Plus,Pencil} from 'lucide-react';
 import {Button,Card,Empty,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import {employeeService} from '../employees/employeeService';
-import type {Employee} from '../../types/domain';
-import {numberValue,peso,read} from '../../utils/storage';
+import type {Employee,PayrollInput} from '../../types/domain';
+import {numberValue,peso,read,write} from '../../utils/storage';
 import {
   activeCompensations,adjustmentTypes,applyApprovedProposals,compensationEmployeeLabel,
   dailyFromSalary,findCompensationEmployee,mergeCompensationEmployees,nextSalaryCode,
@@ -65,6 +65,24 @@ export default function CompensationPlanning({section}:{section:Section}){
   const activeAssignments=useMemo(()=>activeCompensations(assignments,date),[assignments,date]);
   const futureAssignments=assignments.filter(item=>item.effectiveDate>date);
   const visibleAssignments=[...activeAssignments,...futureAssignments];
+  useEffect(()=>{
+    const records=read<PayrollInput[]>('payroll:records',[]);
+    if(!records.length||!activeAssignments.length)return;
+    let changed=false;
+    const next=records.map(record=>{
+      const assignment=activeAssignments.find(item=>{
+        const employee=findCompensationEmployee(employees,item.employeeId);
+        return record.empId===item.employeeId||record.empId===employee?.employeeNo;
+      });
+      if(!assignment)return record;
+      const employee=findCompensationEmployee(employees,assignment.employeeId);
+      const name=employee?.name||record.name;
+      if(Number(record.dailyRate)===assignment.dailyRate&&record.name===name)return record;
+      changed=true;
+      return {...record,dailyRate:assignment.dailyRate,name};
+    });
+    if(changed)write('payroll:records',next);
+  },[activeAssignments,employees]);
   const missingReferences=[...new Set([...assignments,...proposals,...bonuses,...history].map(item=>item.employeeId))]
     .filter(reference=>!findCompensationEmployee(employees,reference));
   const employeeLabel=(reference:string,snapshot?:string)=>compensationEmployeeLabel(employees,reference,snapshot);
@@ -120,7 +138,7 @@ export default function CompensationPlanning({section}:{section:Section}){
     </>}
 
     {section==='employee-compensation'&&<>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-[16px] font-semibold">Employee Compensation</h2><p className="mt-1 text-[12px] text-[#6b7794]">Current salaries remain effective until approved changes reach their effective date.</p></div><Button disabled={assignmentBlocked} onClick={()=>openAssignment()}><Plus size={15}/>Assign Compensation</Button></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-[16px] font-semibold">Employee Compensation</h2><p className="mt-1 text-[12px] text-[#6b7794]">Current salaries remain effective until approved changes reach their effective date. Active compensation automatically updates the employee&apos;s payroll daily rate.</p></div><Button disabled={assignmentBlocked} onClick={()=>openAssignment()}><Plus size={15}/>Assign Compensation</Button></div>
       {assignmentBlocked&&!employeeLoading&&<p className="mt-2 text-[12px] text-amber-700">Employee master records are required to assign compensation.</p>}
       <Card className="mt-4 overflow-x-auto"><table className={`${tableClass} min-w-[950px]`}><thead><tr className={headerClass}>{['Employee','Position','Department','Current Basic Salary','Effective Date','Status'].map(label=><th key={label} className="px-4 py-3">{label}</th>)}<th className={actionCell}>Action</th></tr></thead><tbody>{!visibleAssignments.length?<tr><td colSpan={7}><Empty>No compensation assignments yet.</Empty></td></tr>:visibleAssignments.map(assignment=>{const employee=findCompensationEmployee(employees,assignment.employeeId);const scheduled=assignment.effectiveDate>date;return <tr key={assignment.id} className={rowClass}><td className="px-4 py-3"><b>{employeeLabel(assignment.employeeId,assignment.employeeName)}</b>{employee?.employeeNo&&<div className="text-[11px] text-[#6b7794]">{employee.employeeNo}</div>}</td><td className="px-4 py-3">{assignment.position}</td><td className="px-4 py-3">{employee?.department||assignment.department||'Not recorded'}</td><td className="px-4 py-3 font-semibold">{peso(assignment.fixedSalary)}{scheduled&&<div className="text-[11px] font-normal text-amber-700">Scheduled salary — not yet active</div>}</td><td className="px-4 py-3">{assignment.effectiveDate}</td><td className="px-4 py-3"><span className={statusClass(scheduled?'Scheduled':'Effective')}>{scheduled?'Scheduled':'Effective'}</span></td><td className={actionCell}><div className="flex gap-2"><button className={ghost} onClick={()=>showAssignment(assignment)}><Eye size={14}/>View</button><button className={`${ghost} disabled:opacity-50`} disabled={!employee||employeeLoading} title={!employee?'Restore the linked employee record to edit':'Edit this employee compensation'} onClick={()=>openAssignment(assignment)}><Pencil size={14}/>Edit</button></div></td></tr>})}</tbody></table></Card>
     </>}
