@@ -31,6 +31,8 @@ export const titles={
  ...Object.fromEntries([...overview,...modules.flatMap(m=>m.children??[m])].map(i=>[i.to,i.label])),
  ...Object.fromEntries(hmoTabs.map(tab=>[tab.to,tab.label])),
  '/employees':'Employee Directory',
+ '/account-settings':'User & Account Settings',
+ '/logs-audits':'Logs & Audits',
  '/hmo-benefits/dependents':'Dependents',
  '/hmo-benefits':'HMO & Benefits',
 } as Record<string,string>;

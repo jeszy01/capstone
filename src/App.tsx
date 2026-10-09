@@ -9,11 +9,14 @@ import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import Claims from './pages/Claims';
 import Reimbursement from './pages/Reimbursement';
+import {LogsAudits,UserAccountSettings} from './pages/Admin';
 function AuthRoute(){
  const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());
  if(!user)return <Login onSignedIn={s=>{setUser(s.user);nav('/dashboard')}}/>;
  return <Routes><Route element={<AppLayout/>}>
   <Route path="/dashboard" element={<Dashboard/>}/>
+  <Route path="/account-settings" element={<UserAccountSettings/>}/>
+  <Route path="/logs-audits" element={<LogsAudits/>}/>
   <Route path="/employees" element={<Employees/>}/>
   <Route path="/payroll" element={<Payroll/>}/>
   <Route path="/timesheet" element={<Timesheet/>}/>
