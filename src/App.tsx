@@ -1,9 +1,10 @@
+import GovernmentBenefits from './features/hmo/GovernmentBenefits';
 import {BrowserRouter,Navigate,Route,Routes,useNavigate} from 'react-router-dom';
 import {useState} from 'react';
 import AppLayout from './layouts/AppLayout';
 import Login from './features/auth/Login';
 import {getCurrentUser} from './features/auth/authService';
-import {Dashboard,Employees,Timesheet,Payroll,Deductions,Compensation,Benefits,Placeholder} from './pages/Modules';
+import {Dashboard,Employees,Timesheet,Payroll,Deductions,Compensation,Benefits} from './pages/Modules';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import Claims from './pages/Claims';
@@ -17,8 +18,8 @@ function AuthRoute(){
   <Route path="/payroll" element={<Payroll/>}/>
   <Route path="/timesheet" element={<Timesheet/>}/>
   <Route path="/deductions" element={<Deductions/>}/>
-  <Route path="/payslip" element={<Placeholder title="Payslips are generated from payroll records."/>}/>
-  <Route path="/payroll-summary" element={<Placeholder title="No payroll summary yet."/>}/>
+  <Route path="/payslip" element={<Payroll report="payslip"/>}/>
+  <Route path="/payroll-summary" element={<Payroll report="summary"/>}/>
   <Route path="/compensation" element={<Navigate to="/compensation/salary-grades" replace/>}/>
   <Route path="/compensation/salary-grades" element={<Compensation section="salary-grades"/>}/>
   <Route path="/compensation/employee-compensation" element={<Compensation section="employee-compensation"/>}/>
@@ -31,7 +32,7 @@ function AuthRoute(){
   {hmoTabs.map(({to})=><Route key={to} path={to} element={<HmoBenefits/>}/>)}
   <Route path="/hmo-benefits/employee-benefits" element={<Benefits/>}/>
   <Route path="/hmo-benefits/dependents" element={<HmoBenefits section="dependents"/>}/>
-  <Route path="/hmo-benefits/government-benefits" element={<Placeholder title="Government benefit records are not configured. Statutory payroll calculations remain in Payroll Management."/>}/>
+  <Route path="/hmo-benefits/government-benefits" element={<GovernmentBenefits/>}/>
   <Route path="/hmo-benefits/benefits-history" element={<HmoBenefits section="history"/>}/>
   <Route path="/hmo-benefits/plan" element={<Navigate to="/hmo-benefits/hmo/plan" replace/>}/>
   <Route path="/hmo-benefits/employee-enrollment" element={<Navigate to="/hmo-benefits/hmo/employee-enrollment" replace/>}/>

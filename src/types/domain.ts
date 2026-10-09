@@ -1,5 +1,5 @@
 export type EmployeeStatus='Active'|'Inactive'|'On Leave';
-export type EmploymentStatus='Regular'|'Probationary'|'Part-Time'|'Contractual'|'Project-Based'|'Temporary';
+export type EmploymentStatus='Regular'|'Probationary'|'Part-Time'|'Contractual'|'Project-Based'|'Temporary'|'On Leave'|'Resigned';
 export interface User{ id:string; employeeId:string; name:string; role:'Admin'|'HR Staff' }
 export interface Session{token:string;user:User}
 export interface Employee{id:string;employeeNo:string;name:string;email:string|null;position:string;department:string;dateHired:string;basicSalary:number;positionRate:number;status:EmployeeStatus;employmentStatus?:EmploymentStatus}
