@@ -18,6 +18,6 @@ The `send-otp` Edge Function is authenticated and shares the same server-only se
 
 ## Admin user management
 
-The Account Settings screen uses the authenticated `users` Edge Function. Apply migration `0018_user_name.sql` and deploy `functions/users`. Only admins can list, create, or delete users. Creation accepts an email, password, employee ID, name, and role; the password is stored only as a server-side PBKDF2 hash, and a one-time onboarding OTP is sent to the new email address. An admin cannot delete their own account.
+The Account Settings screen uses the authenticated `users` Edge Function. Apply migration `0018_user_name.sql` and deploy `functions/users`. Only admins can list, create, or delete users. Creation accepts an email, password, employee ID, name, and role; the password is stored only as a server-side PBKDF2 hash, and a one-time onboarding OTP is sent to the new email address. Deletion uses a `POST /users` request with `{ "action": "delete", "id": "..." }` because the function-invocation gateway does not allow browser `DELETE` requests. An admin cannot delete their own account.
 
 Runtime secrets expected by functions: `EPROVIDER_API_URL`, `EPROVIDER_PROJECT_ID`, `EPROVIDER_SCHEMA`, `EPROVIDER_SERVICE_ROLE_KEY`, `EPROVIDER_OTP_API_URL`, `EPROVIDER_OTP_KEY`, `PBMS_JWT_SECRET`, and `PBMS_OTP_SECRET`.

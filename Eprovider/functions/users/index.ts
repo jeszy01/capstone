@@ -1,7 +1,7 @@
 import {verifiedEdge} from "../../lib/verified-function";
 import {requirePbmsRole} from "../../lib/auth";
 import {body,required} from "../../lib/validation";
-import {ok,created,noContent} from "../../lib/response";
+import {ok,created} from "../../lib/response";
 import {listRows,insertRow,deleteRows} from "../../lib/database";
 import {mcp} from "../../lib/eprovider";
 import {audit} from "../../lib/audit";
@@ -18,6 +18,13 @@ export default verifiedEdge(async ctx=>{
  if(method==='GET'){const rows=await listRows<UserRow>('users');return ok(rows.map(publicUser));}
  if(method==='POST'){
   const input=await body<Record<string,unknown>>(ctx.request);
+  if(input.action==='delete'){
+   const id=required(input.id,'id');
+   if(id===ctx.userId)throw new HttpError(400,'CANNOT_DELETE_SELF','You cannot delete your own account.');
+   await deleteRows('users',{id});
+   await audit('user.deleted',ctx.userId,'users',id);
+   return ok({deleted:true,id});
+  }
   const employee_id=required(input.employee_id,'employee_id');
   const name=required(input.name,'name');
   const email=required(input.email,'email').toLowerCase();
@@ -37,7 +44,5 @@ export default verifiedEdge(async ctx=>{
   await audit('user.created',ctx.userId,'users',row.id);
   return created({user:publicUser(row),otp_sent:true,challenge_id:challenge.id,emailId:emailResult.emailId??null});
  }
- const id=required(ctx.request.url.split('/').pop(),'id');
- if(method==='DELETE'){if(id===ctx.userId)throw new HttpError(400,'CANNOT_DELETE_SELF','You cannot delete your own account.');await deleteRows('users',{id});await audit('user.deleted',ctx.userId,'users',id);return noContent()}
  return new Response('Method Not Allowed',{status:405});
 });
