@@ -1,144 +1,155 @@
-/* Sign-in page. Blueprint sheet on the left, drafting-paper form on the right. */
+/* Sign-in page. A paper time card on site-paper grey, with the logo's four orbits bleeding off the corner. */
 .login{
-  --blueprint:#0f2a4d;
-  --linework:#b9cdea;
-  --paper:#f4f6fa;
-  --ink:#14213a;
-  --muted:#55627d;
+  --ink:#14284b;
+  --ink-soft:#4b5a78;
+  --surface:#e8ecf3;
+  --paper:#ffffff;
+  --rule:#d3dbe9;
+  --field:#f4f6fa;
+  --field-border:#b9c4d9;
+  --gold:#f0b429;
   --action:#17345b;
   --action-hover:#224a7c;
-  --field-border:#b4c0d6;
+  --danger:#a8231b;
   --orbit-blue:#4b8be8;
   --orbit-green:#4fb06a;
   --orbit-gold:#e8b13a;
   --orbit-red:#e0574d;
-  display:grid;
-  grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
-  min-height:100vh;
-  min-height:100dvh;
-  font-family:Inter,ui-sans-serif,system-ui,sans-serif;
-  color:var(--ink);
-}
 
-/* ---------- Brand panel ---------- */
-.login__brand{
   position:relative;
   isolation:isolate;
   overflow:hidden;
-  display:flex;
-  flex-direction:column;
-  justify-content:space-between;
-  gap:32px;
-  padding:clamp(24px,4vw,48px);
-  padding-right:clamp(40px,5vw,64px);
-  background:var(--blueprint);
-  color:#fff;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,460px);
+  grid-template-rows:auto 1fr auto;
+  column-gap:clamp(32px,6vw,96px);
+  min-height:100vh;
+  min-height:100dvh;
+  padding:clamp(20px,3.5vw,44px) clamp(20px,6vw,88px);
+  font-family:Inter,ui-sans-serif,system-ui,sans-serif;
+  color:var(--ink);
+  background:var(--surface);
 }
-.drawing{position:absolute;inset:0;z-index:-1;width:100%;height:100%;color:var(--linework)}
-.drawing__grid{opacity:.07}
-.drawing__centreline line{stroke:var(--linework);stroke-width:1;stroke-dasharray:18 6 3 6;opacity:.35}
-.drawing__ring circle{fill:none;stroke:var(--linework);stroke-width:1;stroke-dasharray:2 7;opacity:.4}
-.drawing__orbit{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-dasharray:1;animation:draw 1.9s cubic-bezier(.3,.7,.2,1) both}
-.drawing__node{fill:var(--orbit-gold)}
-.drawing__node-ring{fill:none;stroke:var(--orbit-gold);stroke-width:1.5;opacity:.7}
-@keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
 
-/* Tape-measure ruler along the right edge: minor tick every 10px, major every 50px. */
-.login__ruler{
+/* ---------- Orbit mark (background) ---------- */
+.login__orbits{
   position:absolute;
-  top:0;right:0;bottom:0;
-  width:18px;
   z-index:-1;
-  background-image:
-    repeating-linear-gradient(to bottom,rgba(185,205,234,.55) 0 1px,transparent 1px 50px),
-    repeating-linear-gradient(to bottom,rgba(185,205,234,.32) 0 1px,transparent 1px 10px);
-  background-size:18px 100%,9px 100%;
-  background-position:right top;
-  background-repeat:no-repeat;
+  left:clamp(-340px,-18vw,-120px);
+  bottom:clamp(-380px,-24vw,-140px);
+  width:min(980px,96vw);
+  height:auto;
+  opacity:.5;
+  pointer-events:none;
 }
 
-.brand{display:flex;align-items:center;gap:12px}
-.brand__logo{display:grid;place-items:center;width:46px;height:46px;border-radius:10px;background:#fff}
+/* ---------- Brand + intro ---------- */
+.login__brand{grid-column:1/-1;grid-row:1;display:flex;align-items:center;gap:12px}
+.brand__logo{display:grid;place-items:center;width:46px;height:46px;border-radius:10px;background:#fff;border:1px solid var(--rule)}
 .brand__logo img{width:36px;height:36px;object-fit:contain}
-.brand__name{display:block;font:700 15px/1.25 Inter,sans-serif;letter-spacing:.005em}
-.brand__sub{display:block;margin-top:2px;font-size:12.5px;color:#b3c2de}
+.brand__name{display:block;font:700 15px/1.25 Inter,sans-serif}
+.brand__sub{display:block;margin-top:2px;font-size:12.5px;color:var(--ink-soft)}
 
-.login__pitch h1{
-  max-width:13em;
+.login__intro{grid-column:1;grid-row:2;align-self:center;padding:clamp(24px,5vw,56px) 0}
+.login__intro h1{
+  max-width:8.5em;
   margin:0;
   font-family:Archivo,'Arial Narrow',system-ui,sans-serif;
   font-weight:800;
-  font-stretch:112%;
-  font-size:clamp(30px,3.6vw,50px);
-  line-height:1.06;
-  letter-spacing:-.01em;
+  font-stretch:125%;
+  font-size:clamp(34px,5.2vw,72px);
+  line-height:1.02;
+  letter-spacing:-.015em;
   text-wrap:balance;
 }
-.login__copy{font-size:12.5px;color:#9db0d1}
+.login__intro p{max-width:26em;margin:20px 0 0;font-size:16px;line-height:1.6;color:var(--ink-soft)}
 
-/* ---------- Form panel ---------- */
-.login__panel{
+/* ---------- Time card ---------- */
+.login__main{grid-column:2;grid-row:2;align-self:center;display:flex;justify-content:center;padding:clamp(8px,2vw,24px) 0}
+.login__card{
   position:relative;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:clamp(24px,5vw,72px);
+  width:100%;
   background:var(--paper);
+  border:1px solid var(--rule);
+  border-radius:6px;
+  box-shadow:0 22px 44px -28px rgba(20,40,75,.45),0 2px 0 rgba(20,40,75,.04);
+  animation:settle .55s cubic-bezier(.2,.8,.2,1) both;
 }
-.login__panel::before{
+/* dog-eared top-right corner */
+.login__card::after{
   content:'';
   position:absolute;
-  inset:0;
-  background-image:
-    linear-gradient(#dfe5ef 1px,transparent 1px),
-    linear-gradient(90deg,#dfe5ef 1px,transparent 1px);
-  background-size:32px 32px;
-  -webkit-mask-image:radial-gradient(ellipse 80% 70% at 25% 40%,#000 0,transparent 75%);
-  mask-image:radial-gradient(ellipse 80% 70% at 25% 40%,#000 0,transparent 75%);
-  pointer-events:none;
+  top:-1px;right:-1px;
+  width:30px;height:30px;
+  border-top-right-radius:6px;
+  background:linear-gradient(225deg,var(--surface) 50%,#dde4f0 50%);
+  box-shadow:-1px 1px 0 var(--rule);
 }
-.signin{position:relative;width:100%;max-width:392px}
+@keyframes settle{from{opacity:0;transform:translateY(-12px) rotate(-.7deg)}to{opacity:1;transform:none}}
 
-.signin__progress{display:flex;align-items:center;gap:10px;margin-bottom:22px;font-size:12.5px;color:var(--muted)}
-.signin__bars{display:flex;gap:4px}
-.signin__bars i{display:block;width:26px;height:4px;border-radius:2px;background:#cdd6e5}
-.signin__bars i.is-on{background:var(--action)}
+/* perforated header strip */
+.login__cardhead{display:flex;align-items:center;gap:12px;padding:18px 28px;border-bottom:2px dashed var(--rule)}
+.login__hole{flex:none;width:14px;height:14px;border-radius:50%;background:var(--surface);box-shadow:inset 0 1px 2px rgba(20,40,75,.35)}
+.login__step{font-size:13px;color:var(--ink-soft)}
+.login__notches{display:flex;gap:4px;margin-left:auto;margin-right:34px}
+.login__notches i{display:block;width:24px;height:6px;border-radius:1px;background:var(--rule)}
+.login__notches i.is-on{background:var(--gold)}
 
-.signin__title{margin:0;font-family:Archivo,'Arial Narrow',system-ui,sans-serif;font-weight:800;font-stretch:108%;font-size:32px;line-height:1.1;letter-spacing:-.01em;color:var(--ink)}
-.signin__lead{margin:10px 0 28px;max-width:34em;font-size:14.5px;line-height:1.6;color:var(--muted)}
-.signin__who{margin:-8px 0 20px;font-size:13.5px;color:var(--muted)}
-.signin__who b{color:var(--ink);font-weight:600}
+.login__cardbody{padding:28px 28px 30px}
+.login__title{margin:0;font-family:Archivo,'Arial Narrow',system-ui,sans-serif;font-weight:800;font-stretch:112%;font-size:30px;line-height:1.1;letter-spacing:-.01em}
+.login__lead{margin:10px 0 26px;font-size:14.5px;line-height:1.6;color:var(--ink-soft)}
+.login__who{margin:-8px 0 18px;font-size:13.5px;color:var(--ink-soft)}
+.login__who b{color:var(--ink);font-weight:600}
 
-.signin__label{display:block;margin:0 0 7px;font-size:13px;font-weight:600;color:var(--ink)}
-.signin__input{
+.login__label{display:block;margin:0 0 7px;font-size:13px;font-weight:600}
+.login__input{
   display:block;
   width:100%;
-  height:46px;
+  height:48px;
   margin:0 0 18px;
   padding:0 14px;
   font:400 15px Inter,sans-serif;
   color:var(--ink);
-  background:#fff;
+  background:var(--field);
   border:1px solid var(--field-border);
+  border-bottom-width:2px;
   border-radius:8px;
   outline:none;
-  transition:border-color .15s;
+  transition:border-color .15s,background-color .15s;
 }
-.signin__input:hover{border-color:#8f9fbd}
-.signin__input:focus{border-color:var(--action)}
-.signin__input:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
-.signin__input--code{height:58px;margin-bottom:6px;text-align:center;font-size:26px;font-weight:600;letter-spacing:.55em;padding-left:calc(14px + .55em);font-variant-numeric:tabular-nums}
-.signin__input--code::placeholder{color:#b4bfd2;font-weight:400}
+.login__input:hover{border-color:#8f9fbd}
+.login__input:focus{background:#fff;border-color:var(--ink)}
+.login__input:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
 
-.signin__field{position:relative}
-.signin__field .signin__input{padding-right:48px}
-.signin__toggle{position:absolute;top:3px;right:3px;display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:6px;background:none;color:var(--muted)}
-.signin__toggle:hover{background:#eef2f8;color:var(--ink)}
+.login__field{position:relative}
+.login__field .login__input{padding-right:48px}
+.login__toggle{position:absolute;top:4px;right:4px;display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:6px;background:none;color:var(--ink-soft)}
+.login__toggle:hover{background:#e8edf5;color:var(--ink)}
 
-.signin__error{display:flex;gap:9px;align-items:flex-start;margin:14px 0 0;padding:11px 13px;font-size:13px;line-height:1.5;color:#8f1d1d;background:#fdeeee;border:1px solid #f1c3c3;border-left:3px solid #c0392b;border-radius:8px}
-.signin__error svg{flex:none;margin-top:2px}
+/* punch slots for the one-time code */
+.slots{position:relative;display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:6px}
+.slots__input{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;font-size:16px;cursor:text}
+.slot{
+  display:grid;
+  place-items:center;
+  height:58px;
+  font:600 26px Inter,sans-serif;
+  font-variant-numeric:tabular-nums;
+  background:var(--field);
+  border:1px solid var(--field-border);
+  border-bottom:3px solid var(--field-border);
+  border-radius:8px;
+  transition:border-color .12s,background-color .12s;
+}
+.slot.is-filled{background:#fff;border-bottom-color:var(--ink)}
+.slots:focus-within .slot.is-next,
+.slots:focus-within:has(.slot:last-of-type.is-filled) .slot:last-of-type{background:#fff;border-color:var(--ink);border-bottom-color:var(--gold)}
+.slots:has(.slots__input:focus-visible){outline:3px solid #93c5fd;outline-offset:3px;border-radius:10px}
 
-.signin__submit{
+.login__error{display:flex;gap:9px;align-items:flex-start;margin:14px 0 0;padding:11px 13px;font-size:13px;line-height:1.5;color:#7f1d1d;background:#fdeeee;border:1px solid #f1c3c3;border-left:3px solid var(--danger);border-radius:8px}
+.login__error svg{flex:none;margin-top:2px}
+
+.login__submit{
   display:flex;align-items:center;justify-content:center;gap:9px;
   width:100%;height:48px;margin-top:22px;
   font:600 14.5px Inter,sans-serif;
@@ -146,26 +157,32 @@
   border:0;border-radius:8px;
   transition:background-color .15s;
 }
-.signin__submit:hover:not(:disabled){background:var(--action-hover)}
-.signin__submit:disabled{opacity:.5;cursor:not-allowed}
+.login__submit:hover:not(:disabled){background:var(--action-hover)}
+.login__submit:disabled{opacity:.5;cursor:not-allowed}
 
-.signin__help{margin:22px 0 0;font-size:13px;line-height:1.5;color:var(--muted)}
-.signin__back{display:inline-flex;align-items:center;gap:7px;margin-top:20px;padding:6px 2px;border:0;background:none;font:600 13.5px Inter,sans-serif;color:var(--action)}
-.signin__back:hover{text-decoration:underline}
+.login__help{margin:20px 0 0;font-size:13px;line-height:1.5;color:var(--ink-soft)}
+.login__back{display:inline-flex;align-items:center;gap:7px;margin-top:18px;padding:6px 2px;border:0;background:none;font:600 13.5px Inter,sans-serif;color:var(--action)}
+.login__back:hover{text-decoration:underline}
+
+.login__copy{grid-column:1/-1;grid-row:3;font-size:12.5px;color:var(--ink-soft)}
 
 .spin{animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ---------- Small screens ---------- */
-@media (max-width:860px){
-  .login{grid-template-columns:1fr}
-  .login__brand{min-height:176px;padding:22px 24px;padding-right:36px}
-  .login__pitch,.login__copy{display:none}
-  .login__panel{align-items:flex-start;padding-top:32px}
-  .signin__title{font-size:28px}
+@media (max-width:900px){
+  .login{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto}
+  .login__intro{grid-column:1;grid-row:2;padding:28px 0 8px}
+  .login__intro h1{font-size:clamp(30px,9vw,44px)}
+  .login__intro p{display:none}
+  .login__main{grid-column:1;grid-row:3;padding:16px 0}
+  .login__copy{grid-row:4}
+  .login__orbits{opacity:.35;bottom:-200px;left:-220px}
+  .login__cardhead,.login__cardbody{padding-left:22px;padding-right:22px}
+  .login__title{font-size:26px}
 }
 
 @media (prefers-reduced-motion:reduce){
-  .drawing__orbit{animation:none}
+  .login__card{animation:none}
   .spin{animation-duration:1.6s}
 }
