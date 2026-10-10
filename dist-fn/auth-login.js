@@ -9,7 +9,7 @@ var HttpError = class extends Error {
 function publicError(error) {
   console.error("ERR", error instanceof Error ? error.message : error);
   const e = error instanceof HttpError ? error : new HttpError(500, "INTERNAL_ERROR", "Internal server error");
-  return json({ error: { code: e.code, message: e.message } }, e.status);
+  return json({ error: { code: e.code, message: e.message } }, e.status === 502 ? 500 : e.status);
 }
 function json(body2, status = 200, headers = {}) {
   return new Response(JSON.stringify(body2), { status, headers: { "content-type": "application/json", ...headers } });
@@ -78,7 +78,7 @@ var key = () => Deno.env.get("EPROVIDER_SERVICE_ROLE_KEY") ?? "";
 async function mcp(name, arguments_) {
   if (!project() || !key()) throw new HttpError(500, "CONFIGURATION_ERROR", "eProvider server secrets are not configured");
   const response = await fetch(`${url()}/projects/${project()}/mcp`, { method: "POST", headers: { Authorization: `Bearer ${key()}`, "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: crypto.randomUUID(), method: "tools/call", params: { name, arguments: arguments_ } }) });
-  if (!response.ok) throw new HttpError(502, "EPROVIDER_ERROR", "eProvider request failed");
+  if (!response.ok) throw new HttpError(500, "EPROVIDER_ERROR", "eProvider " + response.status + " " + (await response.clone().text()).slice(0, 150));
   const payload = await response.json();
   if (payload.error) throw new HttpError(502, "EPROVIDER_ERROR", payload.error.message ?? "eProvider tool failed");
   const text = payload.result?.content?.[0]?.text ?? "{}";
