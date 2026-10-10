@@ -4,7 +4,7 @@ import type {Session} from '../../types/domain';
 import {EPROVIDER_FUNCTION_BASE} from '../../config/eprovider';
 const functionBase=EPROVIDER_FUNCTION_BASE;
 interface Envelope<T>{data:T;meta?:Record<string,unknown>}
-const connectionMessage='The sign-in request was blocked in this browser. The eProvider service is reachable, but this app may not be allowed by its browser-access (CORS) settings. Refresh and try again; if it continues, ask an administrator to allow this app URL in eProvider.';
+const connectionMessage='Unable to connect to the sign-in service. Check your internet connection and try again. If the problem continues, the authentication service may be unavailable.';
 async function edgePost<T>(slug:string,body:unknown):Promise<T>{
  let response:Response;
  try{response=await fetch(`${functionBase}/${slug}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}catch(cause){if(cause instanceof TypeError)throw new Error(connectionMessage);throw cause}
