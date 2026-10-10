@@ -1,6 +1,7 @@
 import GovernmentBenefits from './features/hmo/GovernmentBenefits';
 import {BrowserRouter,Navigate,Route,Routes,useNavigate} from 'react-router-dom';
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
+import {hydrateFromServer} from './services/sync/serverSync';
 import AppLayout from './layouts/AppLayout';
 import Login from './features/auth/Login';
 import {getCurrentUser} from './features/auth/authService';
@@ -11,8 +12,10 @@ import Claims from './pages/Claims';
 import Reimbursement from './pages/Reimbursement';
 import {LogsAudits,UserAccountSettings} from './pages/Admin';
 function AuthRoute(){
- const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());
+const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[ready,setReady]=useState(false);
+ useEffect(()=>{if(!user){setReady(false);return}let active=true;void hydrateFromServer().finally(()=>{if(active)setReady(true)});return()=>{active=false}},[user]);
  if(!user)return <Login onSignedIn={s=>{setUser(s.user);nav('/dashboard')}}/>;
+ if(!ready)return null;
  return <Routes><Route element={<AppLayout/>}>
   <Route path="/dashboard" element={<Dashboard/>}/>
   <Route path="/account-settings" element={<UserAccountSettings/>}/>
