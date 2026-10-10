@@ -69,3 +69,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .pbms-dark .bg-amber-50{background:#451a03!important;color:#fbbf24!important}
 .pbms-dark .bg-red-50{background:#450a0a!important;color:#fca5a5!important}
 .pbms-dark [class~="bg-[#f3f5f9]"],.pbms-dark [class~="bg-[#f7f9fc]"]{background:#1e293b!important}
+.pbms-dark .claims-page [class~="bg-[#f8fafc]"]{background:#1e293b!important}
+.pbms-dark .claims-page [class~="text-[#526079]"]{color:#cbd5e1!important}
+.pbms-dark .claims-page [class~="border-[#d8deea]"]{border-color:#475569!important}
