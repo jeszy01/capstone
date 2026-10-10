@@ -23,7 +23,7 @@ describe('HMO presentation navigation',()=>{
   it('groups benefit modules while retaining HMO details as internal tabs',()=>{
     const hmo=modules.find(item=>item.label==='HMO & Benefits');
     expect(hmo?.to).toBe('/hmo-benefits');
-    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Employee Benefits',to:'/hmo-benefits/employee-benefits'},{label:'Government Benefits',to:'/hmo-benefits/government-benefits'},{label:'Benefits History',to:'/hmo-benefits/benefits-history'}]);
+    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Government Benefits',to:'/hmo-benefits/government-benefits'},{label:'Benefits History',to:'/hmo-benefits/benefits-history'}]);
   });
 
   it('leaves the Claims & Reimbursement navigation unchanged',()=>{
