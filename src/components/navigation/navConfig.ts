@@ -6,7 +6,7 @@ export const overview:NavItem[]=[{label:'Dashboard',to:'/dashboard',icon:LayoutG
 export const modules:NavItem[]=[
  {label:'Employees',to:'/employees',icon:Users},
  {label:'Payroll Management',to:'/payroll',icon:Wallet,children:[
-  {label:'Payroll',to:'/payroll'},{label:'Timesheet',to:'/timesheet'},
+{label:'Payroll',to:'/payroll'},{label:'Attendance',to:'/attendance'},{label:'Timesheet',to:'/timesheet'},
   {label:'Deductions',to:'/deductions'},{label:'Payslip',to:'/payslip'},
   {label:'Payroll Summary',to:'/payroll-summary'},
  ]},

@@ -4,7 +4,7 @@ import {useState} from 'react';
 import AppLayout from './layouts/AppLayout';
 import Login from './features/auth/Login';
 import {getCurrentUser} from './features/auth/authService';
-import {Dashboard,Employees,Timesheet,Payroll,Deductions,Compensation,Benefits} from './pages/Modules';
+import {Dashboard,Employees,Attendance,Timesheet,Payroll,Deductions,Compensation,Benefits} from './pages/Modules';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import Claims from './pages/Claims';
@@ -19,6 +19,7 @@ function AuthRoute(){
   <Route path="/logs-audits" element={<LogsAudits/>}/>
   <Route path="/employees" element={<Employees/>}/>
   <Route path="/payroll" element={<Payroll/>}/>
+   <Route path="/attendance" element={<Attendance/>}/>
   <Route path="/timesheet" element={<Timesheet/>}/>
   <Route path="/deductions" element={<Deductions/>}/>
   <Route path="/payslip" element={<Payroll report="payslip"/>}/>
