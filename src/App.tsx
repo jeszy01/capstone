@@ -14,6 +14,7 @@ import {LogsAudits,UserAccountSettings} from './pages/Admin';
 function AuthRoute(){
 const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[ready,setReady]=useState(false);
  useEffect(()=>{if(!user){setReady(false);return}let active=true;void hydrateFromServer().finally(()=>{if(active)setReady(true)});return()=>{active=false}},[user]);
+ useEffect(()=>{if(!user||!ready)return;const timer=window.setInterval(()=>{void hydrateFromServer(true)},5000);return()=>window.clearInterval(timer)},[user,ready]);
  if(!user)return <Login onSignedIn={s=>{setUser(s.user);nav('/dashboard')}}/>;
  if(!ready)return null;
  return <Routes><Route element={<AppLayout/>}>
