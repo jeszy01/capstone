@@ -59,7 +59,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .pbms-dark .hover\:bg-slate-50:hover{background-color:#1e293b!important}
 .pbms-dark .pbms-shell h1,.pbms-dark .pbms-shell h2,.pbms-dark .pbms-shell h3{color:#f1f5f9!important}
 .pbms-dark [class~="text-[#17345b]"]{color:#93c5fd!important}
-.pbms-dark [class~="text-[#2f6b86]"]{color:#67c1e8!important}
 .pbms-dark [class~="text-[#6b7794]"]{color:#cbd5e1!important}
 .pbms-dark [class~="border-[#e3e7ef]"],.pbms-dark [class~="border-[#eef1f6]"],.pbms-dark [class~="border-[#f6f8fb]"]{border-color:#334155!important}
 .pbms-dark .text-blue-600{color:#60a5fa!important}

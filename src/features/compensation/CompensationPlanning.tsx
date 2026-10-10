@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Eye,Plus,Pencil} from 'lucide-react';
-import {Button,Card,Empty,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
+import {Button,Card,Empty,Field,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
 import {employeeService} from '../employees/employeeService';
 import type {Employee,PayrollInput} from '../../types/domain';
 import {recordAudit} from '../audit/auditService';
@@ -15,7 +15,6 @@ import type {BonusIncentive,CompensationHistory,CompensationProposal,EmployeeCom
 type Section='salary-grades'|'employee-compensation'|'adjustments'|'history';
 type Details={title:string;fields:Array<[string,string]>};
 const actionCell='sticky right-0 z-10 bg-white px-4 py-3 shadow-[-1px_0_0_#e3e7ef]';
-const tabClass=(active:boolean)=>`rounded-lg px-3 py-2 text-[13px] font-semibold ${active?'bg-[#2f6b86] text-white':'text-[#6b7794] hover:bg-[#f6f8fb]'}`;
 const tableClass='w-full text-left text-[13px]';
 const rowClass='border-b border-[#eef1f6]';
 const headerClass='border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]';
@@ -124,7 +123,7 @@ export default function CompensationPlanning({section}:{section:Section}){
   const showAssignment=(assignment:EmployeeCompensation)=>setDetails({title:'Employee Compensation Details',fields:[['Employee',employeeLabel(assignment.employeeId,assignment.employeeName)],['Employee reference',assignment.employeeId],['Position',assignment.position],['Department',findCompensationEmployee(employees,assignment.employeeId)?.department||assignment.department||'Not recorded'],['Basic Salary',peso(assignment.fixedSalary)],['Daily Rate',peso(assignment.dailyRate)],['Effective Date',assignment.effectiveDate],['Status',assignment.effectiveDate>date?'Scheduled':'Effective']]});
 
   return <div>
-    <div><h1 className="m-0 text-[22px] font-semibold">Compensation Planning</h1><p className="mt-1 text-[12.5px] text-[#6b7794]">Plan and manage employee compensation, including salary changes and monetary rewards.</p></div>
+    <PageHeader title="Compensation Planning" description="Plan and manage employee compensation, including salary changes and monetary rewards."/>
     {section!=='salary-grades'&&<>
       {employeeLoading&&<p className="mt-4 text-[13px] text-[#6b7794]" role="status">Loading employee records…</p>}
       {employeeError&&<div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-700" role="alert">Employee records could not be loaded: {employeeError} {legacyEmployees.length>0?'Existing local employee names remain available.':''}<button className={`${ghost} ml-3`} disabled={employeeLoading} onClick={()=>void loadEmployees()}>Retry employee loading</button></div>}
@@ -146,7 +145,7 @@ export default function CompensationPlanning({section}:{section:Section}){
 
     {section==='adjustments'&&<>
       <div className="mt-4"><h2 className="m-0 text-[16px] font-semibold">Adjustments</h2><p className="mt-1 text-[12px] text-[#6b7794]">Review salary changes and monetary rewards without changing active salaries before their effective date.</p></div>
-      <div className="mt-4 flex flex-wrap gap-2 border-b border-[#e3e7ef] pb-3" role="tablist" aria-label="Compensation adjustments"><button role="tab" aria-selected={rewardTab==='changes'} className={tabClass(rewardTab==='changes')} onClick={()=>setRewardTab('changes')}>Salary Changes</button><button role="tab" aria-selected={rewardTab==='rewards'} className={tabClass(rewardTab==='rewards')} onClick={()=>setRewardTab('rewards')}>Bonuses &amp; Incentives</button></div>
+      <Tabs label="Compensation adjustments" value={rewardTab} onChange={setRewardTab} tabs={[{id:'changes',label:'Salary Changes'},{id:'rewards',label:'Bonuses & Incentives'}]}/>
       {rewardTab==='changes'?<div role="tabpanel" aria-label="Salary Changes">
         <div className="mt-4 flex justify-end"><Button disabled={proposalBlocked} onClick={()=>setModal('proposal')}><Plus size={15}/>Create Compensation Proposal</Button></div>
         {proposalBlocked&&!employeeLoading&&<p className="mt-2 text-[12px] text-amber-700">Assign a current salary to an available employee before creating a salary-change proposal.</p>}

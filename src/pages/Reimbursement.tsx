@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import {Check} from 'lucide-react';
-import {Button,Card,Empty} from '../components/common/ui';
+import {Button,Card,Empty,ErrorAlert,LoadingState,PageHeader,Tabs} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {employeeName,normalizeClaims,saveClaims,statusClass} from '../features/claims/claimsTypes';
@@ -14,18 +14,17 @@ export default function Reimbursement(){
   const[employees,setEmployees]=useState<Employee[]>([]);
   const[claims,setClaims]=useState<ExpenseClaim[]>([]);
   const[tab,setTab]=useState<'forReimbursement'|'history'>('forReimbursement');
-  useEffect(()=>{employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))})},[]);
+  const[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
+  const load=()=>{setLoading(true);setLoadError('');employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))}).catch(cause=>{setClaims(normalizeClaims([]));setLoadError(cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded.')}).finally(()=>setLoading(false))};
+  useEffect(()=>{load()},[]);
   const update=(id:string,patch:Partial<ExpenseClaim>)=>setClaims(current=>{const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);return next});
   const forReimbursement=claims.filter(item=>item.approvalStatus==='Approved'&&item.paymentStatus==='Unpaid');
   const history=claims.filter(item=>item.paymentStatus!=='Unpaid');
   const process=(claim:ExpenseClaim)=>{const next=processReimbursement(claim);if(next){update(claim.id,next);recordAudit({action:'Processed reimbursement',module:'Reimbursement',description:`Processed reimbursement for claim ${claim.claimNumber} (${peso(claim.amount)}).`});setTab('history')}};
   return <div>
-    <div><h1 className="m-0 text-[22px] font-semibold">Reimbursement</h1><p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Pay employees back for approved company and business expense claims.</p></div>
-    <div className="mt-5 flex flex-wrap gap-2 border-b border-[#e3e7ef] pb-3">
-      <button className={`rounded-lg px-3 py-2 text-[13px] font-semibold ${tab==='forReimbursement'?'bg-[#2f6b86] text-white':'text-[#6b7794] hover:bg-[#f6f8fb]'}`} onClick={()=>setTab('forReimbursement')}>For Reimbursement</button>
-      <button className={`rounded-lg px-3 py-2 text-[13px] font-semibold ${tab==='history'?'bg-[#2f6b86] text-white':'text-[#6b7794] hover:bg-[#f6f8fb]'}`} onClick={()=>setTab('history')}>Reimbursement History</button>
-    </div>
-    {tab==='forReimbursement'&&<ForReimbursement claims={forReimbursement} employees={employees} onProcess={process}/>} {tab==='history'&&<ReimbursementHistory claims={history} employees={employees}/>} 
+    <PageHeader title="Reimbursement" description="Pay employees back for approved company and business expense claims."/>
+    <Tabs label="Reimbursement sections" value={tab} onChange={setTab} tabs={[{id:'forReimbursement',label:'For Reimbursement'},{id:'history',label:'Reimbursement History'}]}/>
+    {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}{loading?<Card className="mt-4"><LoadingState>Loading reimbursements…</LoadingState></Card>:<>{tab==='forReimbursement'&&<ForReimbursement claims={forReimbursement} employees={employees} onProcess={process}/>} {tab==='history'&&<ReimbursementHistory claims={history} employees={employees}/>}</>}
   </div>
 }
 
