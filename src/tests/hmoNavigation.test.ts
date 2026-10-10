@@ -3,11 +3,11 @@ import {hmoTabs,hmoTabForPath} from '../features/hmo/hmoNavigation';
 import {modules,titles} from '../components/navigation/navConfig';
 
 describe('HMO presentation navigation',()=>{
-  it('keeps the five existing HMO tabs in order',()=>{
+  it('keeps the four remaining HMO tabs in order',()=>{
     expect(hmoTabs.map(tab=>tab.label)).toEqual([
-      'HMO Plan','Employee Enrollment','Dependents','HMO Utilization','HMO History',
+      'HMO Plan','Employee Enrollment','Dependents','HMO History',
     ]);
-    expect(new Set(hmoTabs.map(tab=>tab.to)).size).toBe(5);
+    expect(new Set(hmoTabs.map(tab=>tab.to)).size).toBe(4);
   });
 
   it('selects the corresponding panel on each direct route and refresh',()=>{
@@ -23,7 +23,7 @@ describe('HMO presentation navigation',()=>{
   it('groups benefit modules while retaining HMO details as internal tabs',()=>{
     const hmo=modules.find(item=>item.label==='HMO & Benefits');
     expect(hmo?.to).toBe('/hmo-benefits');
-    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Employee Benefits',to:'/hmo-benefits/employee-benefits'},{label:'Dependents',to:'/hmo-benefits/dependents'},{label:'Government Benefits',to:'/hmo-benefits/government-benefits'},{label:'Benefits History',to:'/hmo-benefits/benefits-history'}]);
+    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Employee Benefits',to:'/hmo-benefits/employee-benefits'},{label:'Government Benefits',to:'/hmo-benefits/government-benefits'},{label:'Benefits History',to:'/hmo-benefits/benefits-history'}]);
   });
 
   it('leaves the Claims & Reimbursement navigation unchanged',()=>{
