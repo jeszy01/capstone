@@ -1,7 +1,6 @@
 import {HttpError,publicError} from './errors';
 import {mcp} from './eprovider';
 import {verifyPbmsSession} from './session-verification';
-import {corsPreflight,corsResponse} from './cors';
 import type {PbmsRole,RequestContext} from './types';
 
 interface AuthUser {id:string;employee_id:string;role:string;status:string}
@@ -19,8 +18,7 @@ export async function verifiedContext(request:Request):Promise<RequestContext>{
   return {request,role:'authenticated',userId:user.id,pbmsRole:role as PbmsRole};
 }
 export function verifiedEdge(handler:(ctx:RequestContext)=>Promise<Response>){
- return async(request:Request)=>{
-  if(request.method==='OPTIONS')return corsPreflight(request);
-  try{return corsResponse(request,await handler(await verifiedContext(request)))}catch(error){return corsResponse(request,publicError(error))}
- };
+  return async(request:Request)=>{
+    try{return await handler(await verifiedContext(request))}catch(error){return publicError(error)}
+  };
 }
