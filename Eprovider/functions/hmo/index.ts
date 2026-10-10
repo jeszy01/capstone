@@ -30,7 +30,7 @@ export default edge(async ctx=>{
   if(!id) return new Response("ID is required",{status:400});
   if(ctx.request.method==="PATCH" || ctx.request.method==="PUT"){
     const input=await body<Record<string,unknown>>(ctx.request);
-    const values={...input,updated_at:new Date().toISOString()};
+    const values:Record<string,unknown>={...input,updated_at:new Date().toISOString()};
     if(resource==="enrollments" && input.status){
       const allowed=["Pending","Submitted","Active","Rejected","Terminated","Expired"];
       if(!allowed.includes(String(input.status))) throw new HttpError(400,"INVALID_HMO_STATUS","Invalid enrollment status");
