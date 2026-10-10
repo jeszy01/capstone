@@ -1,38 +1,49 @@
 import {useState} from 'react';
-import {Check,ClipboardList,RefreshCw,Save,ShieldCheck,UserRound} from 'lucide-react';
+import {Check,ClipboardList,Plus,RefreshCw,Save,ShieldCheck,UserPlus,UserRound} from 'lucide-react';
 import {Card,Empty,TextInput,button} from '../components/common/ui';
 import {getCurrentUser} from '../features/auth/authService';
 import {read,write} from '../utils/storage';
 import {readAuditEvents,recordAudit} from '../features/audit/auditService';
+import type {User} from '../types/domain';
+
+type ManagedUser=User&{status:'Active'|'Inactive'};
+const userKey='admin:users';
+function initialUsers(current:User|null):ManagedUser[]{
+ const stored=read<ManagedUser[]>(userKey,[]);
+ if(stored.length)return stored;
+ return current?[{...current,status:'Active'}]:[];
+}
 
 export function UserAccountSettings(){
  const user=getCurrentUser();
  const[displayName,setDisplayName]=useState(()=>read<string>('admin:displayName',user?.name||'Admin'));
  const[saved,setSaved]=useState(false);
+ const[showAddUser,setShowAddUser]=useState(false);
+ const[users,setUsers]=useState<ManagedUser[]>(()=>initialUsers(user));
+ const[newUser,setNewUser]=useState({name:'',employeeId:'',role:'HR Staff' as User['role']});
+ const[userError,setUserError]=useState('');
  const save=(event:React.FormEvent)=>{event.preventDefault();const nextName=displayName.trim()||'Admin';write('admin:displayName',nextName);recordAudit({action:'Updated profile',module:'Account Settings',description:`Changed administrator display name to ${nextName}.`});setSaved(true);window.setTimeout(()=>setSaved(false),2200)};
+ const addUser=(event:React.FormEvent)=>{event.preventDefault();const name=newUser.name.trim(),employeeId=newUser.employeeId.trim();if(!name||!employeeId){setUserError('Name and employee ID are required.');return}if(users.some(item=>item.employeeId.toLowerCase()===employeeId.toLowerCase())){setUserError('A user with this employee ID already exists.');return}const created:ManagedUser={id:crypto.randomUUID(),name,employeeId,role:newUser.role,status:'Active'};const next=[...users,created];write(userKey,next);setUsers(next);recordAudit({action:'Created user account',module:'Account Settings',description:`Created ${created.role} account for ${created.name} (${created.employeeId}).`});setNewUser({name:'',employeeId:'',role:'HR Staff'});setUserError('');setShowAddUser(false)};
  return <div>
   <h1 className="m-0 text-[22px] font-semibold">User &amp; Account Settings</h1>
-  <p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Manage the signed-in administrator profile and account details.</p>
+  <p className="mt-1 max-w-[700px] text-[12.5px] text-[#6b7794]">Manage the signed-in administrator profile and add accounts for other PBMS users.</p>
   <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,1fr)]">
    <Card><div className="mb-5 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600"><UserRound size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">Profile details</h2><p className="m-0 mt-1 text-[12px] text-slate-500">These details identify your administrator account.</p></div></div>
     <form onSubmit={save} className="space-y-4"><label className="block text-[12px] font-semibold text-slate-600">Display name<div className="mt-1.5"><TextInput value={displayName} onChange={event=>setDisplayName(event.target.value)} aria-label="Display name"/></div></label><label className="block text-[12px] font-semibold text-slate-600">Employee ID<div className="mt-1.5"><TextInput value={user?.employeeId||'Unavailable'} readOnly aria-label="Employee ID" className="bg-slate-50"/></div></label><div className="flex items-center gap-3"><button type="submit" className={button}><Save size={15}/>Save changes</button>{saved&&<span role="status" className="inline-flex items-center gap-1 text-[12px] font-medium text-emerald-700"><Check size={15}/>Saved</span>}</div></form>
    </Card>
    <Card><div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-50 text-emerald-600"><ShieldCheck size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">Access</h2><p className="m-0 mt-1 text-[12px] text-slate-500">Current account permissions.</p></div></div><dl className="space-y-3 text-[13px]"><div className="flex justify-between gap-4"><dt className="text-slate-500">Name</dt><dd className="m-0 font-semibold text-slate-800">{user?.name||'Admin'}</dd></div><div className="flex justify-between gap-4"><dt className="text-slate-500">Role</dt><dd className="m-0 font-semibold text-slate-800">{user?.role||'Admin'}</dd></div><div className="flex justify-between gap-4"><dt className="text-slate-500">Session</dt><dd className="m-0 font-semibold text-emerald-700">Active</dd></div></dl></Card>
   </div>
+  <Card className="mt-5"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-violet-50 text-violet-600"><UserPlus size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">User accounts</h2><p className="m-0 mt-1 text-[12px] text-slate-500">Add another user account and assign a PBMS role.</p></div></div><button type="button" className={button} onClick={()=>{setUserError('');setShowAddUser(value=>!value)}}><Plus size={15}/>{showAddUser?'Close':'Add user'}</button></div>
+   {showAddUser&&<form onSubmit={addUser} className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="grid gap-4 sm:grid-cols-3"><label className="block text-[12px] font-semibold text-slate-600">Full name<div className="mt-1.5"><TextInput autoFocus value={newUser.name} onChange={event=>setNewUser({...newUser,name:event.target.value})} placeholder="e.g. Maria Santos"/></div></label><label className="block text-[12px] font-semibold text-slate-600">Employee ID<div className="mt-1.5"><TextInput value={newUser.employeeId} onChange={event=>setNewUser({...newUser,employeeId:event.target.value})} placeholder="e.g. EMP-002"/></div></label><label className="block text-[12px] font-semibold text-slate-600">Role<div className="mt-1.5"><select className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none focus:border-blue-500" value={newUser.role} onChange={event=>setNewUser({...newUser,role:event.target.value as User['role']})}><option value="HR Staff">HR Staff</option><option value="Admin">Admin</option></select></div></label></div>{userError&&<p role="alert" className="mt-3 text-[12px] font-medium text-red-700">{userError}</p>}<div className="mt-4 flex justify-end"><button type="submit" className={button}><UserPlus size={15}/>Create user account</button></div></form>}
+   <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[620px] text-left text-[13px]"><thead><tr className="border-b border-slate-200 bg-[#f7f9fc] text-[11px] uppercase tracking-wide text-slate-500"><th className="px-4 py-3">Name</th><th className="px-4 py-3">Employee ID</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Status</th></tr></thead><tbody>{users.length===0?<tr><td colSpan={4}><Empty>No user accounts have been added yet.</Empty></td></tr>:users.map(item=><tr key={item.id} className="border-b border-slate-100 last:border-0"><td className="px-4 py-3 font-medium text-slate-800">{item.name}</td><td className="px-4 py-3 text-slate-500">{item.employeeId}</td><td className="px-4 py-3 text-slate-600">{item.role}</td><td className="px-4 py-3"><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">{item.status}</span></td></tr>)}</tbody></table></div>
+  </Card>
  </div>;
 }
 
 export function LogsAudits(){
- const[events,setEvents]=useState(()=>readAuditEvents().map(event=>({
-  ...event,
-  user:event.user||'Admin',
-  module:event.module||'—',
-  description:event.description||'—',
-  ipDevice:event.ipDevice||'—',
- })));
+ const[events,setEvents]=useState(()=>readAuditEvents().map(event=>({...event,user:event.user||'Admin',module:event.module||'—',description:event.description||'—',ipDevice:event.ipDevice||'—'})));
  return <div>
-  <h1 className="m-0 text-[22px] font-semibold">Logs &amp; Audits</h1>
-  <p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Review recorded administrator activity and system audit events.</p>
+  <h1 className="m-0 text-[22px] font-semibold">Logs &amp; Audits</h1><p className="mt-1 max-w-[650px] text-[12.5px] text-[#6b7794]">Review recorded administrator activity and system audit events.</p>
   <Card className="mt-5"><div className="mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600"><ClipboardList size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">Audit activity</h2><p className="m-0 mt-1 text-[12px] text-slate-500">Events are shown in reverse chronological order.</p></div></div><button type="button" className={button} onClick={()=>setEvents(readAuditEvents().map(event=>({...event,user:event.user||'Admin',module:event.module||'—',description:event.description||'—',ipDevice:event.ipDevice||'—'})))}><RefreshCw size={15}/>Refresh</button></div><div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[980px] text-left text-[13px]"><thead><tr className="border-b border-slate-200 bg-[#f7f9fc] text-[11px] uppercase tracking-wide text-slate-500"><th scope="col" className="px-4 py-3">Date/time</th><th scope="col" className="px-4 py-3">User</th><th scope="col" className="px-4 py-3">Action</th><th scope="col" className="px-4 py-3">Module</th><th scope="col" className="px-4 py-3">Description</th><th scope="col" className="px-4 py-3">IP/device</th></tr></thead><tbody>{events.length===0?<tr><td colSpan={6}><Empty>No audit events have been recorded yet.</Empty></td></tr>:[...events].reverse().map(event=><tr key={event.id} className="border-b border-slate-100 last:border-0"><td className="whitespace-nowrap px-4 py-3 text-slate-500">{event.timestamp}</td><td className="px-4 py-3 font-medium text-slate-800">{event.user}</td><td className="px-4 py-3 font-medium text-slate-800">{event.action}</td><td className="px-4 py-3 text-slate-500">{event.module}</td><td className="min-w-[260px] px-4 py-3 text-slate-600">{event.description}</td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{event.ipDevice}</td></tr>)}</tbody></table></div></Card>
  </div>;
 }
