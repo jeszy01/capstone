@@ -14,6 +14,7 @@ import {LogsAudits,UserAccountSettings} from './pages/Admin';
 function AuthRoute(){
 const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[ready,setReady]=useState(false);
  useEffect(()=>{if(!user){setReady(false);return}let active=true;void hydrateFromServer().finally(()=>{if(active)setReady(true)});return()=>{active=false}},[user]);
+ useEffect(()=>{if(!user||!ready)return;const timer=window.setInterval(()=>{void hydrateFromServer(true)},5000);return()=>window.clearInterval(timer)},[user,ready]);
  if(!user)return <Login onSignedIn={s=>{setUser(s.user);nav('/dashboard')}}/>;
  if(!ready)return null;
  return <Routes><Route element={<AppLayout/>}>
@@ -43,7 +44,6 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/hmo-benefits/benefits-history" element={<HmoBenefits section="history"/>}/>
   <Route path="/hmo-benefits/plan" element={<Navigate to="/hmo-benefits/hmo/plan" replace/>}/>
   <Route path="/hmo-benefits/employee-enrollment" element={<Navigate to="/hmo-benefits/hmo/employee-enrollment" replace/>}/>
-  <Route path="/hmo-benefits/utilization" element={<Navigate to="/hmo-benefits/hmo/utilization" replace/>}/>
   <Route path="/hmo-benefits/history" element={<Navigate to="/hmo-benefits/hmo/history" replace/>}/>
   <Route path="*" element={<Navigate to="/dashboard" replace/>}/>
  </Route></Routes>;
