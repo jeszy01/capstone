@@ -21,7 +21,7 @@ export const modules:NavItem[]=[
  ]},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse,children:[
   {label:'HMO',to:'/hmo-benefits/hmo'},
-  {label:'Government Benefits',to:'/hmo-benefits/government-benefits'},
+  {label:'Government Contributions',to:'/hmo-benefits/government-benefits'},
   {label:'Benefits History',to:'/hmo-benefits/benefits-history'},
  ]},
 ];
