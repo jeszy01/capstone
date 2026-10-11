@@ -28,3 +28,6 @@ Runtime secrets expected by functions: `EPROVIDER_API_URL`, `EPROVIDER_PROJECT_I
 ## Cross-device application data
 
 The frontend synchronizes shared browser-backed module data through the `app-data` Edge Function. Deploy its `config.json` with `required_role: "anon"`: this allows the eProvider gateway to pass requests through so the function can validate the PBMS session itself. Apply migration `0020_app_data.sql` before deploying the function. The function stores namespaced JSON values in `app_data`; `GET` reads values, `POST` writes values, and `POST` with `{ "key": "...", "deleted": true }` writes a deletion tombstone because the function gateway does not allow browser `DELETE` requests. It requires an active PBMS session and an `admin` or `hr_staff` role. The frontend hydrates from the server after login and publishes local changes with a short debounce.
+
+## Compensation allowances and adjustments
+The Compensation Planning Allowances & Incentives section supports `Allowance` and `Adjustment` entries in addition to legacy `Bonus` and `Incentive` records. Apply migration `0022_compensation_reward_types.sql` before creating the new entry types, then deploy the updated `functions/compensation` function.

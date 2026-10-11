@@ -96,6 +96,17 @@ describe('Backend-authoritative compensation workflow',()=>{
   expect(tables.compensation_proposals[0]).toMatchObject({status:'Rejected',rejection_reason:'Budget not approved',reviewed_by:'user-1'});
   expect(tables.compensation_history[0]).toMatchObject({event_type:'Rejected',reason:'Budget not approved',actor_name:'HR Reviewer'});
  });
+ it('creates allowance and adjustment reward entries',async()=>{
+  const {tables}=setup();const authorization=`Bearer ${await session()}`;
+  const allowance=await call({action:'create_reward',employee_id:employeeId,reward_type:'Allowance',amount:3500,effective_date:'2099-01-01',notes:'Meal allowance'},authorization);
+  expect(allowance.status).toBe(200);
+  const adjustment=await call({action:'create_reward',employee_id:employeeId,reward_type:'Adjustment',amount:1200,effective_date:'2099-02-01',notes:'Transport adjustment'},authorization);
+  expect(adjustment.status).toBe(200);
+  expect(tables.compensation_rewards).toEqual(expect.arrayContaining([
+   expect.objectContaining({reward_type:'Allowance',amount:3500}),
+   expect.objectContaining({reward_type:'Adjustment',amount:1200}),
+  ]));
+ });
 	 it('imports existing browser-synced records once without deleting the source data',async()=>{
 	  const {tables}=setup();const authorization=`Bearer ${await session()}`;
 	  const legacy={

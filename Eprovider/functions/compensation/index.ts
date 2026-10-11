@@ -193,7 +193,7 @@ async function reviewProposal(input:Row,ctx:RequestContext){
 async function createReward(input:Row,ctx:RequestContext){
  const employeeId=uuid(input.employee_id,"employee_id");
  const type=required(input.reward_type,"reward_type");
- if(type!=="Bonus"&&type!=="Incentive")throw new HttpError(400,"INVALID_REWARD_TYPE","Reward type must be Bonus or Incentive.");
+ if(!["Bonus","Incentive","Allowance","Adjustment"].includes(type))throw new HttpError(400,"INVALID_REWARD_TYPE","Reward type must be Bonus, Incentive, Allowance, or Adjustment.");
  if(!(await listRows<EmployeeRow>("employees",{id:employeeId}))[0])throw new HttpError(404,"EMPLOYEE_NOT_FOUND","Employee was not found.");
  const createdAt=new Date().toISOString();
  const row=await insertRow("compensation_rewards",{employee_id:employeeId,reward_type:type,amount:amount(input.amount,"amount"),effective_date:isoDate(input.effective_date),notes:String(input.notes??"").trim(),status:"Planned",created_by:ctx.userId,created_at:createdAt});
@@ -205,7 +205,7 @@ async function reviewReward(input:Row,ctx:RequestContext){
  const id=uuid(input.id,"id");
  const rows=await listRows<Row>("compensation_rewards",{id});
  const reward=rows[0];
- if(!reward)throw new HttpError(404,"REWARD_NOT_FOUND","Bonus or incentive was not found.");
+ if(!reward)throw new HttpError(404,"REWARD_NOT_FOUND","Bonus, incentive, allowance, or adjustment was not found.");
  if(reward.status!=="Planned")throw new HttpError(409,"REWARD_ALREADY_REVIEWED","Only planned rewards can be approved.");
  const next={status:"Approved",approved_by:ctx.userId,approved_at:new Date().toISOString()};
  await updateRows("compensation_rewards",{id},next);
@@ -306,7 +306,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
   if(!employee)throw new Error("unknown employee");
   const oldId=String(row.id??"");
   if(oldId&&(await listRows<Row>("compensation_rewards",{legacy_id:oldId}))[0])continue;
-  const type=String(row.type??"");if(type!=="Bonus"&&type!=="Incentive")throw new Error("invalid reward type");
+  const type=String(row.type??"");if(!["Bonus","Incentive","Allowance","Adjustment"].includes(type))throw new Error("invalid reward type");
   const status=row.status==="Approved"?"Approved":"Planned";
   await insertRow("compensation_rewards",{employee_id:employee.id,reward_type:type,amount:legacyMoney(row.amount,"amount"),effective_date:legacyDate(row.effectiveDate),notes:String(row.notes??""),status,created_by:null,created_at:typeof row.createdAt==="string"&&Number.isFinite(Date.parse(row.createdAt))?row.createdAt:new Date().toISOString(),legacy_id:oldId||null});
   counts.rewards++;
