@@ -34,9 +34,10 @@ export async function hydrateFromServer(reloadOnChange=false){
  hydrating=true;
  let changed=false;
  try{
-  const response=await apiClient.get<{key:string;value:unknown;deleted?:boolean}[]>('/app-data');
-  const serverKeys=new Set(response.map(item=>item.key));
-  for(const item of response){
+  const response=await apiClient.get<{data:{key:string;value:unknown;deleted?:boolean}[]}>('/app-data');
+  const items=response.data;
+  const serverKeys=new Set(items.map(item=>item.key));
+  for(const item of items){
    if(item.deleted){
     if(window.localStorage.getItem(item.key)!==null)changed=true;
     rawRemove.call(window.localStorage,item.key);
