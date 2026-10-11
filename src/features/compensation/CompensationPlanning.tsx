@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useMemo,useState} from 'react';
+import {Link} from 'react-router-dom';
 import {
-  CalendarClock,
   CheckCircle2,
   ClipboardCheck,
   Eye,
@@ -8,11 +8,9 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Users,
   WalletCards,
   XCircle,
 } from 'lucide-react';
-import type {LucideIcon} from 'lucide-react';
 import {
   Button,
   Card,
@@ -158,10 +156,8 @@ export default function CompensationPlanning({section}:{section:Section}){
   const visibleAssignments=useMemo(()=>[...activeAssignments,...futureAssignments],[activeAssignments,futureAssignments]);
   const unassignedEmployees=employees.filter(employee=>!assignments.some(item=>item.employeeId===employee.id));
   const pendingProposals=proposals.filter(proposal=>proposal.status==='Pending HR Review');
-  const scheduledProposals=proposals.filter(proposal=>proposal.status==='Approved'&&proposal.effectiveDate>date);
   const activeGrades=grades.filter(grade=>grade.status==='Active');
   const gradePositionOptions=useMemo(()=>salaryGradePositionOptions(grades,employees.map(employee=>employee.position)),[grades,employees]);
-  const scheduledChangeCount=new Set([...futureAssignments.map(item=>`${item.employeeId}:${item.effectiveDate}`),...scheduledProposals.map(item=>`${item.employeeId}:${item.effectiveDate}`)]).size;
   const proposalStatus=(proposal:CompensationProposal)=>proposal.status==='Approved'?(proposal.effectiveDate<=date?'Effective':'Scheduled'):proposal.status;
   const filteredGrades=grades.filter(grade=>matches(search,grade.code,grade.position,grade.status));
   const filteredAssignments=visibleAssignments.filter(item=>{
@@ -315,12 +311,11 @@ export default function CompensationPlanning({section}:{section:Section}){
       actions={<button type="button" className={ghost} aria-label="Refresh compensation and employee records" disabled={compensationLoading||saving} onClick={()=>{void loadCompensation();void loadEmployees()}}><RefreshCw size={15} className={compensationLoading?'animate-spin':''}/>Refresh</button>}
     />
 
-    <section aria-label="Compensation overview" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-      <SummaryMetric Icon={Users} label="Effective assignments" value={activeAssignments.length} caption={`As of ${date}`} loading={compensationLoading}/>
-      <SummaryMetric Icon={ClipboardCheck} label="Awaiting review" value={pendingProposals.length} caption="Salary proposals pending HR" loading={compensationLoading}/>
-      <SummaryMetric Icon={CalendarClock} label="Scheduled changes" value={scheduledChangeCount} caption="Approved / future-dated" loading={compensationLoading}/>
-      <SummaryMetric Icon={WalletCards} label="Active salary grades" value={activeGrades.length} caption="Available for new assignments" loading={compensationLoading}/>
-    </section>
+    <div className="mt-5 overflow-x-auto rounded-xl border border-blue-100 bg-white px-1.5 py-1.5 shadow-[0_2px_8px_rgba(23,52,91,0.035)]"><nav className="flex min-w-max gap-1" role="tablist" aria-label="Compensation Planning submodules">{[
+      {id:'salary-grades' as const,label:'Salary Grades',to:'/compensation/salary-grades',panel:'salary-grades-panel'},
+      {id:'employee-compensation' as const,label:'Employee Compensation',to:'/compensation/employee-compensation',panel:'employee-compensation-panel'},
+      {id:'adjustments' as const,label:'Adjustments',to:'/compensation/adjustments',panel:'adjustments-panel'},
+    ].map(item=><Link key={item.id} role="tab" id={`compensation-tab-${item.id}`} aria-selected={section===item.id} aria-controls={item.panel} to={item.to} className={`relative whitespace-nowrap rounded-t-lg px-4 py-3.5 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${section===item.id?'bg-blue-50 text-blue-700 after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-full after:bg-blue-600':'text-slate-500 hover:bg-slate-50 hover:text-[#17345b]'}`}>{item.label}</Link>)}</nav></div>
 
     {employeeLoading&&section!=='salary-grades'&&<p className="-mt-2 text-[12px] text-slate-500" role="status">Loading employee records…</p>}
     {employeeError&&section!=='salary-grades'&&<ErrorAlert title="Employee records could not be loaded." onRetry={()=>void loadEmployees()}>{employeeError} {legacyEmployees.length>0?'Existing local employee names remain available.':''}</ErrorAlert>}
@@ -331,7 +326,7 @@ export default function CompensationPlanning({section}:{section:Section}){
     {legacyImportWarning&&<div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">{legacyImportWarning}</div>}
     {success&&<div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[13px] font-medium text-emerald-800"><CheckCircle2 size={16}/>{success}</div>}
 
-    {section==='salary-grades'&&<section aria-labelledby="salary-grades-heading">
+    {section==='salary-grades'&&<section id="salary-grades-panel" role="tabpanel" aria-labelledby="compensation-tab-salary-grades">
       <SectionHeading id="salary-grades-heading" title="Salary Grades" description="Reference rates only. A grade changes employee pay only when an assignment or approved proposal takes effect." action={<Button disabled={compensationLoading||saving} onClick={()=>{setError('');setModal('grade')}}><Plus size={15}/>Add Salary Grade</Button>}/>
       <SearchToolbar label="Search salary grades" value={search} onChange={setSearch} shown={filteredGrades.length} total={grades.length} placeholder="Search code, position or status"/>
       <Card className="mt-3 overflow-hidden !p-0">
@@ -341,7 +336,7 @@ export default function CompensationPlanning({section}:{section:Section}){
       </Card>
     </section>}
 
-    {section==='employee-compensation'&&<section aria-labelledby="employee-compensation-heading">
+    {section==='employee-compensation'&&<section id="employee-compensation-panel" role="tabpanel" aria-labelledby="compensation-tab-employee-compensation">
       <SectionHeading id="employee-compensation-heading" title="Employee Compensation" description="Assignments are effective-dated. Once an employee has a salary record, changes go through proposal review." action={<Button disabled={assignmentBlocked||compensationLoading||saving} onClick={openAssignment}><Plus size={15}/>Assign Compensation</Button>}/>
       {assignmentBlocked&&!employeeLoading&&<p className="mt-2 text-[12px] text-amber-700">No unassigned server employees are available. Restore or add an employee record to create an initial assignment.</p>}
       <Tabs label="Employee compensation sections" value={employeeTab} onChange={setEmployeeTab} tabs={[{id:'compensation',label:'Employee Compensation'},{id:'history',label:'Compensation History'}]}/>
@@ -360,7 +355,7 @@ export default function CompensationPlanning({section}:{section:Section}){
       </tbody></table></div></Card>
       </>}
     </section>}
-    {section==='adjustments'&&<section aria-labelledby="adjustments-heading">
+    {section==='adjustments'&&<section id="adjustments-panel" role="tabpanel" aria-labelledby="compensation-tab-adjustments">
       <SectionHeading id="adjustments-heading" title="Adjustments" description="Review salary changes and monetary rewards. Approval is recorded on the server; future salaries remain scheduled until their effective date."/>
       <Tabs label="Compensation adjustments" value={rewardTab} onChange={setRewardTab} tabs={[{id:'changes',label:'Salary Changes'},{id:'rewards',label:'Bonuses & Incentive'},{id:'allowance',label:'Allowance'}]}/>
       <SearchToolbar label={rewardTab==='changes'?'Search salary proposals':rewardTab==='rewards'?'Search bonuses and incentives':'Search allowances and adjustments'} value={search} onChange={setSearch} shown={rewardTab==='changes'?filteredProposals.length:visibleRewardRows.length} total={rewardTab==='changes'?proposals.length:visibleRewardTotal} placeholder={rewardTab==='changes'?'Search employee, type, status or notes':'Search employee, type, status or notes'}/>
@@ -389,10 +384,6 @@ export default function CompensationPlanning({section}:{section:Section}){
     {rejectingProposal&&<Modal title="Reject salary proposal" onClose={()=>{if(!saving){setRejectingProposal(null);setRejectionReason('')}}}><div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px]"><div className="font-semibold text-slate-800">{employeeLabelFor(rejectingProposal.employeeId)}</div><div className="mt-1 text-slate-600">{peso(rejectingProposal.previousSalary)} <span className="px-1 text-slate-400">→</span> {peso(rejectingProposal.newSalary)} · effective {formatDate(rejectingProposal.effectiveDate)}</div></div><Field label="Reason for rejection"><textarea className={`${input} min-h-24 resize-y`} maxLength={500} value={rejectionReason} onChange={event=>{setRejectionReason(event.target.value);setError('')}} placeholder="Explain why this proposal is being rejected." aria-label="Reason for rejection"/></Field><div className="mt-1 text-right text-[11px] text-slate-400">{rejectionReason.length}/500</div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>{setRejectingProposal(null);setRejectionReason('');setError('')}}>Cancel</button><button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving||!rejectionReason.trim()} onClick={confirmProposalRejection}>{saving?'Saving…':'Confirm rejection'}</button></div></Modal>}
     {approvingBonus&&<Modal title={`Approve ${approvingBonus.type.toLowerCase()}?`} onClose={()=>{if(!saving)setApprovingBonus(null)}}><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><div className="text-[13px] font-semibold text-slate-800">{employeeLabelFor(approvingBonus.employeeId)}</div><div className="mt-2 text-[20px] font-semibold text-slate-900">{peso(approvingBonus.amount)}</div><div className="mt-1 text-[11px] text-slate-500">{approvingBonus.type} · effective {formatDate(approvingBonus.effectiveDate)}</div></div><p className="mt-4 text-[12px] leading-relaxed text-slate-600">Approval will be recorded in compensation planning. Payroll handling remains in the payroll workflow.</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setApprovingBonus(null)}>Cancel</button><Button disabled={saving} onClick={confirmBonusApproval}>{saving?'Saving…':'Confirm approval'}</Button></div></Modal>}
   </div>;
-}
-
-function SummaryMetric({Icon,label,value,caption,loading}:{Icon:LucideIcon;label:string;value:number;caption:string;loading:boolean}){
-  return <Card className="!p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-2 text-[25px] font-semibold tracking-tight text-[#17345b]">{loading?'—':value.toLocaleString()}</div><div className="mt-1 text-[11px] text-slate-400">{caption}</div></div><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><Icon size={18}/></span></div></Card>;
 }
 
 function SectionHeading({id,title,description,action}:{id:string;title:string;description:string;action?:React.ReactNode}){
