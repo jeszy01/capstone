@@ -2,6 +2,8 @@ import {useEffect,useState} from 'react';
 import {NavLink,useLocation} from 'react-router-dom';
 import {ChevronDown,ChevronRight} from 'lucide-react';
 import {overview,modules,type NavItem} from './navConfig';
+import {SlidersHorizontal} from 'lucide-react';
+import {getCurrentUser} from '../../features/auth/authService';
 
 const base='flex w-full items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-medium text-[#c5d0e3] transition-colors hover:bg-white/7 hover:text-white';
 const active='bg-[#203f69] text-white shadow-[inset_3px_0_0_#60a5fa]';
@@ -43,6 +45,10 @@ export function Sidebar({onNavigate}:{onNavigate?:()=>void}){
       {overview.map(item=><Link key={item.to} item={item} collapsed={collapsed}/>)}
       {!collapsed&&<div className="mx-2 mb-1.5 mt-3.5 text-[10px] font-semibold tracking-[0.16em] text-[#8e9bbd]">MODULES</div>}
       {modules.map(item=>item.children?<Group key={item.label} item={item} collapsed={collapsed}/>:<Link key={item.to} item={item} collapsed={collapsed}/>)}
+      {getCurrentUser()?.role==='Admin'&&<>
+  <div className="mx-2 my-3 border-t border-white/20"/>
+  <Link item={{label:'Payroll Settings',to:'/payroll-settings',icon:SlidersHorizontal}} collapsed={collapsed}/>
+</>}
     </nav>
     <div className={`mt-4 flex items-center rounded-xl border border-white/10 bg-[#10243f] p-1.5 ${collapsed?'justify-center':'gap-2'}`}>
       <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white shadow-lg">A</div>
