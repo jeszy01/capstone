@@ -25,6 +25,6 @@ export function corsPreflight(request:Request){
 export function edge(handler:(ctx:RequestContext)=>Promise<Response>){
  return async(request:Request)=>{
   if(request.method==="OPTIONS")return corsPreflight(request);
-  try{return corsResponse(request,await handler(context(request)))}catch(error){return corsResponse(request,publicError(error))}
+  try{return corsResponse(request,await handler(await context(request)))}catch(error){return corsResponse(request,publicError(error))}
  };
 }
