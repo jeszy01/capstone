@@ -8,6 +8,8 @@ The login flow generates a six-digit OTP with Web Crypto, stores only a SHA-256 
 
 The `send-otp` Edge Function is authenticated and shares the same server-only sender module as `auth-login`; login invokes the sender directly after creating a challenge. `auth-verify-otp` validates the challenge, expiry, hash, and one-time consumption.
 
+OTP can be temporarily disabled across login, onboarding, verification, and the standalone sender by setting the server-side eProvider variable `PBMS_OTP_ENABLED=false`. OTP remains enabled by default when the variable is missing; set it to `true` or remove it to restore OTP. The switch does not delete challenges, tables, or provider secrets, so they remain available when OTP is restored. Deploy the compatible backend and frontend code before changing this variable.
+
 ## Verification order
 
 1. Run `migration_preflight` against the ordered SQL files.

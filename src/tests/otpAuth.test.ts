@@ -8,8 +8,8 @@ const project='unit-test-project';
 
 type Challenge={id:string;employee_id:string;otp_hash:string;expires_at:string;attempts:number;consumed_at?:string|null};
 
-async function setup(challenge:Challenge,user={id:'user-1',employee_id:'EMP-1',role:'hr_staff',status:'active'}){
- vi.stubGlobal('Deno',{env:{get:(name:string)=>({PBMS_JWT_SECRET:secret,EPROVIDER_PROJECT_ID:project,EPROVIDER_API_URL:'https://server.test',EPROVIDER_SERVICE_ROLE_KEY:'test-only-service-key'}[name])}});
+async function setup(challenge:Challenge,user={id:'user-1',employee_id:'EMP-1',role:'hr_staff',status:'active'},otpFlag='true'){
+	 vi.stubGlobal('Deno',{env:{get:(name:string)=>({PBMS_JWT_SECRET:secret,EPROVIDER_PROJECT_ID:project,EPROVIDER_API_URL:'https://server.test',EPROVIDER_SERVICE_ROLE_KEY:'test-only-service-key',PBMS_OTP_ENABLED:otpFlag}[name])}});
  const correctHash=challenge.otp_hash;
  const fetch=vi.fn(async(_url:string,options:RequestInit)=>{
   const request=JSON.parse(String(options.body));
@@ -35,6 +35,13 @@ const baseChallenge=async(attempts=0):Promise<Challenge>=>({id:'11111111-1111-41
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks()});
 
 describe('OTP verification safeguards',()=>{
+	 it('rejects verification and does not access the database when OTP is disabled',async()=>{
+	  const fetch=await setup(await baseChallenge(),undefined,'false');
+	  const response=await handler(request('123456'));
+	  expect(response.status).toBe(410);
+	  expect((await response.json()).error.code).toBe('OTP_TEMPORARILY_DISABLED');
+	  expect(fetch).not.toHaveBeenCalled();
+	 });
  it('increments failed attempts through a conditional SQL update',async()=>{
   const fetch=await setup(await baseChallenge(2));
   const response=await handler(request('000000'));

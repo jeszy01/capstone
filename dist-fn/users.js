@@ -1,4 +1,4 @@
-// Eprovider/lib/errors.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/errors.ts
 var HttpError = class extends Error {
   constructor(status, code, message) {
     super(message);
@@ -7,14 +7,15 @@ var HttpError = class extends Error {
   }
 };
 function publicError(error) {
+  console.error("ERR", error instanceof Error ? error.message : error);
   const e = error instanceof HttpError ? error : new HttpError(500, "INTERNAL_ERROR", "Internal server error");
-  return json({ error: { code: e.code, message: e.message } }, e.status);
+  return json({ error: { code: e.code, message: e.message } }, e.status === 502 ? 500 : e.status);
 }
 function json(body2, status = 200, headers = {}) {
   return new Response(JSON.stringify(body2), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-// Eprovider/lib/eprovider.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/eprovider.ts
 var url = () => {
   const v = Deno.env.get("EPROVIDER_API_URL");
   if (!v) throw new HttpError(500, "CONFIGURATION_ERROR", "EPROVIDER_API_URL is not configured");
@@ -25,7 +26,7 @@ var key = () => Deno.env.get("EPROVIDER_SERVICE_ROLE_KEY") ?? "";
 async function mcp(name, arguments_) {
   if (!project() || !key()) throw new HttpError(500, "CONFIGURATION_ERROR", "eProvider server secrets are not configured");
   const response = await fetch(`${url()}/projects/${project()}/mcp`, { method: "POST", headers: { Authorization: `Bearer ${key()}`, "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: crypto.randomUUID(), method: "tools/call", params: { name, arguments: arguments_ } }) });
-  if (!response.ok) throw new HttpError(502, "EPROVIDER_ERROR", "eProvider request failed");
+  if (!response.ok) throw new HttpError(500, "EPROVIDER_ERROR", "eProvider " + response.status + " " + (await response.clone().text()).slice(0, 150));
   const payload = await response.json();
   if (payload.error) throw new HttpError(502, "EPROVIDER_ERROR", payload.error.message ?? "eProvider tool failed");
   const text = payload.result?.content?.[0]?.text ?? "{}";
@@ -35,7 +36,7 @@ async function mcp(name, arguments_) {
   return parsed;
 }
 
-// Eprovider/lib/session-verification.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/session-verification.ts
 var encoder = new TextEncoder();
 var invalid = () => new HttpError(401, "INVALID_SESSION", "Your session is invalid or expired. Please sign in again.");
 function decode(segment) {
@@ -68,7 +69,7 @@ async function verifyPbmsSession(token, secret, projectId, now = Math.floor(Date
   return claims;
 }
 
-// Eprovider/lib/auth.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/auth.ts
 function requireAuth(ctx) {
   if (ctx.role !== "authenticated" && ctx.role !== "service_role") throw new HttpError(401, "UNAUTHENTICATED", "Authentication is required");
 }
@@ -77,7 +78,7 @@ function requirePbmsRole(ctx, roles) {
   if (!ctx.pbmsRole || !roles.includes(ctx.pbmsRole)) throw new HttpError(403, "FORBIDDEN", "Insufficient permissions");
 }
 
-// Eprovider/lib/function.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/function.ts
 var ALLOWED_ORIGINS = ["https://payrollbenefits.eprovider.site", "http://localhost:5173"];
 var ALLOW_HEADERS = "authorization, content-type, apikey, x-client-info";
 var ALLOW_METHODS = "POST, GET, OPTIONS";
@@ -95,7 +96,7 @@ function corsPreflight(request) {
   return new Response(null, { status: 204, headers: corsHeaders(request) });
 }
 
-// Eprovider/lib/verified-function.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/verified-function.ts
 async function verifiedContext(request) {
   const authorization = request.headers.get("authorization") ?? "";
   const match = /^Bearer ([^\s]+)$/i.exec(authorization);
@@ -119,7 +120,7 @@ function verifiedEdge(handler) {
   };
 }
 
-// Eprovider/lib/validation.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/validation.ts
 function body(request) {
   return request.json().catch(() => {
     throw new HttpError(400, "INVALID_JSON", "Request body must be valid JSON");
@@ -130,21 +131,21 @@ function required(value, name) {
   return value.trim();
 }
 
-// Eprovider/lib/response.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/response.ts
 var ok = (data, meta = {}) => json({ data, meta });
 var created = (data) => json({ data }, 201);
 
-// Eprovider/lib/database.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/database.ts
 var listRows = (table, filter = {}) => mcp("select_rows", { table, filter, limit: 1e3 });
 var insertRow = (table, values) => mcp("insert_row", { table, values });
 var deleteRows = (table, pk) => mcp("delete_rows", { table, pk });
 
-// Eprovider/lib/audit.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/audit.ts
 async function audit(action, actorId, entity, entityId, metadata = {}) {
   await insertRow("audit_logs", { action, actor_id: actorId ?? null, entity, entity_id: entityId ?? null, metadata, created_at: (/* @__PURE__ */ new Date()).toISOString() });
 }
 
-// Eprovider/lib/password.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/password.ts
 var ITERATIONS = 21e4;
 var encoder2 = new TextEncoder();
 function base64Url(bytes) {
@@ -162,9 +163,14 @@ async function hashPassword(password) {
   return `pbkdf2_sha256$${ITERATIONS}$${base64Url(salt)}$${base64Url(digest2)}`;
 }
 
-// Eprovider/lib/otp.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/otp.ts
 var apiUrl = () => (Deno.env.get("EPROVIDER_OTP_API_URL") ?? "https://api.eprovider.site/api").replace(/\/$/, "");
+var otpEnabled = () => !["false", "0", "off", "disabled"].includes((Deno.env.get("PBMS_OTP_ENABLED") ?? "true").trim().toLowerCase());
+function requireOtpEnabled() {
+  if (!otpEnabled()) throw new HttpError(410, "OTP_TEMPORARILY_DISABLED", "One-time codes are temporarily disabled.");
+}
 async function sendOtpEmail(email, otp, expiryMinutes = 10) {
+  requireOtpEnabled();
   const key2 = Deno.env.get("EPROVIDER_OTP_KEY");
   if (!key2) throw new HttpError(500, "CONFIGURATION_ERROR", "EPROVIDER_OTP_KEY is not configured");
   const response = await fetch(`${apiUrl()}/send-otp`, { method: "POST", headers: { "content-type": "application/json", "x-api-key": key2 }, body: JSON.stringify({ email, otp, expiryMinutes }) });
@@ -184,7 +190,7 @@ async function digest(value) {
 }
 var hashOtp = (otp) => digest(otp);
 
-// Eprovider/functions/users/index.ts
+// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/functions/users/index.ts
 var publicUser = (row) => ({ id: row.id, employee_id: row.employee_id, name: row.name ?? null, email: row.email, role: row.role, status: row.status });
 var users_default = verifiedEdge(async (ctx) => {
   requirePbmsRole(ctx, ["admin"]);
@@ -215,11 +221,15 @@ var users_default = verifiedEdge(async (ctx) => {
     const emailExisting = await mcp("select_rows", { table: "users", filter: { email }, limit: 1 });
     if (emailExisting[0]) throw new HttpError(409, "DUPLICATE_EMAIL", "A user with this email already exists.");
     const row = await insertRow("users", { employee_id, name, email, role, status: "active", password_hash: await hashPassword(password), created_at: (/* @__PURE__ */ new Date()).toISOString(), updated_at: (/* @__PURE__ */ new Date()).toISOString() });
-    const otp = generateOtp();
-    const challenge = await mcp("insert_row", { table: "otp_challenges", values: { employee_id, email, otp_hash: await hashOtp(otp), expires_at: new Date(Date.now() + 10 * 6e4).toISOString() } });
-    const emailResult = await sendOtpEmail(email, otp, 10);
+    let challenge;
+    let emailResult;
+    if (otpEnabled()) {
+      const otp = generateOtp();
+      challenge = await mcp("insert_row", { table: "otp_challenges", values: { employee_id, email, otp_hash: await hashOtp(otp), expires_at: new Date(Date.now() + 10 * 6e4).toISOString() } });
+      emailResult = await sendOtpEmail(email, otp, 10);
+    }
     await audit("user.created", ctx.userId, "users", row.id);
-    return created({ user: publicUser(row), otp_sent: true, challenge_id: challenge.id, emailId: emailResult.emailId ?? null });
+    return created({ user: publicUser(row), otp_sent: Boolean(emailResult), otp_disabled: !otpEnabled(), challenge_id: challenge?.id ?? null, emailId: emailResult?.emailId ?? null });
   }
   return new Response("Method Not Allowed", { status: 405 });
 });
