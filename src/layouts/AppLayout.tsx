@@ -19,6 +19,15 @@ export default function AppLayout(){
  useEffect(()=>{if(!adminOpen)return;const close=(event:MouseEvent)=>{if(adminMenu.current&&!adminMenu.current.contains(event.target as Node))setAdminOpen(false)};const key=(event:KeyboardEvent)=>{if(event.key==='Escape')setAdminOpen(false)};document.addEventListener('mousedown',close);document.addEventListener('keydown',key);return()=>{document.removeEventListener('mousedown',close);document.removeEventListener('keydown',key)}},[adminOpen]);
  useEffect(()=>{if(!notificationsOpen)return;const close=(event:MouseEvent)=>{if(notificationMenu.current&&!notificationMenu.current.contains(event.target as Node))setNotificationsOpen(false)};const key=(event:KeyboardEvent)=>{if(event.key==='Escape')setNotificationsOpen(false)};document.addEventListener('mousedown',close);document.addEventListener('keydown',key);return()=>{document.removeEventListener('mousedown',close);document.removeEventListener('keydown',key)}},[notificationsOpen]);
  useEffect(()=>{document.documentElement.classList.toggle('pbms-dark',theme==='dark');localStorage.setItem('pbms:theme',theme)},[theme]);
+ useEffect(()=>{
+ const LIMIT=5*60*1000;
+ let timer=0;
+ const reset=()=>{window.clearTimeout(timer);timer=window.setTimeout(()=>{logout();navigate('/')},LIMIT)};
+ const events=['mousemove','mousedown','keydown','scroll','touchstart'];
+ events.forEach(e=>window.addEventListener(e,reset,{passive:true}));
+ reset();
+ return()=>{window.clearTimeout(timer);events.forEach(e=>window.removeEventListener(e,reset))};
+},[navigate]);
  const title=titles[pathname]??'PBMS';
  const parent=modules.find(module=>module.children?.some(child=>pathname===child.to||pathname.startsWith(`${child.to}/`)));
  const go=(path:string)=>{setAdminOpen(false);navigate(path)};
