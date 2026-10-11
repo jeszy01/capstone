@@ -25,7 +25,7 @@ Storage.prototype.removeItem=function(this:Storage,key:string){
  if(this===window.localStorage&&!hydrating&&synced(key)){
   window.clearTimeout(timers.get(key));
   timers.set(key,window.setTimeout(()=>{
-   void apiClient.delete(`/app-data?key=${encodeURIComponent(key)}`).catch(()=>undefined);
+   void apiClient.post<{key:string;deleted:true},unknown>('/app-data',{key,deleted:true}).catch(()=>undefined);
   },400));
  }
 };

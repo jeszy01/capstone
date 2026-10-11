@@ -21,6 +21,13 @@ export default verifiedEdge(async(ctx:RequestContext)=>{
  if(ctx.request.method==="POST"){
   const input=await body<Record<string,unknown>>(ctx.request);
   const key=validateKey(input.key);
+  if(input.deleted===true){
+   const values={value:{},deleted:true,updated_at:new Date().toISOString(),updated_by:ctx.userId??null};
+   const existing=(await listRows<AppDataRow>("app_data",{key}))[0];
+   if(existing)await updateRows("app_data",{key},values);
+   else await insertRow("app_data",{key,...values});
+   return ok({key,value:null,deleted:true});
+  }
   if(!Object.prototype.hasOwnProperty.call(input,"value"))throw new HttpError(400,"VALIDATION_ERROR","value is required");
   const value=input.value;
   const existing=(await listRows<AppDataRow>("app_data",{key}))[0];
