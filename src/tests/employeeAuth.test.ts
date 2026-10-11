@@ -58,6 +58,11 @@ describe('Verified PBMS employee sessions',()=>{
    setup(user);const response=await handler(new Request('https://functions.test/employees',{headers:{authorization:`Bearer ${await token()}`}}));expect(response.status).toBe(401);
   }
  });
+ it('accepts equivalent HR Staff role formatting from existing user records',async()=>{
+  setup({id:'user-1',employee_id:'EMP-1',role:'HR Staff',status:'active'});
+  const response=await handler(new Request('https://functions.test/employees',{headers:{authorization:`Bearer ${await token()}`}}));
+  expect(response.status).toBe(200);
+ });
  it('cannot grant admin privileges with a spoofed role header',async()=>{
   setup({id:'user-1',employee_id:'EMP-1',role:'employee',status:'active'});
   const response=await handler(new Request('https://functions.test/employees',{headers:{authorization:`Bearer ${await token()}`,'x-pbms-role':'admin'}}));expect(response.status).toBe(403);
