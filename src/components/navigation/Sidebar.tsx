@@ -47,7 +47,7 @@ export function Sidebar({onNavigate}:{onNavigate?:()=>void}){
     <div className={`mt-4 flex items-center rounded-2xl border border-blue-300/25 bg-[#294b99]/80 p-2.5 shadow-inner ${collapsed?'justify-center':'gap-2.5'}`}>
       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 text-sm font-bold text-white shadow-lg">A</div>
       {!collapsed&&<div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-white">Admin</div><div className="truncate text-[11px] text-blue-100/80">Admin</div></div>}
-      <button type="button" aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'} onClick={()=>setCollapsed(value=>!value)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-blue-200/35 text-lg leading-none text-blue-50 transition hover:bg-white/10">{collapsed?'»':'«'}</button>
+      <button type="button" aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'} onClick={()=>setCollapsed(value=>!value)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/20 bg-[#10243f] text-lg leading-none text-blue-50 transition hover:bg-[#17345b]">{collapsed?'»':'«'}</button>
     </div>
   </aside>;
 }
