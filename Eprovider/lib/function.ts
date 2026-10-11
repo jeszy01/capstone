@@ -4,7 +4,7 @@ import type {RequestContext} from "./types";
 
 export const ALLOWED_ORIGINS=["https://payrollbenefits.eprovider.site","http://localhost:5173"] as const;
 const ALLOW_HEADERS="authorization, content-type, apikey, x-client-info";
-const ALLOW_METHODS="POST, GET, OPTIONS";
+const ALLOW_METHODS="GET, POST, PUT, PATCH, DELETE, OPTIONS";
 
 export function corsHeaders(request:Request){
  const requestOrigin=request.headers.get("origin");

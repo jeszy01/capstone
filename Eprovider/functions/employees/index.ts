@@ -7,7 +7,7 @@ import {audit} from "../../lib/audit";
 import {HttpError} from "../../lib/errors";
 import type {Employee} from "../../lib/types";
 
-const FIELDS=["employee_number","first_name","middle_name","last_name","email","phone","address","birth_date","hire_date","employment_status","employment_type","position","department","salary_grade_id","status","basic_salary","position_rate"];
+const FIELDS=["employee_number","first_name","middle_name","last_name","email","phone","address","birth_date","hire_date","employment_status","employment_type","position","department","status"];
 const pick=(input:Record<string,unknown>)=>Object.fromEntries(Object.entries(input).filter(([k])=>FIELDS.includes(k)));
 
 export default verifiedEdge(async ctx=>{

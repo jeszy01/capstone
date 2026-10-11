@@ -1,10 +1,11 @@
 import type {Employee} from '../../types/domain';
+import {DEFAULT_RATES} from '../payroll/payrollRules';
 
 export type SalaryGrade={id:string;code:string;position:string;fixedSalary:number;dailyRate:number;status:'Active'|'Inactive';createdAt:string};
 export type EmployeeCompensation={id:string;employeeId:string;salaryCode:string;position:string;fixedSalary:number;dailyRate:number;effectiveDate:string;employeeName?:string;department?:string};
-export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string};
+export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string;rejectionReason?:string;reviewedBy?:string};
 export type BonusIncentive={id:string;employeeId:string;type:'Bonus'|'Incentive';amount:number;effectiveDate:string;notes:string;status:'Planned'|'Approved';createdAt:string};
-export type CompensationHistory={id:string;employeeId:string;source:string;type:string;previousSalary:number;newSalary:number;adjustmentAmount?:number;reason?:string;effectiveDate:string;status?:string;recordedAt:string;appliedAt?:string;assignmentId?:string;proposalId?:string};
+export type CompensationHistory={id:string;employeeId:string;source:string;type:string;previousSalary:number;newSalary:number;adjustmentAmount?:number;reason?:string;effectiveDate:string;status?:string;recordedAt:string;appliedAt?:string;assignmentId?:string;proposalId?:string;actorName?:string};
 
 export const salaryDefaults:Record<string,number>={
   'Software Developer':45000,'HR Specialist':35000,'Payroll Officer':38000,
@@ -12,11 +13,22 @@ export const salaryDefaults:Record<string,number>={
 };
 export const adjustmentTypes:CompensationProposal['type'][]=['Salary Adjustment','Merit Increase','Promotion Increase'];
 export const today=()=>new Date().toISOString().slice(0,10);
-export const dailyFromSalary=(salary:number)=>Math.round(salary/26*100)/100;
-export const positionSalary=(position:string)=>salaryDefaults[position]??35000;
-export function nextSalaryCode(items:SalaryGrade[]){
-  const highest=items.reduce((max,item)=>{const match=/^SAL-(\d+)$/i.exec(item.code);return match?Math.max(max,Number(match[1])):max},0);
-  return `SAL-${String(highest+1).padStart(3,'0')}`;
+export const dailyFromSalary=(salary:number)=>Math.round(salary/DEFAULT_RATES.daysPerMonth*100)/100;
+export function salaryGradePositionOptions(grades:SalaryGrade[],employeePositions:Array<string|null|undefined>):string[]{
+  const options=new Map<string,string>();
+  for(const raw of [...Object.keys(salaryDefaults),...grades.map(grade=>grade.position),...employeePositions]){
+    const position=String(raw??'').trim();
+    if(position&&!options.has(position.toLowerCase()))options.set(position.toLowerCase(),position);
+  }
+  return [...options.values()].sort((a,b)=>a.localeCompare(b));
+}
+export function salaryDefaultForPosition(position:string):number|undefined{
+  const key=Object.keys(salaryDefaults).find(item=>item.trim().toLowerCase()===position.trim().toLowerCase());
+  return key?salaryDefaults[key]:undefined;
+}
+export function normalizeLegacySalaryGradeCode(code:string):string{
+  const trimmed=code.trim();
+  return /^SG-01$/i.test(trimmed)?'SG-001':trimmed;
 }
 
 // Reuse pre-API employee records only within Compensation. Never manufacture names or IDs.

@@ -1,11 +1,29 @@
 import {describe,expect,it} from 'vitest';
 import type {Employee} from '../types/domain';
-import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,mergeCompensationEmployees,saveCompensationAssignment} from '../features/compensation/compensationState';
-import type {CompensationProposal,EmployeeCompensation} from '../features/compensation/compensationState';
+import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,dailyFromSalary,mergeCompensationEmployees,normalizeLegacySalaryGradeCode,salaryDefaultForPosition,salaryGradePositionOptions,saveCompensationAssignment} from '../features/compensation/compensationState';
+import type {CompensationProposal,EmployeeCompensation,SalaryGrade} from '../features/compensation/compensationState';
 
 const employee:Employee={id:'c24c73a8-2d7d-47a9-a38e-13046e8c4fbf',employeeNo:'EMP-0002',name:'Existing Employee Name',email:null,position:'Finance Manager',department:'Finance',dateHired:'2026-01-01',basicSalary:65000,positionRate:65000,status:'Active'};
 const assignment:EmployeeCompensation={id:'assignment-1',employeeId:employee.id,salaryCode:'SAL-001',position:'Finance Manager',fixedSalary:65000,dailyRate:2500,effectiveDate:'2026-10-07'};
 const proposal:CompensationProposal={id:'proposal-1',employeeId:employee.id,type:'Merit Increase',previousSalary:65000,newSalary:70000,adjustmentAmount:5000,effectiveDate:'2026-10-10',notes:'Approved salary change',status:'Approved',createdAt:'2026-10-08T00:00:00Z'};
+const legacyGrade:SalaryGrade={id:'grade-1',code:'SG-001',position:'Project Manager',fixedSalary:70000,dailyRate:3181.82,status:'Active',createdAt:'2026-10-01T00:00:00Z'};
+
+describe('Salary-grade form data',()=>{
+  it('offers configured defaults and existing employee/grade positions without duplicates',()=>{
+    const positions=salaryGradePositionOptions([legacyGrade],['HR Officer','finance manager']);
+    expect(positions).toContain('Project Manager');
+    expect(positions).toContain('HR Officer');
+    expect(positions.filter(position=>position.toLowerCase()==='finance manager')).toHaveLength(1);
+  });
+  it('uses only exact configured salary defaults and leaves unknown positions without an invented amount',()=>{
+    expect(salaryDefaultForPosition(' software developer ')).toBe(45000);
+    expect(salaryDefaultForPosition('Project Manager')).toBeUndefined();
+  });
+  it('explicitly normalizes the selected legacy code while preserving other codes',()=>{
+    expect(normalizeLegacySalaryGradeCode('SG-01')).toBe('SG-001');
+    expect(normalizeLegacySalaryGradeCode('SAL-001')).toBe('SAL-001');
+  });
+});
 
 describe('Compensation employee references',()=>{
   it('resolves names from the existing local master when server employees are empty',()=>{
@@ -27,6 +45,9 @@ describe('Compensation employee references',()=>{
 });
 
 describe('Compensation effective dates and preserved rows',()=>{
+  it('uses the payroll monthly divisor for daily rate estimates',()=>{
+    expect(dailyFromSalary(55000)).toBe(2500);
+  });
   it('retains current salary when a future row is saved',()=>{
     const future={...assignment,id:'future',fixedSalary:70000,effectiveDate:'2026-11-01'};
     const rows=saveCompensationAssignment([assignment],future);

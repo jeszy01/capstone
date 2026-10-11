@@ -5,13 +5,9 @@ const base=EPROVIDER_FUNCTION_BASE;
 async function request<T>(path:string,options:ApiRequestOptions={}):Promise<T>{
  const token=options.token||read<string>('session:token','');
  if(!token)throw new Error('Your login session is missing. Please sign out and sign in again, then complete OTP verification.');
- const user=read<{role?:string}>('session:user',{});
- const role=user?.role?.toLowerCase()==='admin'?'admin':user?.role?.toLowerCase()==='hr staff'?'hr_staff':'';
  const headers=new Headers(options.headers);
  headers.set('Content-Type','application/json');
  headers.set('Authorization',`Bearer ${token}`);
- // Other legacy functions still use this header; employees ignores it and verifies the JWT/server user.
- if(role)headers.set('x-pbms-role',role);
  const {token:_token,...fetchOptions}=options;
  const response=await fetch(`${base}${path}`,{...fetchOptions,headers});
  if(!response.ok){
