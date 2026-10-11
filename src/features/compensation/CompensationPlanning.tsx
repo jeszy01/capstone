@@ -26,6 +26,7 @@ import {
   input,
 } from '../../components/common/ui';
 import {employeeService} from '../employees/employeeService';
+import {employeePositionOptions} from '../employees/positionOptions';
 import type {Employee,PayrollInput} from '../../types/domain';
 import {recordAudit} from '../audit/auditService';
 import {numberValue,peso,read,write} from '../../utils/storage';
@@ -38,7 +39,6 @@ import {
   findCompensationEmployee,
   mergeCompensationEmployees,
   salaryDefaultForPosition,
-  salaryGradePositionOptions,
   today,
 } from './compensationState';
 import type {
@@ -157,7 +157,7 @@ export default function CompensationPlanning({section}:{section:Section}){
   const unassignedEmployees=employees.filter(employee=>!assignments.some(item=>item.employeeId===employee.id));
   const pendingProposals=proposals.filter(proposal=>proposal.status==='Pending HR Review');
   const activeGrades=grades.filter(grade=>grade.status==='Active');
-  const gradePositionOptions=useMemo(()=>salaryGradePositionOptions(grades,employees.map(employee=>employee.position)),[grades,employees]);
+  const gradePositionOptions=useMemo(()=>employeePositionOptions(employees.map(employee=>employee.position)),[employees]);
   const proposalStatus=(proposal:CompensationProposal)=>proposal.status==='Approved'?(proposal.effectiveDate<=date?'Effective':'Scheduled'):proposal.status;
   const filteredGrades=grades.filter(grade=>matches(search,grade.code,grade.position,grade.status));
   const filteredAssignments=visibleAssignments.filter(item=>{

@@ -14,14 +14,6 @@ export const salaryDefaults:Record<string,number>={
 export const adjustmentTypes:CompensationProposal['type'][]=['Salary Adjustment','Merit Increase','Promotion Increase'];
 export const today=()=>new Date().toISOString().slice(0,10);
 export const dailyFromSalary=(salary:number)=>Math.round(salary/DEFAULT_RATES.daysPerMonth*100)/100;
-export function salaryGradePositionOptions(grades:SalaryGrade[],employeePositions:Array<string|null|undefined>):string[]{
-  const options=new Map<string,string>();
-  for(const raw of [...Object.keys(salaryDefaults),...grades.map(grade=>grade.position),...employeePositions]){
-    const position=String(raw??'').trim();
-    if(position&&!options.has(position.toLowerCase()))options.set(position.toLowerCase(),position);
-  }
-  return [...options.values()].sort((a,b)=>a.localeCompare(b));
-}
 export function salaryDefaultForPosition(position:string):number|undefined{
   const key=Object.keys(salaryDefaults).find(item=>item.trim().toLowerCase()===position.trim().toLowerCase());
   return key?salaryDefaults[key]:undefined;

@@ -1,18 +1,22 @@
 import {describe,expect,it} from 'vitest';
 import type {Employee} from '../types/domain';
-import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,dailyFromSalary,mergeCompensationEmployees,normalizeLegacySalaryGradeCode,salaryDefaultForPosition,salaryGradePositionOptions,saveCompensationAssignment} from '../features/compensation/compensationState';
-import type {CompensationProposal,EmployeeCompensation,SalaryGrade} from '../features/compensation/compensationState';
+import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,dailyFromSalary,mergeCompensationEmployees,normalizeLegacySalaryGradeCode,salaryDefaultForPosition,saveCompensationAssignment} from '../features/compensation/compensationState';
+import {employeePositionOptions} from '../features/employees/positionOptions';
+import type {CompensationProposal,EmployeeCompensation} from '../features/compensation/compensationState';
 
 const employee:Employee={id:'c24c73a8-2d7d-47a9-a38e-13046e8c4fbf',employeeNo:'EMP-0002',name:'Existing Employee Name',email:null,position:'Finance Manager',department:'Finance',dateHired:'2026-01-01',basicSalary:65000,positionRate:65000,status:'Active'};
 const assignment:EmployeeCompensation={id:'assignment-1',employeeId:employee.id,salaryCode:'SAL-001',position:'Finance Manager',fixedSalary:65000,dailyRate:2500,effectiveDate:'2026-10-07'};
 const proposal:CompensationProposal={id:'proposal-1',employeeId:employee.id,type:'Merit Increase',previousSalary:65000,newSalary:70000,adjustmentAmount:5000,effectiveDate:'2026-10-10',notes:'Approved salary change',status:'Approved',createdAt:'2026-10-08T00:00:00Z'};
-const legacyGrade:SalaryGrade={id:'grade-1',code:'SG-001',position:'Project Manager',fixedSalary:70000,dailyRate:3181.82,status:'Active',createdAt:'2026-10-01T00:00:00Z'};
-
 describe('Salary-grade form data',()=>{
-  it('offers configured defaults and existing employee/grade positions without duplicates',()=>{
-    const positions=salaryGradePositionOptions([legacyGrade],['HR Officer','finance manager']);
+  it('shares Employee Directory position options and includes existing employee titles without duplicates',()=>{
+    const positions=employeePositionOptions(['HR Officer','finance manager','Custom Existing Role']);
     expect(positions).toContain('Project Manager');
     expect(positions).toContain('HR Officer');
+    expect(positions).toContain('Software Developer');
+    expect(positions).toContain('HR Specialist');
+    expect(positions).toContain('Finance Manager');
+    expect(positions).toContain('Operations Manager');
+    expect(positions).toContain('Custom Existing Role');
     expect(positions.filter(position=>position.toLowerCase()==='finance manager')).toHaveLength(1);
   });
   it('uses only exact configured salary defaults and leaves unknown positions without an invented amount',()=>{
