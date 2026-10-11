@@ -45,10 +45,10 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/hmo-benefits/employee-benefits" element={<Benefits/>}/>
   <Route path="/hmo-benefits/dependents" element={<HmoBenefits section="dependents"/>}/>
   <Route path="/hmo-benefits/government-benefits" element={<GovernmentBenefits/>}/>
-  <Route path="/hmo-benefits/benefits-history" element={<HmoBenefits section="history"/>}/>
+  <Route path="/hmo-benefits/benefits-history" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="/hmo-benefits/plan" element={<Navigate to="/hmo-benefits/hmo/plan" replace/>}/>
   <Route path="/hmo-benefits/employee-enrollment" element={<Navigate to="/hmo-benefits/hmo/employee-enrollment" replace/>}/>
-  <Route path="/hmo-benefits/history" element={<Navigate to="/hmo-benefits/hmo/history" replace/>}/>
+  <Route path="/hmo-benefits/history" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="*" element={<Navigate to="/dashboard" replace/>}/>
  </Route></Routes>;
 }
