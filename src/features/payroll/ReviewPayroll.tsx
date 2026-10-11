@@ -14,6 +14,7 @@ import {DEFAULT_RATES} from './payrollRules';
 import {RUNS_KEY,decideRun,periodLabel} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {numberValue,peso,read,write} from '../../utils/storage';
+import {loadTaxBrackets} from '../settings/payrollSettings';
 
 type EditKey='withholdingTax'|'sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance';
 const editKeys:EditKey[]=['withholdingTax','sssLoan','pagibigLoan','companyLoan','cashAdvance'];
@@ -31,7 +32,7 @@ export default function ReviewPayroll(){
  const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
  const[error,setError]=useState('');
  const[confirming,setConfirming]=useState(false);
- const calc=(row:RunRow)=>calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates);
+ const calc=(row:RunRow)=>calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,loadTaxBrackets());
 
  useEffect(()=>{
   if(saved||!from||!to)return;
@@ -48,7 +49,7 @@ export default function ReviewPayroll(){
      const bonus=bonuses.filter(entry=>(entry.employeeId===employee.id||entry.employeeId===employee.employeeNo)&&entry.status==='Approved'&&entry.effectiveDate>=from&&entry.effectiveDate<=to).reduce((total,entry)=>total+entry.amount,0);
      const hmo=Number(await hmoService.getPayrollDeduction(employee.id).catch(()=>0))||0;
      const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate:(item.salary as number)/rates.daysPerMonth,daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:bonus};
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates)};
+     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates,loadTaxBrackets())};
      built.push(row);
     }
     if(active){setRows(built);setLoading(false)}
@@ -61,7 +62,7 @@ export default function ReviewPayroll(){
  const view=rows.map(row=>({row,c:saved?row.result:calc(row)}));
  const cols=view.map(({row,c})=>[c.basic,c.overtime,c.leavePay,c.allowances??0,numberValue(row.input.otherEarnings),c.gross,c.absences??0,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
  const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
- const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
+const editSums=editKeys.map(key=>key==='withholdingTax'?view.reduce((t,x)=>t+x.c.tax,0):rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
  const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
  const editCell=(index:number,row:RunRow,key:EditKey)=>saved?nf(numberValue(row.input[key])):<input className="paper-input" type="number" min="0" step="0.01" value={String(row.input[key])} onChange={event=>setField(index,key,event.target.value)}/>;
 
@@ -103,7 +104,7 @@ export default function ReviewPayroll(){
        <td><b>{row.input.name}</b><div>{row.input.empId} · {row.position}</div></td>
        <td className="n">{numberValue(row.input.daysWorked)}</td><td className="n">{numberValue(row.input.absentDays)}</td><td className="n">{numberValue(row.input.vlDays)}</td><td className="n">{row.rest}</td><td className="n">{numberValue(row.input.lateMin)}</td><td className="n">{numberValue(row.input.undertimeMin)}</td><td className="n">{numberValue(row.input.otHours)}</td>
        {cols[index].map((value,k)=><td key={k} className="n">{nf(value)}</td>)}
-       {editKeys.map(key=><td key={key} className="n">{editCell(index,row,key)}</td>)}
+      {editKeys.map(key=><td key={key} className="n">{key==='withholdingTax'?nf(c.tax):editCell(index,row,key)}</td>)}
        <td className="n"><b>{nf(c.deductions)}</b></td><td className="n"><b>{nf(c.net)}</b></td>
       </tr>)}
       <tr><td colSpan={8}><b>TOTAL</b></td>{colSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}{editSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(totals.deductions)}</b></td><td className="n"><b>{nf(totals.net)}</b></td></tr>
