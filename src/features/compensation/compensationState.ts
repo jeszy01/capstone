@@ -1,6 +1,6 @@
 import type {Employee} from '../../types/domain';
 
-export type SalaryGrade={id:string;code:string;position:string;minimumSalary:number;maximumSalary:number;fixedSalary:number;dailyRate:number;status:'Active'|'Inactive';createdAt:string};
+export type SalaryGrade={id:string;code:string;position:string;fixedSalary:number;dailyRate:number;status:'Active'|'Inactive';createdAt:string};
 export type EmployeeCompensation={id:string;employeeId:string;salaryCode:string;position:string;fixedSalary:number;dailyRate:number;effectiveDate:string;employeeName?:string;department?:string};
 export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string};
 export type BonusIncentive={id:string;employeeId:string;type:'Bonus'|'Incentive';amount:number;effectiveDate:string;notes:string;status:'Planned'|'Approved';createdAt:string};
