@@ -25,11 +25,10 @@ Storage.prototype.removeItem=function(this:Storage,key:string){
  if(this===window.localStorage&&!hydrating&&synced(key)){
   window.clearTimeout(timers.get(key));
   timers.set(key,window.setTimeout(()=>{
-   void apiClient.post<{key:string;deleted:true},unknown>('/app-data',{key,deleted:true}).catch(()=>undefined);
+   void apiClient.delete(`/app-data?key=${encodeURIComponent(key)}`).catch(()=>undefined);
   },400));
  }
 };
-
 export async function hydrateFromServer(reloadOnChange=false){
  hydrating=true;
  let changed=false;
