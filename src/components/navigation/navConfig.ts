@@ -31,6 +31,7 @@ export const titles={
  '/employees':'Employee Directory',
  '/account-settings':'User & Account Settings',
  '/logs-audits':'Logs & Audits',
+ '/payroll-settings':'Payroll Settings',
  '/hmo-benefits/dependents':'Dependents',
  '/hmo-benefits':'HMO & Benefits',
 } as Record<string,string>;

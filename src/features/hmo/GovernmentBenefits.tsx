@@ -3,7 +3,7 @@ import {Card,Empty,Field,Modal,PageHeader,Tabs,TextInput,ghost} from '../../comp
 import {employeeService} from '../employees/employeeService';
 import {activeCompensations} from '../compensation/compensationState';
 import type {EmployeeCompensation} from '../compensation/compensationState';
-import {EMPLOYER_RATES,calculateContributions} from '../contributions/contributionCalculator';
+import {calculateContributions} from '../contributions/contributionCalculator';
 import type {Agency,Contribution} from '../contributions/contributionCalculator';
 import {DEFAULT_RATES} from '../payroll/payrollRules';
 import {peso,read} from '../../utils/storage';
@@ -64,7 +64,7 @@ export default function GovernmentBenefits(){
 
  const agency=tab==='Contribution History'?null:tab;
  const sumFor=(key:'employee'|'employer'|'total')=>rows.reduce((t,r)=>t+(agency&&r.contribution?r.contribution[agency][key]:0),0);
- const rateText=(a:Agency)=>a==='SSS'?[rates.sssRate,EMPLOYER_RATES.sss]:a==='PhilHealth'?[rates.philRate,EMPLOYER_RATES.phil]:[rates.pagibigRate,EMPLOYER_RATES.pagibig];
+ const rateText=(a:Agency)=>a==='SSS'?[rates.sssRate,rates.sssEmployerRate]:a==='PhilHealth'?[rates.philRate,rates.philEmployerRate]:[rates.pagibigRate,rates.pagibigEmployerRate];
 
  return <div>
   <PageHeader title="Government Contributions" description="SSS, PhilHealth and Pag-IBIG contributions computed monthly from each employee's active salary in Employee Compensation. These are computed amounts, not remittance records."/>

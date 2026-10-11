@@ -11,6 +11,7 @@ import {hmoTabs} from './features/hmo/hmoNavigation';
 import Claims from './pages/Claims';
 import Reimbursement from './pages/Reimbursement';
 import {LogsAudits,UserAccountSettings} from './pages/Admin';
+import PayrollSettings from './pages/PayrollSettings';
 function AuthRoute(){
 const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[ready,setReady]=useState(false);
  useEffect(()=>{if(!user){setReady(false);return}let active=true;void hydrateFromServer().finally(()=>{if(active)setReady(true)});return()=>{active=false}},[user]);
@@ -21,6 +22,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/dashboard" element={<Dashboard/>}/>
   <Route path="/account-settings" element={<UserAccountSettings/>}/>
   <Route path="/logs-audits" element={<LogsAudits/>}/>
+  <Route path="/payroll-settings" element={<PayrollSettings/>}/>
   <Route path="/employees" element={<Employees/>}/>
   <Route path="/payroll" element={<Payroll/>}/>
    <Route path="/attendance" element={<Attendance/>}/>
