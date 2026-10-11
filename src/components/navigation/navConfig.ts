@@ -29,6 +29,7 @@ export const titles={
  ...Object.fromEntries([...overview,...modules.flatMap(m=>m.children??[m])].map(i=>[i.to,i.label])),
  ...Object.fromEntries(hmoTabs.map(tab=>[tab.to,tab.label])),
  '/employees':'Employee Directory',
+ '/payroll/review':'Review Payroll',
  '/account-settings':'User & Account Settings',
  '/logs-audits':'Logs & Audits',
  '/payroll-settings':'Payroll Settings',

@@ -9,6 +9,7 @@ import {Dashboard,Employees,Attendance,Timesheet,Payroll,Deductions,Compensation
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import Claims from './pages/Claims';
+import ReviewPayroll from './features/payroll/ReviewPayroll';
 import Reimbursement from './pages/Reimbursement';
 import {LogsAudits,UserAccountSettings} from './pages/Admin';
 import PayrollSettings from './pages/PayrollSettings';
@@ -25,6 +26,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/payroll-settings" element={<PayrollSettings/>}/>
   <Route path="/employees" element={<Employees/>}/>
   <Route path="/payroll" element={<Payroll/>}/>
+  <Route path="/payroll/review" element={<ReviewPayroll/>}/>
    <Route path="/attendance" element={<Attendance/>}/>
   <Route path="/timesheet" element={<Timesheet/>}/>
   <Route path="/deductions" element={<Deductions/>}/>
