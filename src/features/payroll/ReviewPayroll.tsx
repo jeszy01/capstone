@@ -16,11 +16,11 @@ import type {PayrollRun,RunRow} from './payrollRuns';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {loadTaxBrackets} from '../settings/payrollSettings';
 
-type EditKey='withholdingTax'|'sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance';
-const editKeys:EditKey[]=['withholdingTax','sssLoan','pagibigLoan','companyLoan','cashAdvance'];
+type EditKey='withholdingTax'|'sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions';
+const editKeys:EditKey[]=['withholdingTax','sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions'];
 const blank:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0};
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Leave Pay','Allowances','Bonuses / Incentives','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Total'];
+const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Leave Pay','Allowances','Bonuses / Incentives','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','Total'];
 
 export default function ReviewPayroll(){
  const[params]=useSearchParams();const nav=useNavigate();const user=getCurrentUser();
