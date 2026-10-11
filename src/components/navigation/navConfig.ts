@@ -14,7 +14,6 @@ export const modules:NavItem[]=[
   {label:'Salary Grades',to:'/compensation/salary-grades'},
   {label:'Employee Compensation',to:'/compensation/employee-compensation'},
   {label:'Adjustments',to:'/compensation/adjustments'},
-  {label:'Compensation History',to:'/compensation/history'},
  ]},
  {label:'Claims & Reimbursement',to:'/reimbursement',icon:FileText,children:[
   {label:'Reimbursement',to:'/reimbursement'},{label:'Claims',to:'/claims'},
