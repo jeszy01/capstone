@@ -1,7 +1,9 @@
 import type {PayrollInput,PayrollRates,PayrollResult} from '../../types/domain'; import {numberValue} from '../../utils/storage';
 const round=(v:number)=>Math.round(v*100)/100; const clamp=(v:number,lo:number,hi:number)=>Math.min(hi,Math.max(lo,v));
+
+
 export function calculatePayroll(r:PayrollInput,R:PayrollRates):PayrollResult{
-  const rate=numberValue(r.dailyRate), hourly=rate/R.hoursPerDay, monthly=rate*R.daysPerMonth;
+    const rate=numberValue(r.dailyRate), hourly=rate/R.hoursPerDay, monthly=rate*R.daysPerMonth;
 
   // Basic: show the full amount first, then deduct absences
   const earnedBasic=round(rate*numberValue(r.daysWorked));
