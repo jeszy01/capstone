@@ -6,7 +6,7 @@ import {listRows,insertRow,deleteRows} from "../../lib/database";
 import {mcp} from "../../lib/eprovider";
 import {audit} from "../../lib/audit";
 import {hashPassword} from "../../lib/password";
-import {generateOtp,hashOtp,sendOtpEmail} from "../../lib/otp";
+import {generateOtp,hashOtp,sendOtpEmail,otpEnabled} from "../../lib/otp";
 import {HttpError} from "../../lib/errors";
 
 type UserRow={id:string;employee_id:string;name?:string|null;email:string;role:string;status:string};
@@ -38,11 +38,15 @@ export default verifiedEdge(async ctx=>{
   const emailExisting=await mcp<UserRow[]>('select_rows',{table:'users',filter:{email},limit:1});
   if(emailExisting[0])throw new HttpError(409,'DUPLICATE_EMAIL','A user with this email already exists.');
   const row=await insertRow<UserRow>('users',{employee_id,name,email,role,status:'active',password_hash:await hashPassword(password),created_at:new Date().toISOString(),updated_at:new Date().toISOString()});
-  const otp=generateOtp();
-  const challenge=await mcp<{id:string}>('insert_row',{table:'otp_challenges',values:{employee_id,email,otp_hash:await hashOtp(otp),expires_at:new Date(Date.now()+10*60_000).toISOString()}});
-  const emailResult=await sendOtpEmail(email,otp,10);
+  let challenge:{id:string}|undefined;
+  let emailResult:{emailId?:string}|undefined;
+  if(otpEnabled()){
+   const otp=generateOtp();
+   challenge=await mcp<{id:string}>("insert_row",{table:"otp_challenges",values:{employee_id,email,otp_hash:await hashOtp(otp),expires_at:new Date(Date.now()+10*60_000).toISOString()}});
+   emailResult=await sendOtpEmail(email,otp,10);
+  }
   await audit('user.created',ctx.userId,'users',row.id);
-  return created({user:publicUser(row),otp_sent:true,challenge_id:challenge.id,emailId:emailResult.emailId??null});
+  return created({user:publicUser(row),otp_sent:Boolean(emailResult),otp_disabled:!otpEnabled(),challenge_id:challenge?.id??null,emailId:emailResult?.emailId??null});
  }
  return new Response('Method Not Allowed',{status:405});
 });

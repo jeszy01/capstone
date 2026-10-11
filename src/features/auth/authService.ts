@@ -17,6 +17,7 @@ async function edgePost<T>(slug:string,body:unknown):Promise<T>{
  return ('data' in payload?payload.data:payload) as T
 }
 export interface LoginChallenge {message:string;otp_required?:boolean;challenge_id?:string;employee_id?:string;emailId?:string|null}
-export async function login(email:string,password:string):Promise<LoginChallenge>{if(!email||!password)throw new Error('Email and password are required.');return edgePost<LoginChallenge>('auth-login',{email,password})}
+export type LoginResult=LoginChallenge|Session;
+export async function login(email:string,password:string):Promise<LoginResult>{if(!email||!password)throw new Error('Email and password are required.');const result=await edgePost<LoginResult>('auth-login',{email,password});if('token' in result){write('session:token',result.token);write('session:user',result.user)}return result}
 export async function verifyOtp(employeeId:string,code:string,challengeId:string):Promise<Session>{if(!employeeId)throw new Error('Your login challenge is missing. Please start again.');if(code.length!==6)throw new Error('Enter the 6-digit code.');const s=await edgePost<Session>('auth-verify-otp',{employee_id:employeeId,code,challenge_id:challengeId});write('session:token',s.token);write('session:user',s.user);return s}
 export const getCurrentUser=()=>read<Session['user']|null>('session:user',null); export const logout=()=>{remove('session:token');remove('session:user')};

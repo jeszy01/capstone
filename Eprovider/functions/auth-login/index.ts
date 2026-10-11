@@ -1,4 +1,4 @@
-import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider"; import {generateOtp,hashOtp,sendOtpEmail} from "../../lib/otp"; import {verifyPassword} from "../../lib/password"; import {HttpError} from "../../lib/errors";
+import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider"; import {generateOtp,hashOtp,sendOtpEmail,otpEnabled} from "../../lib/otp"; import {verifyPassword} from "../../lib/password"; import {createSessionToken} from "../../lib/jwt"; import {HttpError} from "../../lib/errors";
 
 export default edge(async ctx=>{
  const input=await body<{email:string;password:string}>(ctx.request);
@@ -11,6 +11,12 @@ export default edge(async ctx=>{
  const passwordHash=typeof user?.password_hash==="string"?user.password_hash:"";
  const status=String(user?.status??"").toLowerCase();
  if(!user||!employee_id||status!=="active"||!passwordHash||!(await verifyPassword(password,passwordHash)))throw new HttpError(401,"INVALID_CREDENTIALS","Invalid email or password.");
+ if(!otpEnabled()){
+  const role=String(user.role??"employee");
+  const sessionUser={id:String(user.id),employeeId:employee_id,name:String(user.name??user.email??employee_id),role:role.toLowerCase()==="admin"?"Admin":"HR Staff"};
+  const token=await createSessionToken(String(user.id),employee_id,role);
+  return ok({token,user:sessionUser});
+ }
  const otp=generateOtp();
  const challenge=await mcp<{id:string}>("insert_row",{table:"otp_challenges",values:{employee_id,email,otp_hash:await hashOtp(otp),expires_at:new Date(Date.now()+10*60_000).toISOString()}});
  const emailResult=await sendOtpEmail(email,otp,10);

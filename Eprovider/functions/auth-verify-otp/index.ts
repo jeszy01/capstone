@@ -1,10 +1,11 @@
-import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider"; import {hashOtp,MAX_OTP_ATTEMPTS} from "../../lib/otp"; import {createSessionToken} from "../../lib/jwt"; import {HttpError} from "../../lib/errors";
+import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider"; import {hashOtp,MAX_OTP_ATTEMPTS,requireOtpEnabled} from "../../lib/otp"; import {createSessionToken} from "../../lib/jwt"; import {HttpError} from "../../lib/errors";
 
 type OtpChallenge={id:string;employee_id:string;otp_hash:string;expires_at:string;attempts?:number;consumed_at?:string|null};
 const sqlString=(value:string)=>`'${value.replace(/'/g,"''")}'`;
 const uuid=(value:string)=>{if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))throw new HttpError(401,"INVALID_OTP","Invalid or expired verification code");return `${sqlString(value)}::uuid`};
 
 export default edge(async ctx=>{
+ requireOtpEnabled();
  const input=await body<{employee_id:string;code:string;challenge_id:string}>(ctx.request);
  const employee_id=required(input.employee_id,"employee_id");
  const code=required(input.code,"code");
