@@ -1,11 +1,11 @@
 import {useEffect,useMemo,useState} from 'react';
 import {useNavigate,useSearchParams} from 'react-router-dom';
 import {Button,Empty,LoadingState,Modal,ghost} from '../../components/common/ui';
-import type {PayrollInput,PayrollRates} from '../../types/domain';
+import type {PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
 import {attendanceService} from '../attendance/attendanceService';
-import {computeDeductions} from '../deductions/deductionService';
+import {computeDeductions,payrollInputFromDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
 import type {EmployeeCompensation} from '../compensation/compensationState';
@@ -15,9 +15,8 @@ import {RUNS_KEY,decideRun,periodLabel} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {numberValue,peso,read,write} from '../../utils/storage';
 
-type EditKey='withholdingTax'|'sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance';
-const editKeys:EditKey[]=['withholdingTax','sssLoan','pagibigLoan','companyLoan','cashAdvance'];
-const blank:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0};
+type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance';
+const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance'];
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Leave Pay','Bonuses / Incentives','Gross Pay','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Total'];
 
@@ -44,11 +43,10 @@ export default function ReviewPayroll(){
     const built:RunRow[]=[];
     for(const item of base){
      const employee=item.employee;
-     const mine=records.filter(record=>(record.empId===employee.employeeNo||record.empId===employee.id)&&record.date>=from&&record.date<=to);
      const bonus=bonuses.filter(entry=>(entry.employeeId===employee.id||entry.employeeId===employee.employeeNo)&&entry.status==='Approved'&&entry.effectiveDate>=from&&entry.effectiveDate<=to).reduce((total,entry)=>total+entry.amount,0);
      const hmo=Number(await hmoService.getPayrollDeduction(employee.id).catch(()=>0))||0;
-     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate:(item.salary as number)/rates.daysPerMonth,daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:bonus};
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates)};
+    const input=payrollInputFromDeductions(item,rates,bonus);
+    const row:RunRow={position:employee.position,rest:item.restDays,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates)};
      built.push(row);
     }
     if(active){setRows(built);setLoading(false)}
@@ -59,7 +57,7 @@ export default function ReviewPayroll(){
 
  const setField=(index:number,key:EditKey,value:string)=>setRows(list=>list.map((row,i)=>i===index?{...row,input:{...row.input,[key]:value}}:row));
  const view=rows.map(row=>({row,c:saved?row.result:calc(row)}));
- const cols=view.map(({row,c})=>[c.basic,c.overtime,c.leavePay,numberValue(row.input.otherEarnings),c.gross,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
+ const cols=view.map(({row,c})=>[c.basic,c.overtime,c.leavePay,numberValue(row.input.otherEarnings),c.gross,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo,c.tax]);
  const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
  const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
  const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
@@ -68,7 +66,8 @@ export default function ReviewPayroll(){
  const submit=()=>{
   const runs=read<PayrollRun[]>(RUNS_KEY,[]);
   if(runs.some(run=>run.from===from&&run.to===to&&run.status!=='Rejected')){setConfirming(false);setError('A payroll for this cutoff has already been submitted.');return}
-  const run:PayrollRun={id:crypto.randomUUID(),from,to,status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
+  const finalizedRows=rows.map(row=>{const result=calc(row);const input={...row.input,withholdingTax:result.tax,taxCalculationVersion:2 as const,taxableCompensation:result.taxableCompensation,taxBracket:result.taxBracket,taxRate:result.taxRate,baseTax:result.baseTax};return {...row,input,result}});
+  const run:PayrollRun={id:crypto.randomUUID(),from,to,status:'Pending Approval',rows:finalizedRows,totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
   write(RUNS_KEY,[...runs,run]);
   recordAudit({action:'Submitted payroll for approval',module:'Payroll',description:`Submitted payroll for ${periodLabel(from,to)} (${rows.length} employees).`});
   nav('/payroll?tab=runs');
