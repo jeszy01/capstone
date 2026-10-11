@@ -22,7 +22,7 @@ export default function AppLayout(){
  useEffect(()=>{
  const LIMIT=5*60*1000;
  let timer=0;
- const reset=()=>{window.clearTimeout(timer);timer=window.setTimeout(()=>{logout();navigate('/')},LIMIT)};
+ const reset=()=>{window.clearTimeout(timer);timer=window.setTimeout(()=>{logout();window.location.assign('/')},LIMIT)};
  const events=['mousemove','mousedown','keydown','scroll','touchstart'];
  events.forEach(e=>window.addEventListener(e,reset,{passive:true}));
  reset();
@@ -32,7 +32,7 @@ export default function AppLayout(){
  const parent=modules.find(module=>module.children?.some(child=>pathname===child.to||pathname.startsWith(`${child.to}/`)));
  const go=(path:string)=>{setAdminOpen(false);navigate(path)};
  const openNotification=(notification:NotificationItem)=>{setReadNotifications(current=>current.includes(notification.id)?current:[...current,notification.id]);setNotificationsOpen(false);navigate(notification.to)};
- const signOut=()=>{setAdminOpen(false);logout();navigate('/')};
+ const signOut=()=>{setAdminOpen(false);logout();window.location.assign('/')};
  const unreadCount=notifications.filter(notification=>!readNotifications.includes(notification.id)).length;
  return <div className="pbms-shell flex min-h-screen bg-[#f4f6fa] text-slate-800">
   {mobileOpen&&<button aria-label="Close navigation" className="pbms-mobile-scrim fixed inset-0 z-30 bg-slate-950/40 lg:hidden" onClick={()=>setMobileOpen(false)}/>} 
