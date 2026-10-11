@@ -19,7 +19,7 @@ type EditKey='withholdingTax'|'sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance
 const editKeys:EditKey[]=['withholdingTax','sssLoan','pagibigLoan','companyLoan','cashAdvance'];
 const blank:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0};
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Leave Pay','Bonuses / Incentives','Gross Pay','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Total'];
+const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Leave Pay','Allowances','Bonuses / Incentives','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Total'];
 
 export default function ReviewPayroll(){
  const[params]=useSearchParams();const nav=useNavigate();const user=getCurrentUser();
@@ -59,7 +59,7 @@ export default function ReviewPayroll(){
 
  const setField=(index:number,key:EditKey,value:string)=>setRows(list=>list.map((row,i)=>i===index?{...row,input:{...row.input,[key]:value}}:row));
  const view=rows.map(row=>({row,c:saved?row.result:calc(row)}));
- const cols=view.map(({row,c})=>[c.basic,c.overtime,c.leavePay,numberValue(row.input.otherEarnings),c.gross,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
+ const cols=view.map(({row,c})=>[c.basic,c.overtime,c.leavePay,c.allowances??0,numberValue(row.input.otherEarnings),c.gross,c.absences??0,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
  const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
  const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
  const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
@@ -95,7 +95,7 @@ export default function ReviewPayroll(){
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>No employees with an assigned salary for this cutoff.</Empty>:<>
     <div className="overflow-x-auto"><table>
      <thead>
-      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={5}>Earnings</th><th colSpan={11}>Deductions</th><th rowSpan={2}>Net Pay</th></tr>
+      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={6}>Earnings</th><th colSpan={12}>Deductions</th><th rowSpan={2}>Net Pay</th></tr>
       <tr>{heads.map(label=><th key={label}>{label}</th>)}</tr>
      </thead>
      <tbody>
