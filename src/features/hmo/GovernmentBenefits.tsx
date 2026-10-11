@@ -29,6 +29,7 @@ export default function GovernmentBenefits(){
  const [view,setView]=useState<{row:Row;agency:Agency}|null>(null);
  const rates:PayrollRates={...DEFAULT_RATES,...read<Partial<PayrollRates>>('payroll:rates',{})};
  const assignments=read<EmployeeCompensation[]>('compensation:employee-assignments',[]);
+const grades=read<{position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]);
 
  useEffect(()=>{
   let active=true;
@@ -42,7 +43,8 @@ export default function GovernmentBenefits(){
   const current=activeCompensations(assignments,end);
   return employees.filter(emp=>emp.status==='Active'&&(!emp.dateHired||emp.dateHired<=end)).map(emp=>{
    const assignment=current.find(item=>item.employeeId===emp.id||item.employeeId===emp.employeeNo);
-   const salary=assignment?assignment.fixedSalary:null;
+   const grade=grades.find(g=>g.status!=='Inactive'&&(g.position??'').trim().toLowerCase()===(emp.position??'').trim().toLowerCase());
+const salary=assignment?assignment.fixedSalary:(grade?grade.fixedSalary:null);
    return {emp,salary,contribution:salary?calculateContributions(salary,rates):null};
   });
  };
