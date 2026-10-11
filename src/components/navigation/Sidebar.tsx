@@ -44,10 +44,10 @@ export function Sidebar({onNavigate}:{onNavigate?:()=>void}){
       {!collapsed&&<div className="mx-2 mb-1.5 mt-3.5 text-[10px] font-semibold tracking-[0.16em] text-[#8e9bbd]">MODULES</div>}
       {modules.map(item=>item.children?<Group key={item.label} item={item} collapsed={collapsed}/>:<Link key={item.to} item={item} collapsed={collapsed}/>)}
     </nav>
-    <div className={`mt-4 flex items-center rounded-2xl border border-blue-300/25 bg-[#294b99]/80 p-2.5 shadow-inner ${collapsed?'justify-center':'gap-2.5'}`}>
-      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 text-sm font-bold text-white shadow-lg">A</div>
-      {!collapsed&&<div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-white">Admin</div><div className="truncate text-[11px] text-blue-100/80">Admin</div></div>}
-      <button type="button" aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'} onClick={()=>setCollapsed(value=>!value)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/20 bg-[#10243f] text-lg leading-none text-blue-50 transition hover:bg-[#17345b]">{collapsed?'»':'«'}</button>
+    <div className={`mt-4 flex items-center rounded-xl border border-white/10 bg-[#10243f] p-1.5 ${collapsed?'justify-center':'gap-2'}`}>
+      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white shadow-lg">A</div>
+      {!collapsed&&<div className="min-w-0 flex-1"><div className="truncate text-[12px] font-semibold text-white">Admin</div><div className="truncate text-[10px] text-blue-100/80">Admin</div></div>}
+      <button type="button" aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'} onClick={()=>setCollapsed(value=>!value)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/15 bg-[#10243f] text-lg leading-none text-blue-50 transition hover:bg-[#17345b]">{collapsed?'»':'«'}</button>
     </div>
   </aside>;
 }
