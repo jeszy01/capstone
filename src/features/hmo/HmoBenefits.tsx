@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Plus, ShieldCheck, Pencil } from "lucide-react";
+import { jsPDF } from "jspdf";
+import { autoTable } from "jspdf-autotable";
 import { useLocation, useNavigate } from "react-router-dom";
 import { hmoTabs, hmoTabForPath } from "./hmoNavigation";
 import {
@@ -1701,6 +1703,44 @@ function HmoRecordsSection({
     };
   });
   const printReport = () => window.print();
+  const exportPdf = () => {
+    const document = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    document.setFontSize(16);
+    document.setTextColor(20, 43, 80);
+    document.text("HMO Summary Report", 14, 16);
+    document.setFontSize(9);
+    document.setTextColor(100, 119, 150);
+    document.text(`Generated ${new Date().toLocaleString("en-PH")}`, 14, 22);
+    autoTable(document, {
+      startY: 28,
+      head: [[
+        "Employee",
+        "Department",
+        "HMO Plan",
+        "Coverage Period",
+        "Dependents",
+        "Company Share",
+        "Employee Share",
+        "Enrollment Status",
+      ]],
+      body: rows.map((row) => [
+        row.employee?.name ?? row.enrollment.employeeId,
+        row.employee?.department ?? "Unavailable",
+        row.plan?.name ?? "Unavailable",
+        `${formatHmoDate(row.enrollment.effectiveDate)} – ${formatHmoDate(row.enrollment.expirationDate)}`,
+        row.dependents.length ? row.dependents.map((item) => item.name).join(", ") : "None",
+        money(row.companyShare),
+        money(row.employeeShare),
+        enrollmentDisplayStatus(row.enrollment),
+      ]),
+      theme: "grid",
+      styles: { fontSize: 7, cellPadding: 2, textColor: [20, 43, 80] },
+      headStyles: { fillColor: [23, 52, 91], textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [245, 248, 252] },
+      margin: { left: 14, right: 14 },
+    });
+    document.save(`hmo-summary-${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
   return (
     <Card className="hmo-records-report mt-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1710,7 +1750,8 @@ function HmoRecordsSection({
             Accurate employee enrollment summary, coverage, dependents, and contribution shares.
           </p>
         </div>
-        <div className="flex gap-2 print:hidden">
+        <div className="flex flex-wrap gap-2 print:hidden">
+          <Button onClick={exportPdf}>Export PDF</Button>
           <Button onClick={printReport}>Print HMO Summary Report</Button>
         </div>
       </div>
