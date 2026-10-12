@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Card,Empty,Field,Modal,PageHeader,Tabs,TextInput,ghost} from '../../components/common/ui';
+import {Building2,HeartPulse,PiggyBank} from 'lucide-react';
 import {employeeService} from '../employees/employeeService';
 import {activeCompensations} from '../compensation/compensationState';
 import type {EmployeeCompensation} from '../compensation/compensationState';
@@ -18,7 +19,7 @@ const monthEnd=(month:string)=>{const [y,m]=month.split('-').map(Number);return 
 const monthLabel=(month:string)=>{const [y,m]=month.split('-').map(Number);return new Date(y,m-1,1).toLocaleString('en-PH',{month:'long',year:'numeric'})};
 const shiftMonth=(month:string,by:number)=>{const [y,m]=month.split('-').map(Number);const d=new Date(y,m-1+by,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
 
-type Row={emp:Employee;salary:number|null;contribution:Record<Agency,Contribution>|null};
+type Row={emp:Employee;salary:number|null;salarySource:'Employee Compensation'|'Employee Record'|null;contribution:Record<Agency,Contribution>|null};
 
 export default function GovernmentBenefits(){
  const [tab,setTab]=useState<GovernmentTab>('SSS');
@@ -43,8 +44,10 @@ export default function GovernmentBenefits(){
   const current=activeCompensations(assignments,end);
   return employees.filter(emp=>emp.status==='Active'&&emp.employmentStatus?.toLowerCase()!=='resigned'&&Boolean(emp.dateHired)&&emp.dateHired<=end).map(emp=>{
    const assignment=current.find(item=>item.employeeId===emp.id||item.employeeId===emp.employeeNo);
-   const salary=assignment?Number(assignment.fixedSalary):null;
-   return {emp,salary,contribution:salary?calculateContributions(salary,rates):null};
+   const masterSalary=Number(emp.basicSalary??0);
+   const salary=assignment?Number(assignment.fixedSalary):masterSalary>0?masterSalary:null;
+   const salarySource=assignment?'Employee Compensation':salary?'Employee Record':null;
+   return {emp,salary,salarySource,contribution:salary?calculateContributions(salary,rates):null};
   });
  };
  // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,10 +72,8 @@ export default function GovernmentBenefits(){
 
  const calculatedRows=rows.filter(row=>row.contribution);
  const missingSalary=rows.length-calculatedRows.length;
- const employeeTotal=agency?sumFor('employee'):history[0]?.employee??0;
- const employerTotal=agency?sumFor('employer'):history[0]?.employer??0;
- const overallTotal=agency?sumFor('total'):history[0]?.total??0;
  const agencyDescription=agency==='SSS'?'Salary credit uses the configured SSS floor, step, and ceiling.':agency==='PhilHealth'?'Salary uses the configured PhilHealth floor and ceiling.':agency==='Pag-IBIG'?'Salary is capped at the configured Pag-IBIG maximum fund salary.':'Monthly totals across all three agencies.';
+ const contributorIcons={SSS:Building2,PhilHealth:HeartPulse,'Pag-IBIG':PiggyBank};
  return <div>
   <PageHeader title="Government Contributions" description="Review computed monthly SSS, PhilHealth, and Pag-IBIG shares from approved Employee Compensation assignments. These are estimates for review, not remittance records."/>
   <Tabs label="Government Contributions sections" tabs={tabs.map(t=>({id:t,label:t}))} value={tab} onChange={setTab}/>
@@ -81,12 +82,11 @@ export default function GovernmentBenefits(){
    <span className="pb-2 text-[12px] text-slate-500">Active employees hired on or before {monthLabel(month)} · Salary effective at month end</span>
   </div>
   {error&&<p role="alert" className="mt-4 text-[13px] text-red-700">{error}</p>}
-  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-   <Card className="border-blue-100 bg-gradient-to-br from-blue-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Employees in scope</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{rows.length}</div><div className="mt-1 text-[11px] text-slate-500">Valid hire date and active status</div></Card>
-   <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Employee share</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{peso(employeeTotal)}</div><div className="mt-1 text-[11px] text-slate-500">{agency??'All agencies'}</div></Card>
-   <Card className="border-amber-100 bg-gradient-to-br from-amber-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Employer share</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{peso(employerTotal)}</div><div className="mt-1 text-[11px] text-slate-500">Configured employer rates</div></Card>
-   <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Total contribution</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{peso(overallTotal)}</div><div className="mt-1 text-[11px] text-slate-500">{missingSalary ? `${missingSalary} salary unavailable` : 'All salaries assigned'}</div></Card>
-  </div>
+  <Card className="mt-4 border-blue-100 bg-gradient-to-br from-[#f4f8ff] via-white to-[#f8fbff]">
+   <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">Contribution Overview</h2><p className="mt-1 text-[12px] text-slate-500">Contributor shares for {monthLabel(month)} based on {calculatedRows.length} calculated employees.</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm">{rows.length} employees in scope</span></div>
+   <div className="mt-4 grid gap-3 md:grid-cols-3">{AGENCIES.map(item=>{const Icon=contributorIcons[item];const employeeShare=rows.reduce((total,row)=>total+(row.contribution?.[item].employee??0),0);const employerShare=rows.reduce((total,row)=>total+(row.contribution?.[item].employer??0),0);return <div key={item} className="rounded-2xl border border-white bg-white/90 p-4 shadow-sm"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[#e7efff] text-[#2563eb]"><Icon size={20}/></div><div><div className="font-semibold text-[#17345b]">{item}</div><div className="text-[11px] text-slate-500">Employee + employer</div></div></div><div className="mt-4 grid grid-cols-2 gap-3"><div><div className="text-[10px] uppercase tracking-wide text-slate-400">Employee</div><div className="mt-1 font-semibold text-[#17345b]">{peso(employeeShare)}</div></div><div><div className="text-[10px] uppercase tracking-wide text-slate-400">Employer</div><div className="mt-1 font-semibold text-[#17345b]">{peso(employerShare)}</div></div></div></div>})}</div>
+   {missingSalary>0&&<div className="mt-3 text-[11px] text-amber-700">{missingSalary} employee{missingSalary===1?'':'s'} still need a salary in the employee record or compensation assignment.</div>}
+  </Card>
   {agency?<Card className="mt-4 overflow-x-auto"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div className="text-[15px] font-semibold text-[#17345b]">{agency} contributions</div><span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">{calculatedRows.length} computed · {missingSalary} missing salary</span></div>
    <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-[12px] text-blue-900">{agencyDescription} <span className="font-semibold">Employee rate:</span> {rateText(agency)[0]}% · <span className="font-semibold">Employer rate:</span> {rateText(agency)[1]}%.</div>
    <table className="w-full min-w-[1100px] text-left text-[13px]"><thead><tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">{headers.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
@@ -96,7 +96,7 @@ export default function GovernmentBenefits(){
     :rows.map(row=>{const c=row.contribution?.[agency];return <tr key={row.emp.id} className="border-b border-[#eef1f6]">
       <td className="px-4 py-3 font-semibold text-slate-800">{row.emp.name}</td><td className="px-4 py-3">{row.emp.employeeNo}</td><td className="px-4 py-3">{row.emp.position||'—'}</td><td className="px-4 py-3">{monthLabel(month)}</td>
       <td className="px-4 py-3 tabular-nums">{c?peso(c.employee):'—'}</td><td className="px-4 py-3 tabular-nums">{c?peso(c.employer):'—'}</td><td className="px-4 py-3 font-semibold tabular-nums">{c?peso(c.total):'—'}</td>
-      <td className="px-4 py-3"><span className={`rounded-md px-2.5 py-1 text-[11px] ${c?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-700'}`}>{c?'Computed':'Missing salary assignment'}</span></td>
+      <td className="px-4 py-3"><span className={`rounded-md px-2.5 py-1 text-[11px] ${c?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-700'}`}>{c?`Computed · ${row.salarySource}`:'Salary unavailable'}</span></td>
       <td className="px-4 py-3"><button className={ghost} disabled={!c} onClick={()=>setView({row,agency})}>View</button></td></tr>})}
     {rows.length>0&&<tr className="border-t-2 font-semibold"><td className="px-4 py-3" colSpan={4}>Total</td><td className="px-4 py-3 tabular-nums">{peso(sumFor('employee'))}</td><td className="px-4 py-3 tabular-nums">{peso(sumFor('employer'))}</td><td className="px-4 py-3 tabular-nums">{peso(sumFor('total'))}</td><td colSpan={2}/></tr>}
    </tbody></table></Card>
