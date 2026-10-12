@@ -650,17 +650,18 @@ function EnrollmentSection({
 }) {
   return (
     <Card className="mt-4 overflow-x-auto">
-      <table className="w-full min-w-[1100px] text-left text-[13px]">
+      <table className="w-full min-w-[1250px] text-left text-[13px]">
         <thead>
           <tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
             {[
               "Employee",
               "Plan",
-              "Eligibility",
-              "Effective",
-              "Expiration",
-              "Approval",
-              "Maxicare",
+              "Eligibility Date",
+              "Coverage Starts",
+              "Coverage Ends",
+              "Enrollment Status",
+              "HR Approval",
+              "Maxicare Status",
               "Action",
             ].map((h) => (
               <th key={h} className="px-4 py-3">
@@ -672,13 +673,27 @@ function EnrollmentSection({
         <tbody>
           {enrollments.length === 0 ? (
             <tr>
-              <td colSpan={8}>
+              <td colSpan={9}>
                 <Empty>No HMO enrollments yet.</Empty>
               </td>
             </tr>
           ) : (
-            enrollments.map((e) => (
-              <tr key={e.id} className="border-b border-[#eef1f6]">
+            enrollments.map((e) => {
+              const employee = employeeMap.get(e.employeeId);
+              const eligibilityDate = employee ? hmoEligibilityDate(employee.dateHired) : e.eligibilityDate;
+              const eligibleForEffectiveDate = employee
+                ? isHmoEmployeeEligible(employee, e.effectiveDate)
+                : e.employeeEligibleForEffectiveDate;
+              const eligibilityDetail = eligibilityDate
+                ? eligibleForEffectiveDate === true
+                  ? "Eligible on coverage start"
+                  : e.effectiveDate < eligibilityDate
+                    ? "Coverage starts before eligibility"
+                    : eligibleForEffectiveDate === false
+                      ? "Employee not active for coverage start"
+                      : "Eligibility not verified"
+                : "Hire date unavailable; eligibility cannot be calculated";
+              return <tr key={e.id} className="border-b border-[#eef1f6]">
                 <td className="px-4 py-3 font-semibold">
                   {employeeMap.get(e.employeeId)?.name ?? e.employeeId}
                 </td>
@@ -686,11 +701,15 @@ function EnrollmentSection({
                   {plans.find((p) => p.id === e.planId)?.name ?? "Unavailable"}
                 </td>
                 <td className="px-4 py-3">
-                  {e.eligibilityDate ?? "Unavailable"}
+                  <div className="font-medium text-[#142b50]">{formatHmoDate(eligibilityDate)}</div>
+                  <div className={`mt-1 max-w-[210px] text-[11px] leading-snug ${eligibilityDate ? "text-[#6b7794]" : "text-amber-700"}`}>{eligibilityDetail}</div>
                 </td>
-                <td className="px-4 py-3">{e.effectiveDate}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{formatHmoDate(e.effectiveDate)}</td>
                 <td className="px-4 py-3">
-                  {e.expirationDate ?? "Unavailable"}
+                  {formatHmoDate(e.expirationDate)}
+                </td>
+                <td className="px-4 py-3">
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{e.status}</span>
                 </td>
                 <td className="px-4 py-3">
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">
@@ -714,7 +733,7 @@ function EnrollmentSection({
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    {e.approvalStatus === "Pending" && (
+                    {e.approvalStatus === "Pending" && ["Pending", "Submitted"].includes(e.status) && (
                       <button
                         className="text-blue-600 font-semibold"
                         onClick={async () => {
@@ -758,8 +777,8 @@ function EnrollmentSection({
                     )}
                   </div>
                 </td>
-              </tr>
-            ))
+              </tr>;
+            })
           )}
         </tbody>
       </table>
