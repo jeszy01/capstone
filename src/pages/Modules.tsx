@@ -7,6 +7,8 @@ import {employeePositionOptions} from '../features/employees/positionOptions';
 import {useEffect,useMemo,useState} from 'react'; import {Download,Plus,Trash2,FileText,CalendarDays,ChevronLeft,ChevronRight,Search,Users,UserCheck,Clock,XCircle,Printer} from 'lucide-react'; import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../components/common/ui'; import type {Employee,AttendanceRecord,AttendanceSchedule,PayrollInput,PayrollRates} from '../types/domain'; import {employeeService} from '../features/employees/employeeService'; import {hmoService} from '../features/hmo/hmoService'; import {attendanceService} from '../features/attendance/attendanceService'; import {calculateAttendance} from '../features/attendance/attendanceCalculator'; import {calculatePayroll} from '../features/payroll/payrollCalculator'; import {DEFAULT_RATES} from '../features/payroll/payrollRules'; import {numberValue,peso,read,write} from '../utils/storage'; import {normalizeClaims} from '../features/claims/claimsTypes';
 import {computeDeductions} from '../features/deductions/deductionService';
 import type {EmployeeCompensation} from '../features/compensation/compensationState';
+import {activeCompensations} from '../features/compensation/compensationState';
+import {compensationService} from '../features/compensation/compensationService';
 import {loadTaxBrackets} from '../features/settings/payrollSettings';
 
 const today=()=>new Date().toISOString().slice(0,10);
@@ -41,7 +43,9 @@ export function Employees(){
  useEffect(()=>{const cleanup=load();return cleanup},[]);
  const depts=useMemo(()=>[...new Set([...constructionDepartments,...items.map(e=>e.department).filter(Boolean)])],[items]);
  const rows=items.filter(e=>(!query||[e.name,e.employeeNo,e.email??''].some(v=>v.toLowerCase().includes(query.toLowerCase())))&&(!dept||e.department===dept)&&(!employmentStatus||e.employmentStatus===employmentStatus));
-const grade=view?read<{code:string;position?:string;fixedSalary:number;dailyRate:number;status?:string}[]>('compensation:salary-grades',[]).find(g=>g.status!=='Inactive'&&(g.position??'').trim().toLowerCase()===view.position.trim().toLowerCase()):undefined;
+const[assigned,setAssigned]=useState<EmployeeCompensation|undefined>();
+useEffect(()=>{if(!view){setAssigned(undefined);return}let on=true;compensationService.load().then(d=>{if(on)setAssigned(activeCompensations(d.assignments,today()).find(a=>a.employeeId===view.id))}).catch(()=>{if(on)setAssigned(undefined)});return()=>{on=false}},[view]);
+const grade=assigned?{code:assigned.salaryCode||'Custom',fixedSalary:assigned.fixedSalary,dailyRate:assigned.dailyRate}:undefined;
  const save=async(e:Employee)=>{await employeeService.create(e);setItems(await employeeService.getAll());recordAudit({action:'Created employee',module:'Employee Directory',description:`Created employee ${e.name} (${e.employeeNo}).`});setShow(false)};
  const exportCsv=()=>{const head=['Name','Email','Position','Department','Employee #','Date Hired','Employment Status'];const lines=rows.map(e=>[e.name,e.email,e.position,e.department,e.employeeNo,e.dateHired,e.employmentStatus??'Not recorded'].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(','));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([[head.join(','),...lines].join('\n')],{type:'text/csv'}));a.download='employees.csv';a.click()};
  return <><PageHeader title="Employee Directory" description="Manage employee records, employment details and organizational assignments." actions={<><button onClick={exportCsv} className={ghost}><Download size={15}/>Export CSV</button><Button onClick={()=>setShow(true)}><Plus size={15}/>Add Employee</Button></>}/>
