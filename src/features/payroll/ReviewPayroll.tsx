@@ -11,8 +11,8 @@ import {recordAudit} from '../audit/auditService';
 import type {EmployeeCompensation} from '../compensation/compensationState';
 import {calculatePayroll} from './payrollCalculator';
 import {DEFAULT_RATES} from './payrollRules';
-import {RUNS_KEY,decideRun,periodLabel} from './payrollRuns';
-import type {PayrollRun,RunRow} from './payrollRuns';
+import {RUNS_KEY,decideRun,payRun,periodLabel} from './payrollRuns';
+import type {PayrollRun,RunRow,PaymentMethod} from './payrollRuns';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {loadTaxBrackets} from '../settings/payrollSettings';
 import {compensationService} from '../compensation/compensationService';
@@ -33,6 +33,8 @@ export default function ReviewPayroll(){
  const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
  const[error,setError]=useState('');
  const[confirming,setConfirming]=useState(false);
+ const[paying,setPaying]=useState(false),[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
+const pay=()=>{if(!saved)return;payRun(saved.id,method,user?.name??'Admin');nav('/payroll?tab=runs')};
  const calc=(row:RunRow)=>calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,loadTaxBrackets());
 
  useEffect(()=>{
@@ -95,11 +97,12 @@ const editSums=editKeys.map(key=>key==='withholdingTax'?view.reduce((t,x)=>t+x.c
     <button className={ghost} onClick={()=>window.print()}>Print</button>
     {!saved&&<Button disabled={!rows.length} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
     {saved&&saved.status==='Pending Approval'&&user?.role==='Admin'&&<><button className={ghost} onClick={()=>decide('Rejected')}>Reject</button><Button onClick={()=>decide('Approved')}>Approve</Button></>}
+   {saved&&saved.status==='Approved'&&!saved.paidAt&&user?.role==='Admin'&&<Button onClick={()=>setPaying(true)}>Proceed to Payment</Button>}
    </div>
   </div>
   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
   {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-   <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">Cutoff: {from&&to?periodLabel(from,to):'-'}</div>{saved&&<div className="text-[11px]">Status: {saved.status}</div>}</div>
+   <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">Cutoff: {from&&to?periodLabel(from,to):'-'}</div>{saved&&<div className="text-[11px]">Status: {saved.status}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>No employees with an assigned salary for this cutoff.</Empty>:<>
     <div className="overflow-x-auto"><table>
      <thead>
@@ -128,5 +131,10 @@ const editSums=editKeys.map(key=>key==='withholdingTax'?view.reduce((t,x)=>t+x.c
    <p className="mt-4 text-[13px]">Submit this payroll for Admin approval?</p>
    <div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={()=>setConfirming(false)}>Cancel</button><Button onClick={submit}>Confirm</Button></div>
   </Modal>}
+  {paying&&<Modal title="Payment Method" onClose={()=>setPaying(false)}>
+ <p className="text-[13px] text-slate-500">Payslips are generated after this step.</p>
+ <div className="mt-3 grid gap-2">{(['Bank Transfer','Direct Deposit'] as PaymentMethod[]).map(m=><label key={m} className="flex items-center gap-2 text-[13px]"><input type="radio" name="pm" checked={method===m} onChange={()=>setMethod(m)}/>{m}</label>)}</div>
+ <div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={()=>setPaying(false)}>Cancel</button><Button onClick={pay}>Confirm &amp; Generate Payslips</Button></div>
+</Modal>}
  </div>;
 }

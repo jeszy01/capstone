@@ -12,7 +12,7 @@ const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate
 
 export function PayslipPanel({employees}:{employees:Employee[]}){
  // Only approved payrolls have generated payslips
- const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='Approved').sort((a,b)=>(b.decidedAt??'').localeCompare(a.decidedAt??'')),[]);
+const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='Approved'&&r.paidAt).sort((a,b)=>(b.paidAt??'').localeCompare(a.paidAt??'')),[]);
  const[runId,setRunId]=useState(''),[dept,setDept]=useState(''),[slip,setSlip]=useState<RunRow|null>(null);
  const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
  const deptsOf=(run:PayrollRun)=>[...new Set(run.rows.map(deptOf))].sort();
@@ -44,7 +44,7 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
  // Level 1: approved runs
  return <section className="mt-6 space-y-4" aria-label="Payslip records">
   <Card><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="m-0 text-[16px] font-semibold">Payslips</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Generated from approved payroll runs. Release is done in ESS by department.</p></div><span className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500">{runs.length} runs</span></div>
-   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Date & Time Generated','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={4}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{const d=deptsOf(r),done=d.filter(x=>r.released?.[x]).length;return <tr key={r.id} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{periodLabel(r.from,r.to)}</td><td className="px-4 py-3 text-slate-500">{when(r.decidedAt)}</td><td className="px-4 py-3"><Badge on={done===d.length&&d.length>0} text={done===d.length&&d.length>0?'Released':done?`Partial (${done}/${d.length})`:'Not released'}/></td><td className="px-4 py-3"><button className={ghost} onClick={()=>setRunId(r.id)}>View</button></td></tr>})}</tbody></table></div>
+   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Date & Time Generated','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={4}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{const d=deptsOf(r),done=d.filter(x=>r.released?.[x]).length;return <tr key={r.id} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{periodLabel(r.from,r.to)}</td><td className="px-4 py-3 text-slate-500">{when(r.paidAt)}</td><td className="px-4 py-3"><Badge on={done===d.length&&d.length>0} text={done===d.length&&d.length>0?'Released':done?`Partial (${done}/${d.length})`:'Not released'}/></td><td className="px-4 py-3"><button className={ghost} onClick={()=>setRunId(r.id)}>View</button></td></tr>})}</tbody></table></div>
   </Card>
  </section>;
 }
