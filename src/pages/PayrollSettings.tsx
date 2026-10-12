@@ -4,70 +4,55 @@ import {Button,Card,Empty,Field,PageHeader,TextInput,ghost} from '../components/
 import {getCurrentUser} from '../features/auth/authService';
 import {recordAudit} from '../features/audit/auditService';
 import {DEFAULT_RATES} from '../features/payroll/payrollRules';
-import {DEFAULT_TAX_BRACKETS,FIELD_LABELS,SETTING_GROUPS,loadRates,loadTaxBrackets,saveRates,saveTaxBrackets,validateRates,validateTaxBrackets} from '../features/settings/payrollSettings';
-import type {TaxBracket} from '../features/settings/payrollSettings';
+import {FIELD_LABELS,SETTING_GROUPS,loadRates,saveRates,validateRates} from '../features/settings/payrollSettings';
+import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,saveWithholdingRules,validateRuleSet} from '../features/payroll/withholdingTax';
+import type {PayrollPeriod,TaxBracket,WithholdingTaxRuleSet} from '../features/payroll/withholdingTax';
 import type {PayrollRates} from '../types/domain';
 
 type RateDraft=Record<keyof PayrollRates,string>;
-type TaxDraft={over:string;base:string;rate:string};
 const keys=Object.keys(DEFAULT_RATES) as Array<keyof PayrollRates>;
 const toDraft=(rates:PayrollRates)=>Object.fromEntries(keys.map(k=>[k,String(rates[k])])) as RateDraft;
-const toTaxDraft=(rows:TaxBracket[]):TaxDraft[]=>rows.map(r=>({over:String(r.over),base:String(r.base),rate:String(r.rate)}));
 const num=(text:string)=>text.trim()===''?NaN:Number(text);
+const periods:PayrollPeriod[]=['daily','weekly','semi-monthly','monthly'];
+const tableNames:Record<PayrollPeriod|'annual',string>={daily:'Daily',weekly:'Weekly','semi-monthly':'Semi-monthly',monthly:'Monthly',annual:'Annualized year-end'};
+const freshRule=():WithholdingTaxRuleSet=>({...((loadWithholdingRules().slice(-1)[0])??DEFAULT_WITHHOLDING_RULES),id:crypto.randomUUID(),effectiveFrom:new Date().toISOString().slice(0,10),effectiveTo:undefined});
 
 export default function PayrollSettings(){
  const isAdmin=getCurrentUser()?.role==='Admin';
- const [draft,setDraft]=useState<RateDraft>(()=>toDraft(loadRates()));
- const [tax,setTax]=useState<TaxDraft[]>(()=>toTaxDraft(loadTaxBrackets()));
- const [errors,setErrors]=useState<string[]>([]);
- const [saved,setSaved]=useState('');
-
- if(!isAdmin)return <div><PageHeader title="Payroll Settings" description="Rates and limits used by payroll, deductions and government contributions."/><Card className="mt-6"><Empty>Only administrators can view or change payroll settings.</Empty></Card></div>;
-
- const notify=(message:string)=>{setSaved(message);window.setTimeout(()=>setSaved(''),2500)};
- const save=()=>{
-const rates=Object.fromEntries(keys.map(k=>[k,num(draft[k])])) as unknown as PayrollRates;
-  const brackets=tax.map(r=>({over:num(r.over),base:num(r.base),rate:num(r.rate)}));
-  const problems=[...validateRates(rates),...validateTaxBrackets(brackets)];
-  setErrors(problems);
-  if(problems.length)return;
-  const before=loadRates(),beforeTax=JSON.stringify(loadTaxBrackets());
-  const changed=keys.filter(k=>before[k]!==rates[k]).map(k=>FIELD_LABELS[k]);
-  if(JSON.stringify(brackets)!==beforeTax)changed.push('Withholding tax table');
-  saveRates(rates);saveTaxBrackets(brackets);
-  if(changed.length)recordAudit({action:'Updated payroll settings',module:'Payroll Settings',description:`Changed: ${changed.join('; ')}.`});
-  notify(changed.length?'Payroll settings saved.':'No changes to save.');
- };
- const reset=()=>{
-  if(!window.confirm('Reset all payroll settings to the built-in defaults?'))return;
-  saveRates(DEFAULT_RATES);saveTaxBrackets(DEFAULT_TAX_BRACKETS);
-  setDraft(toDraft(DEFAULT_RATES));setTax(toTaxDraft(DEFAULT_TAX_BRACKETS));setErrors([]);
-  recordAudit({action:'Reset payroll settings',module:'Payroll Settings',description:'Reset payroll settings and the withholding tax table to defaults.'});
-  notify('Defaults restored.');
- };
- const setTaxField=(i:number,field:keyof TaxDraft,value:string)=>setTax(rows=>rows.map((r,x)=>x===i?{...r,[field]:value}:r));
-
+ const[draft,setDraft]=useState<RateDraft>(()=>toDraft(loadRates()));
+ const[errors,setErrors]=useState<string[]>([]);const[saved,setSaved]=useState('');
+ if(!isAdmin)return <div><PageHeader title="Payroll Settings" description="Rates, contribution limits and effective-dated BIR withholding rules."/><Card className="mt-6"><Empty>Only administrators can view or change payroll settings.</Empty></Card></div>;
+ const notify=(message:string)=>{setSaved(message);window.setTimeout(()=>setSaved(''),3000)};
+ const save=()=>{const rates=Object.fromEntries(keys.map(k=>[k,num(draft[k])])) as unknown as PayrollRates;const problems=validateRates(rates);setErrors(problems);if(problems.length)return;const before=loadRates();const changed=keys.filter(k=>before[k]!==rates[k]).map(k=>FIELD_LABELS[k]);saveRates(rates);if(changed.length)recordAudit({action:'Updated payroll settings',module:'Payroll Settings',description:`Changed: ${changed.join('; ')}.`});notify(changed.length?'Payroll rates saved.':'No changes to save.');};
+ const reset=()=>{if(!window.confirm('Reset payroll rates and withholding tax rules to the official built-in baseline?'))return;saveRates(DEFAULT_RATES);saveWithholdingRules([DEFAULT_WITHHOLDING_RULES]);setDraft(toDraft(DEFAULT_RATES));setErrors([]);recordAudit({action:'Reset payroll settings',module:'Payroll Settings',description:'Reset payroll rates and effective-dated withholding tax rules to built-in baseline.'});notify('Defaults restored.');};
  return <div>
-  <PageHeader title="Payroll Settings" description="Rates and limits used by Government Contributions, Deductions and Payroll. Changes apply to every calculation using the current settings, including past months."
-   actions={<><button type="button" className={ghost} onClick={reset}>Reset to defaults</button><Button onClick={save}>Save changes</Button></>}/>
+  <PageHeader title="Payroll Settings" description="Configure payroll rates and effective-dated withholding-tax rules. Past payroll calculations retain the rule snapshot used when saved." actions={<><button type="button" className={ghost} onClick={reset}>Reset to defaults</button><Button onClick={save}>Save rates</Button></>}/>
   {saved&&<p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[12px] text-emerald-800">{saved}</p>}
   {errors.length>0&&<div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><div className="font-semibold">Fix these before saving:</div><ul className="m-0 mt-1 list-disc pl-5">{errors.map(e=><li key={e}>{e}</li>)}</ul></div>}
-  <div className="mt-6 space-y-5">
-   {SETTING_GROUPS.map(group=><Card key={group.id}>
-    <h2 className="m-0 text-[16px] font-semibold">{group.title}</h2>
-    <p className="mb-4 mt-1 text-[12px] text-slate-500">{group.description}</p>
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{group.fields.map(f=><Field key={f.key} label={`${f.label} (${f.unit})`}>
-     <TextInput type="number" step="any" min="0" value={draft[f.key]} onChange={e=>setDraft({...draft,[f.key]:e.target.value})}/></Field>)}</div>
-   </Card>)}
-   <Card>
-    <h2 className="m-0 text-[16px] font-semibold">Withholding tax table (monthly)</h2>
-    <p className="mb-4 mt-1 text-[12px] text-slate-500">Tax = base tax + rate × (monthly taxable income − bracket start). Reserved for automatic withholding tax computation.</p>
-    <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-[13px]"><thead><tr className="text-[11px] uppercase tracking-wide text-[#6b7794]"><th className="px-2 py-2">Income over (₱)</th><th className="px-2 py-2">Base tax (₱)</th><th className="px-2 py-2">Rate on excess (%)</th><th className="px-2 py-2"/></tr></thead>
-    <tbody>{tax.map((row,i)=><tr key={i}>
-     {(['over','base','rate'] as const).map(field=><td key={field} className="px-2 py-1.5"><TextInput type="number" step="any" min="0" aria-label={`Bracket ${i+1} ${field}`} value={row[field]} onChange={e=>setTaxField(i,field,e.target.value)}/></td>)}
-     <td className="px-2 py-1.5"><button type="button" className={ghost} aria-label={`Remove bracket ${i+1}`} disabled={tax.length<=1} onClick={()=>setTax(rows=>rows.filter((_,x)=>x!==i))}><Trash2 size={15}/></button></td></tr>)}</tbody></table></div>
-    <button type="button" className={`${ghost} mt-3`} onClick={()=>setTax(rows=>[...rows,{over:'',base:'',rate:''}])}><Plus size={15}/>Add bracket</button>
-   </Card>
-  </div>
+  <div className="mt-6 space-y-5">{SETTING_GROUPS.map(group=><Card key={group.id}><h2 className="m-0 text-[16px] font-semibold">{group.title}</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{group.description}</p><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{group.fields.map(f=><Field key={f.key} label={`${f.label} (${f.unit})`}><TextInput type="number" step="any" min="0" value={draft[f.key]} onChange={e=>setDraft({...draft,[f.key]:e.target.value})}/></Field>)}</div></Card>)}<WithholdingRulesEditor notify={notify}/></div>
  </div>;
+}
+function WithholdingRulesEditor({notify}:{notify:(message:string)=>void}){
+ const[rules,setRules]=useState<WithholdingTaxRuleSet[]>(()=>loadWithholdingRules());
+ const[selected,setSelected]=useState(rules.slice(-1)[0]?.id??'');
+ const[rule,setRule]=useState<WithholdingTaxRuleSet>(()=>rules.slice(-1)[0]??DEFAULT_WITHHOLDING_RULES);
+ const[issues,setIssues]=useState<string[]>([]);
+ const update=(next:WithholdingTaxRuleSet)=>setRule(next);
+ const setBracket=(table:'annual'|PayrollPeriod,index:number,field:keyof TaxBracket,value:string)=>{
+  const list=table==='annual'?rule.annualTable:rule.tables[table];const copy=list.map((row,i)=>i===index?{...row,[field]:value===''?Number.NaN:Number(value)}:row);
+  if(table==='annual')update({...rule,annualTable:copy});else update({...rule,tables:{...rule.tables,[table]:copy}});
+ };
+ const add=(table:'annual'|PayrollPeriod)=>{const list=table==='annual'?rule.annualTable:rule.tables[table];const copy=[...list,{over:0,base:0,rate:0}];if(table==='annual')update({...rule,annualTable:copy});else update({...rule,tables:{...rule.tables,[table]:copy}})};
+ const remove=(table:'annual'|PayrollPeriod,index:number)=>{const list=table==='annual'?rule.annualTable:rule.tables[table];const copy=list.filter((_,i)=>i!==index);if(table==='annual')update({...rule,annualTable:copy});else update({...rule,tables:{...rule.tables,[table]:copy}})};
+ const newVersion=()=>{const next=freshRule();setRule(next);setSelected('');setIssues([])};
+ const save=()=>{const problems=validateRuleSet(rule);setIssues(problems);if(problems.length)return;const prior=rules.filter(item=>item.effectiveFrom<rule.effectiveFrom&&(!item.effectiveTo||item.effectiveTo>=rule.effectiveFrom));const cutOff=new Date(`${rule.effectiveFrom}T00:00:00Z`);cutOff.setUTCDate(cutOff.getUTCDate()-1);const closed=rules.map(item=>prior.some(old=>old.id===item.id)?{...item,effectiveTo:cutOff.toISOString().slice(0,10)}:item);const next=[...closed.filter(item=>item.id!==rule.id&&item.effectiveFrom!==rule.effectiveFrom),{...rule,id:rule.id||crypto.randomUUID()}].sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));saveWithholdingRules(next);setRules(next);setSelected(rule.id);notify(`Withholding rules saved, effective ${rule.effectiveFrom}.`);recordAudit({action:'Updated BIR withholding tax rules',module:'Payroll Settings',description:`Saved ${rule.id} effective ${rule.effectiveFrom}. Source: ${rule.source}.`});};
+ const select=(id:string)=>{setSelected(id);const found=rules.find(item=>item.id===id);if(found)setRule(structuredClone(found));setIssues([])};
+ return <Card><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="m-0 text-[16px] font-semibold">BIR withholding tax rules</h2><p className="mb-0 mt-1 max-w-3xl text-[12px] leading-relaxed text-slate-500">TRAIN rates are stored by payroll period and effective date. Set separate regular-compensation tables and annualized year-end rates. Employee contributions and the ₱90,000 annual benefits ceiling are calculation inputs, not manual tax deductions.</p></div><button type="button" className={ghost} onClick={newVersion}><Plus size={15}/>New effective-dated version</button></div>
+  <div className="mt-4 grid gap-3 sm:grid-cols-2"><Field label="Existing rule version"><select className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px]" value={selected} onChange={e=>select(e.target.value)}><option value="">New version (unsaved)</option>{rules.map(item=><option key={item.id} value={item.id}>{item.effectiveFrom}{item.effectiveTo?` – ${item.effectiveTo}`:' onward'} · {item.id}</option>)}</select></Field><Field label="Tax rule effective from"><TextInput type="date" value={rule.effectiveFrom} onChange={e=>update({...rule,effectiveFrom:e.target.value})}/></Field><Field label="Rule source / citation"><TextInput value={rule.source} onChange={e=>update({...rule,source:e.target.value})}/></Field><Field label="Annual 13th-month pay and other-benefits exemption (₱)"><TextInput type="number" min="0" step="0.01" value={rule.annualBenefitsExemption} onChange={e=>update({...rule,annualBenefitsExemption:Number(e.target.value)})}/></Field></div>
+  <section className="mt-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4"><h3 className="m-0 text-[13px] font-semibold">De minimis benefit ceilings</h3><p className="mb-3 mt-1 text-[11px] text-slate-500">RR 29-2025 ceilings are effective 2026-01-06. Record only benefits that meet each BIR category’s qualifications. Excesses are taxable compensation.</p><div className="mb-3 grid gap-3 sm:grid-cols-2"><Field label="Ceilings effective from"><TextInput type="date" value={rule.deMinimisEffectiveFrom} onChange={e=>update({...rule,deMinimisEffectiveFrom:e.target.value})}/></Field><Field label="Ceiling source / citation"><TextInput value={rule.deMinimisSource} onChange={e=>update({...rule,deMinimisSource:e.target.value})}/></Field></div><div className="grid gap-2 md:grid-cols-2">{rule.deMinimisCaps.map((cap,index)=><div key={cap.id} className="grid grid-cols-[minmax(0,1fr)_100px_auto] items-center gap-2 rounded-lg border border-slate-100 bg-white p-2"><span className="text-[11px] leading-snug">{cap.label}<small className="mt-0.5 block text-slate-400">{cap.unit}</small></span><TextInput aria-label={`${cap.label} ceiling`} type="number" min="0" step="0.01" value={cap.amount} onChange={e=>update({...rule,deMinimisCaps:rule.deMinimisCaps.map((item,i)=>i===index?{...item,amount:Number(e.target.value)}:item)})}/><button type="button" className={ghost} aria-label={`Remove ${cap.label} ceiling`} onClick={()=>update({...rule,deMinimisCaps:rule.deMinimisCaps.filter((_,i)=>i!==index)})}><Trash2 size={14}/></button></div>)}</div><button type="button" className={`${ghost} mt-3`} onClick={()=>update({...rule,deMinimisCaps:[...rule.deMinimisCaps,{id:crypto.randomUUID(),label:'New benefit limit',amount:0,unit:'annual'}]})}><Plus size={14}/>Add ceiling</button></section>
+  <p className="mt-3 text-[11px] text-slate-500">Effective intervals are automatically closed on the day before a later version begins. Existing payroll runs keep their saved calculation breakdown. Enter only the qualifying exempt amount after applying each category cap and its supporting conditions; any excess belongs in supplementary taxable compensation.</p>
+  <div className="mt-5 space-y-4">{[...periods.map(period=>({key:period as 'annual'|PayrollPeriod,title:tableNames[period],rows:rule.tables[period]})),{key:'annual' as const,title:tableNames.annual,rows:rule.annualTable}].map(table=><section key={table.key} className="rounded-xl border border-slate-100 p-3"><div className="mb-2 flex items-center justify-between"><div><h3 className="m-0 text-[13px] font-semibold">{table.title} compensation tax table</h3><p className="m-0 mt-1 text-[10px] text-slate-500">Tax = base amount + rate × income above bracket threshold.</p></div><button type="button" className={ghost} onClick={()=>add(table.key)}><Plus size={14}/>Add bracket</button></div><div className="overflow-x-auto"><table className="w-full min-w-[500px] text-left text-[12px]"><thead><tr className="text-[10px] uppercase text-slate-500"><th className="p-2">Income over (₱)</th><th className="p-2">Base tax (₱)</th><th className="p-2">Rate (%)</th><th className="p-2">Action</th></tr></thead><tbody>{table.rows.map((row,index)=><tr key={index} className="border-t border-slate-100">{(['over','base','rate'] as const).map(field=><td key={field} className="p-1.5"><TextInput type="number" min="0" step="any" aria-label={`${table.title} bracket ${index+1} ${field}`} value={Number.isFinite(row[field])?row[field]:''} onChange={e=>setBracket(table.key,index,field,e.target.value)}/></td>)}<td className="p-1.5"><button type="button" className={ghost} aria-label={`Remove ${table.title} bracket ${index+1}`} disabled={table.rows.length<=1} onClick={()=>remove(table.key,index)}><Trash2 size={14}/></button></td></tr>)}</tbody></table></div></section>)}</div>
+  {issues.length>0&&<div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><ul className="m-0 list-disc pl-5">{issues.map(issue=><li key={issue}>{issue}</li>)}</ul></div>}
+  <div className="mt-5 flex justify-end"><Button onClick={save}>Save withholding rules</Button></div>
+ </Card>;
 }

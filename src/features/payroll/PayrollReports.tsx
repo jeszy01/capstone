@@ -26,7 +26,7 @@ const[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
 const[,refresh]=useState(0);
 const release=()=>{if(!releasing)return;payRun(releasing.id,method,user?.name??'Admin');setReleasing(null);refresh(n=>n+1)};
 const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- const sum=(key:keyof PayrollResult)=>computed.reduce((total,item)=>total+item.c[key],0);
+ const sum=(key:'gross'|'deductions'|'net'|'overtime'|'sss'|'phil'|'pagibig')=>computed.reduce((total,item)=>total+item.c[key],0);
  const employee=(r:PayrollInput)=>employees.find(item=>item.id===r.empId||item.employeeNo===r.empId);
  const shares=(c:PayrollResult)=>c.sss+c.phil+c.pagibig;
  const allowance=(r:PayrollInput)=>numberValue(r.transportation)+numberValue(r.riceSubsidy);

@@ -1,6 +1,8 @@
 import type {PayrollRates} from '../../types/domain';
 import {DEFAULT_RATES} from '../payroll/payrollRules';
 import {read,write} from '../../utils/storage';
+import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate} from '../payroll/withholdingTax';
+import type {TaxBracket as EffectiveTaxBracket} from '../payroll/withholdingTax';
 
 // Stored under "payroll:" keys so they sync like other payroll data (admin-only writes).
 export const RATES_KEY='payroll:rates';
@@ -8,18 +10,11 @@ export const TAX_KEY='payroll:tax-brackets';
 
 export interface TaxBracket{over:number;base:number;rate:number}
 // BIR TRAIN monthly withholding table (in force from 2023). Tax = base + rate% x (income - over).
-export const DEFAULT_TAX_BRACKETS:TaxBracket[]=[
- {over:0,base:0,rate:0},
- {over:20833,base:0,rate:15},
- {over:33333,base:1875,rate:20},
- {over:66667,base:8541.8,rate:25},
- {over:166667,base:33541.8,rate:30},
- {over:666667,base:183541.8,rate:35},
-];
+export const DEFAULT_TAX_BRACKETS:TaxBracket[]=DEFAULT_WITHHOLDING_RULES.tables.monthly;
 
 export const loadRates=():PayrollRates=>({...DEFAULT_RATES,...read<Partial<PayrollRates>>(RATES_KEY,{})});
 export const saveRates=(rates:PayrollRates)=>write(RATES_KEY,rates);
-export const loadTaxBrackets=():TaxBracket[]=>{const stored=read<TaxBracket[]>(TAX_KEY,[]);return stored.length?stored:DEFAULT_TAX_BRACKETS};
+export const loadTaxBrackets=(date=new Date().toISOString().slice(0,10)):TaxBracket[]=>ruleForDate(date,loadWithholdingRules()).tables.monthly as EffectiveTaxBracket[];
 export const saveTaxBrackets=(rows:TaxBracket[])=>write(TAX_KEY,rows);
 
 export interface SettingField{key:keyof PayrollRates;label:string;unit:string}
