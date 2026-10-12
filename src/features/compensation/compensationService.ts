@@ -22,12 +22,14 @@ async function action<T>(payload:Record<string,unknown>){return apiClient.post<R
 export const compensationService={
  load:async()=>{
   let response=await apiClient.get<Envelope<ServerBundle>>('/compensation');
-  if(!response.data.legacy_import_complete){
-   const legacyResponse=await apiClient.get<Envelope<LegacyAppDataRow[]>>('/app-data');
-   const legacyData:Record<string,unknown>={};
-   for(const item of legacyResponse.data){if(!item.deleted)legacyData[item.key]=item.value;}
-   await action({action:'import_legacy',legacy_data:legacyData});
-   response=await apiClient.get<Envelope<ServerBundle>>('/compensation');
+    if(!response.data.legacy_import_complete){
+   try{
+    const legacyResponse=await apiClient.get<Envelope<LegacyAppDataRow[]>>('/app-data');
+    const legacyData:Record<string,unknown>={};
+    for(const item of legacyResponse.data){if(!item.deleted)legacyData[item.key]=item.value;}
+    await action({action:'import_legacy',legacy_data:legacyData});
+    response=await apiClient.get<Envelope<ServerBundle>>('/compensation');
+   }catch{/* legacy import is optional; show current records if app-data is unavailable */}
   }
   const data=response.data;
   const skipped=data.legacy_import_counts?.skipped??0;
