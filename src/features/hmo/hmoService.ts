@@ -79,6 +79,7 @@ export const hmoService={
 
  updatePlan:async(id:string,v:Partial<HmoPlan>):Promise<HmoPlan>=>{
   await postById('plans',id,{
+   id,
    action:'update',
    provider_id:v.providerId,
    name:v.name,
