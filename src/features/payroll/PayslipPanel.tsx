@@ -1,7 +1,7 @@
 import {useMemo,useState} from 'react';
 import {Button,Card,Empty,Modal,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
-import {peso,read} from '../../utils/storage';
+import {numberValue,peso,read} from '../../utils/storage';
 import {RUNS_KEY,periodLabel,releaseDepartment} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {getCurrentUser} from '../auth/authService';
@@ -58,9 +58,53 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
  </section>;
 }
 
-// Temporary layout — final payslip design comes next
+const nf=(n:number)=>n.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const dash=(n:number)=>n?nf(n):'-';
+const ONES=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+const TENS=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+const below1000=(n:number):string=>n<20?ONES[n]:n<100?`${TENS[Math.floor(n/10)]}${n%10?' '+ONES[n%10]:''}`:`${ONES[Math.floor(n/100)]} Hundred${n%100?' '+below1000(n%100):''}`;
+const words=(n:number)=>{let r='';for(const[v,l]of [[1e9,'Billion'],[1e6,'Million'],[1e3,'Thousand']] as [number,string][]){if(n>=v){r+=`${below1000(Math.floor(n/v))} ${l} `;n%=v}}if(n>0)r+=below1000(n);return r.trim()||'Zero'};
+const pesoWords=(amount:number)=>{const a=Math.max(0,amount),whole=Math.floor(a),cents=Math.round((a-whole)*100);return `${words(whole)} and ${String(cents).padStart(2,'0')}/100 Pesos`};
+
 function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string;onClose:()=>void}){
- const c=row.result;
- const lines:[string,string][]=[['Employee',row.input.name],['Employee #',row.input.empId],['Department',dept],['Cutoff',periodLabel(run.from,run.to)],['Basic Pay',peso(c.basic)],['Overtime',peso(c.overtime)],['Gross Pay',peso(c.gross)],['SSS',peso(c.sss)],['PhilHealth',peso(c.phil)],['Pag-IBIG',peso(c.pagibig)],['Tax',peso(c.tax)],['Total Deductions',peso(c.deductions)],['Net Pay',peso(c.net)]];
- return <Modal title="Payslip" wide onClose={onClose}><dl className="grid gap-3 text-[13px]">{lines.map(([l,v])=><div key={l} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{l}</dt><dd className="m-0 font-semibold">{v}</dd></div>)}</dl><button className={`${ghost} mt-5`} onClick={()=>window.print()}>Print</button></Modal>;
+ const c=row.result,i=row.input;
+ const earnings:[string,string][]=[
+  ['Basic Salary',nf(c.basic)],
+  ['Overtime',dash(c.overtime)],
+  ['Leave Pay',dash(c.leavePay)],
+  ['Allowances',dash(c.allowances??0)],
+  ['Bonuses / Other Earnings',dash(numberValue(i.otherEarnings))],
+  ['Absent / Undertime / Late',(c.absences??0)+c.lateUt?`(${nf((c.absences??0)+c.lateUt)})`:'-'],
+ ];
+ const deductions:[string,string][]=[
+  ['SSS',dash(c.sss)],['PhilHealth',dash(c.phil)],['Pag-IBIG (HDMF)',dash(c.pagibig)],['HMO',dash(row.hmo)],['Withholding Tax',dash(c.tax)],
+  ['SSS Loan',dash(numberValue(i.sssLoan))],['Pag-IBIG Loan',dash(numberValue(i.pagibigLoan))],['Company Loan',dash(numberValue(i.companyLoan))],['Cash Advance',dash(numberValue(i.cashAdvance))],['Other Deductions',dash(numberValue(i.otherDeductions))],
+ ];
+ const period=periodLabel(run.from,run.to);
+ const info=(l:string,v:string)=><div className="flex gap-2"><span className="text-slate-500">{l}:</span><span className="font-semibold text-slate-800">{v}</span></div>;
+ const table=(title:string,rows:[string,string][],totalLabel:string,total:number)=><div className="overflow-hidden rounded-lg border border-slate-200">
+  <div className="flex justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{title}</span><span>Amount (PHP)</span></div>
+  <div className="divide-y divide-slate-100">{rows.map(([l,v])=><div key={l} className="flex justify-between px-3 py-1.5 text-[12px]"><span>{l}</span><span className="tabular-nums">{v}</span></div>)}</div>
+  <div className="flex justify-between border-t border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-bold"><span>{totalLabel}</span><span className="tabular-nums">{nf(total)}</span></div>
+ </div>;
+ return <Modal title="Payslip" wide onClose={onClose}>
+  <style>{`@media print{body *{visibility:hidden}.payslip-print,.payslip-print *{visibility:visible}.payslip-print{position:absolute;left:0;top:0;width:100%;border:0!important}.no-print{display:none!important}}`}</style>
+  <div className="payslip-print rounded-xl border border-slate-300 bg-white p-6 text-slate-800">
+   <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+    <div className="flex items-center gap-3"><img src="/ani-logo.png" alt="Archon Nell Inc." className="h-10 w-10 object-contain"/><div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INCORPORATED</div><div className="text-[11px] text-slate-500">Payslip</div></div></div>
+    <div className="text-right"><div className="text-[13px] font-semibold">{period}</div><span className="mt-1 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Approved</span></div>
+   </div>
+   <div className="grid gap-1.5 border-b border-slate-200 py-4 text-[12px] sm:grid-cols-2">
+    <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}</div>
+    <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',run.paidAt?new Date(run.paidAt).toLocaleDateString('en-PH',{dateStyle:'medium'}):'—')}</div>
+   </div>
+   <div className="grid gap-4 py-4 sm:grid-cols-2">
+    {table('Earnings',earnings,'Total Salary',c.gross)}
+    {table('Deductions',deductions,'Total Deductions',c.deductions)}
+   </div>
+   <div className="rounded-lg bg-blue-50 px-4 py-3"><div className="flex items-center justify-between text-[15px] font-bold text-[#17345b]"><span>Net Pay</span><span className="tabular-nums">Php {nf(c.net)}</span></div><div className="mt-1 text-[11px] italic text-slate-500">{pesoWords(c.net)}</div></div>
+   <div className="mt-10 flex items-end justify-between text-[11px]"><div className="text-slate-500">This is a system-generated payslip for {run.from} to {run.to}.</div><div className="w-48 border-t border-slate-500 pt-1 text-center">Received By</div></div>
+  </div>
+  <button className={`${ghost} no-print mt-4`} onClick={()=>window.print()}>Print / Save as PDF</button>
+ </Modal>;
 }
