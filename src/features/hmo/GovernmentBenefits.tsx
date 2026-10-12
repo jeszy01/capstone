@@ -29,7 +29,6 @@ export default function GovernmentBenefits(){
  const [view,setView]=useState<{row:Row;agency:Agency}|null>(null);
  const rates:PayrollRates={...DEFAULT_RATES,...read<Partial<PayrollRates>>('payroll:rates',{})};
  const assignments=read<EmployeeCompensation[]>('compensation:employee-assignments',[]);
-const grades=read<{position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]);
 
  useEffect(()=>{
   let active=true;
@@ -37,14 +36,14 @@ const grades=read<{position?:string;fixedSalary:number;status?:string}[]>('compe
   return()=>{active=false};
  },[]);
 
- // Contributions for one month: active employees hired by month end, salary from Employee Compensation.
+ // Contributions for one month: active employees with a valid hire date and
+ // an effective Employee Compensation assignment by the selected month end.
  const rowsFor=(target:string):Row[]=>{
   const end=monthEnd(target);
   const current=activeCompensations(assignments,end);
-  return employees.filter(emp=>emp.status==='Active'&&(!emp.dateHired||emp.dateHired<=end)).map(emp=>{
+  return employees.filter(emp=>emp.status==='Active'&&emp.employmentStatus?.toLowerCase()!=='resigned'&&Boolean(emp.dateHired)&&emp.dateHired<=end).map(emp=>{
    const assignment=current.find(item=>item.employeeId===emp.id||item.employeeId===emp.employeeNo);
-   const grade=grades.find(g=>g.status!=='Inactive'&&(g.position??'').trim().toLowerCase()===(emp.position??'').trim().toLowerCase());
-const salary=assignment?assignment.fixedSalary:(grade?grade.fixedSalary:null);
+   const salary=assignment?Number(assignment.fixedSalary):null;
    return {emp,salary,contribution:salary?calculateContributions(salary,rates):null};
   });
  };
@@ -68,15 +67,28 @@ const salary=assignment?assignment.fixedSalary:(grade?grade.fixedSalary:null);
  const sumFor=(key:'employee'|'employer'|'total')=>rows.reduce((t,r)=>t+(agency&&r.contribution?r.contribution[agency][key]:0),0);
  const rateText=(a:Agency)=>a==='SSS'?[rates.sssRate,rates.sssEmployerRate]:a==='PhilHealth'?[rates.philRate,rates.philEmployerRate]:[rates.pagibigRate,rates.pagibigEmployerRate];
 
+ const calculatedRows=rows.filter(row=>row.contribution);
+ const missingSalary=rows.length-calculatedRows.length;
+ const employeeTotal=agency?sumFor('employee'):history[0]?.employee??0;
+ const employerTotal=agency?sumFor('employer'):history[0]?.employer??0;
+ const overallTotal=agency?sumFor('total'):history[0]?.total??0;
+ const agencyDescription=agency==='SSS'?'Salary credit uses the configured SSS floor, step, and ceiling.':agency==='PhilHealth'?'Salary uses the configured PhilHealth floor and ceiling.':agency==='Pag-IBIG'?'Salary is capped at the configured Pag-IBIG maximum fund salary.':'Monthly totals across all three agencies.';
  return <div>
-  <PageHeader title="Government Contributions" description="SSS, PhilHealth and Pag-IBIG contributions computed monthly from each employee's active salary in Employee Compensation. These are computed amounts, not remittance records."/>
+  <PageHeader title="Government Contributions" description="Review computed monthly SSS, PhilHealth, and Pag-IBIG shares from approved Employee Compensation assignments. These are estimates for review, not remittance records."/>
   <Tabs label="Government Contributions sections" tabs={tabs.map(t=>({id:t,label:t}))} value={tab} onChange={setTab}/>
   <div className="mt-4 flex flex-wrap items-end gap-3">
    <Field label="Contribution month"><TextInput type="month" value={month} max={currentMonth()} onChange={e=>e.target.value&&setMonth(e.target.value)}/></Field>
-   <span className="pb-2 text-[12px] text-slate-500">Active employees hired on or before {monthLabel(month)}</span>
+   <span className="pb-2 text-[12px] text-slate-500">Active employees hired on or before {monthLabel(month)} · Salary effective at month end</span>
   </div>
   {error&&<p role="alert" className="mt-4 text-[13px] text-red-700">{error}</p>}
-  {agency?<Card className="mt-4 overflow-x-auto"><div className="mb-3 text-[13px] font-semibold">{agency}</div>
+  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+   <Card className="border-blue-100 bg-gradient-to-br from-blue-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Employees in scope</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{rows.length}</div><div className="mt-1 text-[11px] text-slate-500">Valid hire date and active status</div></Card>
+   <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Employee share</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{peso(employeeTotal)}</div><div className="mt-1 text-[11px] text-slate-500">{agency??'All agencies'}</div></Card>
+   <Card className="border-amber-100 bg-gradient-to-br from-amber-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Employer share</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{peso(employerTotal)}</div><div className="mt-1 text-[11px] text-slate-500">Configured employer rates</div></Card>
+   <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50 to-white"><div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Total contribution</div><div className="mt-1 text-2xl font-bold text-[#17345b]">{peso(overallTotal)}</div><div className="mt-1 text-[11px] text-slate-500">{missingSalary ? `${missingSalary} salary unavailable` : 'All salaries assigned'}</div></Card>
+  </div>
+  {agency?<Card className="mt-4 overflow-x-auto"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div className="text-[15px] font-semibold text-[#17345b]">{agency} contributions</div><span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">{calculatedRows.length} computed · {missingSalary} missing salary</span></div>
+   <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-[12px] text-blue-900">{agencyDescription} <span className="font-semibold">Employee rate:</span> {rateText(agency)[0]}% · <span className="font-semibold">Employer rate:</span> {rateText(agency)[1]}%.</div>
    <table className="w-full min-w-[1100px] text-left text-[13px]"><thead><tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">{headers.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
    <tbody>
     {loading?<tr><td colSpan={headers.length}><Empty>Loading employees…</Empty></td></tr>
@@ -84,7 +96,7 @@ const salary=assignment?assignment.fixedSalary:(grade?grade.fixedSalary:null);
     :rows.map(row=>{const c=row.contribution?.[agency];return <tr key={row.emp.id} className="border-b border-[#eef1f6]">
       <td className="px-4 py-3 font-semibold text-slate-800">{row.emp.name}</td><td className="px-4 py-3">{row.emp.employeeNo}</td><td className="px-4 py-3">{row.emp.position||'—'}</td><td className="px-4 py-3">{monthLabel(month)}</td>
       <td className="px-4 py-3 tabular-nums">{c?peso(c.employee):'—'}</td><td className="px-4 py-3 tabular-nums">{c?peso(c.employer):'—'}</td><td className="px-4 py-3 font-semibold tabular-nums">{c?peso(c.total):'—'}</td>
-      <td className="px-4 py-3"><span className={`rounded-md px-2.5 py-1 text-[11px] ${c?'bg-slate-100 text-slate-600':'bg-amber-50 text-amber-700'}`}>{c?'Computed':'No salary assigned'}</span></td>
+      <td className="px-4 py-3"><span className={`rounded-md px-2.5 py-1 text-[11px] ${c?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-700'}`}>{c?'Computed':'Missing salary assignment'}</span></td>
       <td className="px-4 py-3"><button className={ghost} disabled={!c} onClick={()=>setView({row,agency})}>View</button></td></tr>})}
     {rows.length>0&&<tr className="border-t-2 font-semibold"><td className="px-4 py-3" colSpan={4}>Total</td><td className="px-4 py-3 tabular-nums">{peso(sumFor('employee'))}</td><td className="px-4 py-3 tabular-nums">{peso(sumFor('employer'))}</td><td className="px-4 py-3 tabular-nums">{peso(sumFor('total'))}</td><td colSpan={2}/></tr>}
    </tbody></table></Card>
