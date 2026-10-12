@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState} from 'react';
-import {Plus} from 'lucide-react';
+import {CalendarDays,Plus,ShieldCheck} from 'lucide-react';
 import {useLocation,useNavigate} from 'react-router-dom';
 import {hmoTabs,hmoTabForPath} from './hmoNavigation';
 import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
@@ -11,7 +11,6 @@ import type {HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPlan,HmoProvider} from 
 
 const today=()=>new Date().toISOString().slice(0,10);
 const money=(n:number|null|undefined)=>n==null?'Unavailable':new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP',maximumFractionDigits:2}).format(n);
-const dateOrUnavailable=(v?:string|null)=>v||'Unavailable';
 
 export default function HmoBenefits({section='hmo'}:{section?:'hmo'|'dependents'}){
  const {pathname}=useLocation(); const navigate=useNavigate();
@@ -29,15 +28,97 @@ export default function HmoBenefits({section='hmo'}:{section?:'hmo'|'dependents'
  const activeEnrollments=enrollments.filter(e=>e.status==='Active'&&e.approvalStatus==='Approved'&&e.maxicareStatus==='Active');
 
  return <div>
-  <PageHeader title={section==='dependents'?'Dependents':'HMO'} description="Manage the company HMO plan, employee enrollment, and dependents." actions={!loading&&!loadError?<>{tab==='plan'&&!plans.length&&<Button onClick={()=>setPlanModal(true)}><Plus size={15}/>Create HMO Plan</Button>}{tab==='enrollment'&&<Button disabled={!employees.length||!activePlan||!['Active','Draft'].includes(activePlan.status)} onClick={()=>setEnrollModal(true)}><Plus size={15}/>Enroll Employee</Button>}{tab==='dependents'&&<Button disabled={!activeEnrollments.length} onClick={()=>setDependentModal(true)}><Plus size={15}/>Add Dependent</Button>}</>:undefined}/>
+  <PageHeader title={section==='dependents'?'Dependents':tab==='plan'?'HMO Plan':'HMO'} description="Manage the company HMO plan, employee enrollment, and dependents." actions={!loading&&!loadError?<>{tab==='plan'&&!plans.length&&<Button onClick={()=>setPlanModal(true)}><Plus size={15}/>Create HMO Plan</Button>}{tab==='enrollment'&&<Button disabled={!employees.length||!activePlan||!['Active','Draft'].includes(activePlan.status)} onClick={()=>setEnrollModal(true)}><Plus size={15}/>Enroll Employee</Button>}{tab==='dependents'&&<Button disabled={!activeEnrollments.length} onClick={()=>setDependentModal(true)}><Plus size={15}/>Add Dependent</Button>}</>:undefined}/>
   {section==='hmo'&&<Tabs label="HMO & Benefits sections" tabs={hmoTabs} value={tab} onChange={id=>navigate(hmoTabs.find(item=>item.id===id)?.to??'/hmo-benefits/hmo')} idPrefix="hmo-tab" panelId="hmo-panel"/>}
   <div id="hmo-panel" role="tabpanel" aria-labelledby={section==='hmo'?`hmo-tab-${tab}`:undefined} aria-label={section==='hmo'?undefined:'Dependents'}>{loadError&&<ErrorAlert onRetry={()=>void load()}>{loadError}</ErrorAlert>}{loading?<Card className="mt-4"><LoadingState>Loading HMO records…</LoadingState></Card>:<>{tab==='plan'&&<PlanSection provider={displayedProvider} plan={activePlan} hasAnyPlan={plans.length>0}/>} {tab==='enrollment'&&<EnrollmentSection enrollments={enrollments} plans={plans} employeeMap={employeeMap}/>} {tab==='dependents'&&<DependentSection dependents={dependents} enrollments={enrollments} employeeMap={employeeMap}/>} {tab==='history'&&<HistorySection/>}</>}</div>
   {planModal&&<PlanModal provider={maxicareProvider} onClose={()=>setPlanModal(false)} onSaved={()=>{setPlanModal(false);load()}}/>}{enrollModal&&<EnrollmentModal employees={employees} plan={activePlan&&['Active','Draft'].includes(activePlan.status)?activePlan:undefined} onClose={()=>setEnrollModal(false)} onSaved={()=>{setEnrollModal(false);load()}}/>}{dependentModal&&<DependentModal enrollments={activeEnrollments} employeeMap={employeeMap} onClose={()=>setDependentModal(false)} onSaved={()=>{setDependentModal(false);load()}}/>}
  </div>
 }
 
-function PlanSection({provider,plan,hasAnyPlan}:{provider?:HmoProvider;plan?:HmoPlan;hasAnyPlan:boolean}){const contribution=(premium:number|null|undefined,share:number|null|undefined)=>premium!=null&&share!=null?`${money(premium*share/100)} (${share}%)`:`Unavailable (${share==null?'share unavailable':share+'%'})`;return <>{!plan?<Card className="mt-4"><h2 className="m-0 text-[16px] font-semibold">Maxicare / Maxicare HMO Plan</h2><p className="mt-2 text-[13px] text-[#6b7794]">Intended provider and plan are unavailable or unconfigured. Intended status: Active (not an actual active record).</p>{hasAnyPlan&&<p className="mt-2 text-[12px] text-amber-700">Existing plan data is not matched to a Maxicare provider and is not displayed as the intended plan.</p>}</Card>:<><div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{[['Provider',provider?.name??'Unavailable'],['Plan',plan.name],['Coverage',`${dateOrUnavailable(plan.coverageStart)} – ${dateOrUnavailable(plan.coverageEnd)}`],['Annual Limit',money(plan.annualBenefitLimit)]].map(([l,v])=><Card key={String(l)}><div className="text-[12px] text-[#6b7794]">{l}</div><div className="mt-1 font-semibold">{v}</div></Card>)}</div><Card className="mt-4"><div className="flex items-start justify-between"><div><h2 className="m-0 text-[16px] font-semibold">{plan.name}</h2><p className="mt-1 text-[12px] text-[#6b7794]">Actual existing plan · Effective Date / coverage start {dateOrUnavailable(plan.coverageStart)} to {dateOrUnavailable(plan.coverageEnd)}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">{plan.status}</span></div><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[['Inpatient',plan.inpatient],['Outpatient',plan.outpatient],['Emergency',plan.emergency],['Preventive Care',plan.preventiveCare]].map(([l,v])=><div key={String(l)} className="rounded-xl border border-[#e3e7ef] p-3"><div className="text-[11px] text-[#6b7794]">{l}</div><div className="mt-1 font-semibold">{v?'Covered':'Not included'}</div></div>)}</div><div className="mt-5 grid gap-4 sm:grid-cols-2"><div><div className="text-[11px] uppercase tracking-wide text-[#6b7794]">Employee contribution / Employer contribution</div><div className="mt-1 font-semibold">{contribution(plan.employeeMonthlyPremium,plan.employeeMemberShare)} / {contribution(plan.employeeMonthlyPremium,plan.employeeCompanyShare)}</div><div className="mt-1 text-[11px] text-[#6b7794]">Monthly premium: {money(plan.employeeMonthlyPremium)}</div></div><div><div className="text-[11px] uppercase tracking-wide text-[#6b7794]">Additional dependent / sponsored dependent</div><div className="mt-1 font-semibold">{contribution(plan.dependentMonthlyPremium,plan.dependentMemberShare)} / {contribution(plan.dependentMonthlyPremium,plan.dependentCompanyShare)}</div><div className="mt-1 text-[11px] text-[#6b7794]">Configured additional-dependent premium: {money(plan.dependentMonthlyPremium)} · first eligible spouse or child is company-paid.</div></div></div></Card></>}</>}
+function formatHmoDate(value?:string|null){
+ if(!value)return 'Unavailable';
+ const date=new Date(value.length===10?`${value}T12:00:00`:value);
+ return Number.isNaN(date.getTime())?'Unavailable':new Intl.DateTimeFormat('en-GB',{day:'2-digit',month:'short',year:'numeric'}).format(date);
+}
 
+function PlanSection({provider,plan,hasAnyPlan}:{provider?:HmoProvider;plan?:HmoPlan;hasAnyPlan:boolean}){
+ const contribution=(premium:number|null|undefined,share:number|null|undefined)=>premium!=null&&share!=null?`${money(premium*share/100)} (${share}%)`:`Unavailable (${share==null?'share unavailable':share+'%'})`;
+ const sectionTitle='text-[16px] font-semibold text-[#142b50]';
+ const muted='text-[12px] text-[#647796]';
+ const tableLabel='bg-[#f3f6fb] px-3 py-2.5 text-[12px] font-medium text-[#526987] sm:w-[30%]';
+ const tableValue='px-3 py-2.5 text-[13px] text-[#142b50]';
+ if(!plan)return <Card className="mt-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className={sectionTitle}>Maxicare HMO Plan</h2><p className={`mt-2 ${muted}`}>No configured plan is available to display yet.</p></div><span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800">Not configured</span></div>{hasAnyPlan&&<p className="mt-3 text-[12px] text-amber-700">Existing plan records were found, but none is linked to the configured Maxicare provider. Review the provider and plan records before activating coverage.</p>}</Card>;
+ const coveragePeriod=`${formatHmoDate(plan.coverageStart)} – ${formatHmoDate(plan.coverageEnd)}`;
+ const benefits=[
+  {label:'Inpatient',included:plan.inpatient,detail:'Hospital admission and inpatient services'},
+  {label:'Outpatient',included:plan.outpatient,detail:'Consultations and outpatient services'},
+  {label:'Emergency',included:plan.emergency,detail:'Emergency care services'},
+  {label:'Preventive Care',included:plan.preventiveCare,detail:'Preventive and routine care'},
+  {label:'Dental',included:plan.dental,detail:'Dental services'},
+ ];
+ return <div className="mt-4 space-y-4">
+  <Card className="overflow-hidden border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 sm:p-5">
+   <div className="grid gap-5 md:grid-cols-[minmax(0,1.35fr)_minmax(260px,1fr)] md:items-center">
+    <div className="flex min-w-0 items-center gap-4">
+     <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border border-[#dce9fb] bg-[#e4efff] px-2 text-center text-[18px] font-extrabold tracking-tight text-[#0862df]">{(provider?.name??'HMO').toUpperCase()}</div>
+     <div className="min-w-0">
+      <div className={muted}>HMO Provider</div>
+      <div className="mt-1 flex flex-wrap items-center gap-2"><h2 className="m-0 text-2xl font-bold text-[#142b50]">{provider?.name??'Provider unavailable'}</h2><span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${provider?.status==='Active'?'bg-emerald-100 text-emerald-800':'bg-slate-100 text-slate-700'}`}>{provider?.status??'Unknown status'}</span></div>
+      <div className="mt-1 text-lg font-semibold text-[#142b50]">{plan.name}</div>
+      <p className={`mt-1 ${muted}`}>Current configured plan for employee enrollment and eligible dependents.</p>
+     </div>
+    </div>
+    <div className="grid gap-4 border-t border-[#d7e4f5] pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0">
+     <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e1edff] text-[#0862df]"><CalendarDays size={19}/></div><div><div className={muted}>Coverage Period</div><div className="mt-1 text-[14px] font-semibold text-[#142b50]">{coveragePeriod}</div><div className={muted}>Plan coverage dates</div></div></div>
+     <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff3d8] text-[#a86b00]"><ShieldCheck size={19}/></div><div><div className={muted}>Annual Benefit Limit</div><div className="mt-1 text-[18px] font-bold text-[#142b50]">{money(plan.annualBenefitLimit)}</div><div className={muted}>As configured for this plan</div></div></div>
+    </div>
+   </div>
+  </Card>
+
+  <Card className="p-4 sm:p-5">
+   <div className="mb-4"><h2 className={sectionTitle}>Coverage Benefits</h2><p className={`mt-1 ${muted}`}>Services included in the {plan.name} plan, based on its saved configuration.</p></div>
+   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    {benefits.map(benefit=><div key={benefit.label} className="rounded-xl border border-[#e1e9f5] bg-white p-3"><div className="flex items-start justify-between gap-2"><h3 className="m-0 text-[13px] font-semibold text-[#142b50]">{benefit.label}</h3><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${benefit.included?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{benefit.included?'Included':'Not included'}</span></div><p className={`mt-2 ${muted}`}>{benefit.detail}</p></div>)}
+   </div>
+  </Card>
+
+  <Card className="p-4 sm:p-5">
+   <div className="mb-4"><h2 className={sectionTitle}>Plan Information</h2><p className={`mt-1 ${muted}`}>Key details for the current HMO plan.</p></div>
+   <div className="grid gap-3 lg:grid-cols-2">
+    <div className="overflow-hidden rounded-lg border border-[#e2eaf5]"><table className="w-full border-collapse text-left"><tbody>
+     <tr className="border-b border-[#e2eaf5]"><th className={tableLabel}>Plan Name</th><td className={tableValue}>{plan.name}</td></tr>
+     <tr className="border-b border-[#e2eaf5]"><th className={tableLabel}>Provider</th><td className={tableValue}>{provider?.name??'Unavailable'}</td></tr>
+     <tr className="border-b border-[#e2eaf5]"><th className={tableLabel}>Plan Type</th><td className={tableValue}>HMO Plan</td></tr>
+     <tr><th className={tableLabel}>Monthly Employee Premium</th><td className={tableValue}>{money(plan.employeeMonthlyPremium)}</td></tr>
+    </tbody></table></div>
+    <div className="overflow-hidden rounded-lg border border-[#e2eaf5]"><table className="w-full border-collapse text-left"><tbody>
+     <tr className="border-b border-[#e2eaf5]"><th className={tableLabel}>Coverage Start</th><td className={tableValue}>{formatHmoDate(plan.coverageStart)}</td></tr>
+     <tr className="border-b border-[#e2eaf5]"><th className={tableLabel}>Coverage End</th><td className={tableValue}>{formatHmoDate(plan.coverageEnd)}</td></tr>
+     <tr className="border-b border-[#e2eaf5]"><th className={tableLabel}>Annual Benefit Limit</th><td className={tableValue}>{money(plan.annualBenefitLimit)}</td></tr>
+     <tr><th className={tableLabel}>Status</th><td className={tableValue}><span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${plan.status==='Active'?'bg-emerald-100 text-emerald-800':'bg-slate-100 text-slate-700'}`}>{plan.status}</span></td></tr>
+    </tbody></table></div>
+   </div>
+  </Card>
+
+  <Card className="p-4 sm:p-5">
+   <div className="mb-4"><h2 className={sectionTitle}>Contribution Policy</h2><p className={`mt-1 ${muted}`}>Premium sharing between the company and employee, based on the saved plan contribution percentages and company-sponsored dependent policy.</p></div>
+   <div className="grid gap-4 lg:grid-cols-2">
+    <div className="rounded-xl border border-[#e1eaf7] bg-[#f7faff] p-4">
+     <h3 className="m-0 text-[14px] font-semibold text-[#142b50]">Employee's Own HMO Premium</h3><p className={`mt-1 ${muted}`}>Monthly premium for the employee.</p>
+     <div className="mt-4 text-2xl font-bold text-[#142b50]">{money(plan.employeeMonthlyPremium)}<span className="ml-1 text-[12px] font-medium text-[#647796]">/ month</span></div>
+     <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-[#3284f6]" style={{width:`${Math.max(0,Math.min(100,plan.employeeCompanyShare??0))}%`}}/></div>
+     <div className="mt-3 grid grid-cols-2 gap-3"><div><div className={muted}>Employee Share</div><div className="mt-1 text-[13px] font-semibold text-[#142b50]">{contribution(plan.employeeMonthlyPremium,plan.employeeMemberShare)}</div></div><div className="text-right"><div className={muted}>Company Share</div><div className="mt-1 text-[13px] font-semibold text-[#142b50]">{contribution(plan.employeeMonthlyPremium,plan.employeeCompanyShare)}</div></div></div>
+    </div>
+    <div className="rounded-xl border border-[#e1eaf7] bg-white p-4">
+     <h3 className="m-0 text-[14px] font-semibold text-[#142b50]">Dependent Premiums</h3><p className={`mt-1 ${muted}`}>One eligible spouse or child is company-sponsored; additional eligible dependents are employee-paid.</p>
+     <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-[12px] font-semibold text-[#14532d]">One eligible sponsored dependent</div><div className="mt-1 text-[11px] text-[#166534]">First eligible spouse or child · company-paid 100%</div></div><div className="text-right"><div className="text-[13px] font-bold text-[#14532d]">Company-paid</div><div className="text-[11px] text-[#166534]">No employee premium</div></div></div></div>
+     <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-[12px] font-semibold text-[#713f12]">Additional eligible dependents</div><div className="mt-1 text-[11px] text-[#854d0e]">Subject to provider eligibility and plan terms</div></div><div className="text-right"><div className="text-[13px] font-bold text-[#713f12]">{money(plan.dependentMonthlyPremium)}</div><div className="text-[11px] text-[#854d0e]">Employee-paid premium</div></div></div></div>
+     <p className={`mt-3 ${muted}`}>Configured additional-dependent premium: {money(plan.dependentMonthlyPremium)}. Payroll deductions must only be created for confirmed, approved, employee-paid premiums.</p>
+    </div>
+   </div>
+  </Card>
+ </div>;
+}
 
 function EnrollmentSection({enrollments,plans,employeeMap}:{enrollments:HmoEnrollment[];plans:HmoPlan[];employeeMap:Map<string,Employee>}){return <Card className="mt-4 overflow-x-auto"><table className="w-full min-w-[1100px] text-left text-[13px]"><thead><tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">{['Employee','Plan','Eligibility','Effective','Expiration','Approval','Maxicare','Action'].map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>{enrollments.length===0?<tr><td colSpan={8}><Empty>No HMO enrollments yet.</Empty></td></tr>:enrollments.map(e=><tr key={e.id} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{employeeMap.get(e.employeeId)?.name??e.employeeId}</td><td className="px-4 py-3">{plans.find(p=>p.id===e.planId)?.name??'Unavailable'}</td><td className="px-4 py-3">{e.eligibilityDate??'Unavailable'}</td><td className="px-4 py-3">{e.effectiveDate}</td><td className="px-4 py-3">{e.expirationDate??'Unavailable'}</td><td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">{e.approvalStatus}</span>{e.rejectionReason&&<div className="mt-1 text-[11px] text-red-600">{e.rejectionReason}</div>}</td><td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">{e.maxicareStatus}</span>{e.maxicareReference&&<div className="mt-1 text-[11px] text-[#6b7794]">{e.maxicareReference}</div>}</td><td className="px-4 py-3"><div className="flex flex-wrap items-center gap-2">{e.approvalStatus==='Pending'&&<button className="text-blue-600 font-semibold" onClick={async()=>{await hmoService.approveEnrollment(e.id);window.location.reload()}}>Approve</button>}{e.approvalStatus==='Approved'&&e.maxicareStatus!=='Active'&&<button className="text-emerald-700 font-semibold" onClick={async()=>{const reference=window.prompt('Enter Maxicare activation reference');if(reference){await hmoService.activateEnrollment(e.id,reference);window.location.reload()}}}>Activate</button>}{e.status==='Active'&&<button className="text-[#b34a4a]" onClick={async()=>{await hmoService.terminateEnrollment(e.id);window.location.reload()}}>Terminate</button>}</div></td></tr>)}</tbody></table></Card>}
 
