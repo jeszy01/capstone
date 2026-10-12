@@ -18,7 +18,10 @@ async function post<TRequest,TResponse>(resource:string,value:TRequest):Promise<
 }
 
 async function patch<TRequest,TResponse>(resource:string,id:string,value:TRequest):Promise<TResponse>{
- const r=await apiClient.put<TRequest,Envelope<TResponse>>(`/hmo/${resource}/${id}`,value);
+ const r = await apiClient.patch<TRequest, Envelope<TResponse>>(
+  `/hmo/${resource}/${id}`,
+  value
+);
  return r.data;
 }
 
