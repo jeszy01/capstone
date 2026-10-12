@@ -70,6 +70,7 @@ async function verifyPbmsSession(token, secret, projectId, now = Math.floor(Date
 }
 
 // Eprovider/lib/auth.ts
+var enc = new TextEncoder();
 function requireAuth(ctx) {
   if (ctx.role !== "authenticated" && ctx.role !== "service_role") throw new HttpError(401, "UNAUTHENTICATED", "Authentication is required");
 }
@@ -97,6 +98,7 @@ function corsPreflight(request) {
 }
 
 // Eprovider/lib/verified-function.ts
+var normalizePbmsRole = (value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_");
 async function verifiedContext(request) {
   const authorization = request.headers.get("authorization") ?? "";
   const match = /^Bearer ([^\s]+)$/i.exec(authorization);
@@ -105,7 +107,7 @@ async function verifiedContext(request) {
   const users = await mcp("select_rows", { table: "users", filter: { id: claims.sub }, limit: 1 });
   const user = users[0];
   if (!user || user.employee_id !== claims.employee_id || user.status?.toLowerCase() !== "active") throw new HttpError(401, "INVALID_SESSION", "Your account or session is inactive. Please sign in again.");
-  const role = user.role?.toLowerCase();
+  const role = normalizePbmsRole(user.role ?? "");
   if (role !== "admin" && role !== "hr_staff") throw new HttpError(403, "FORBIDDEN", "Insufficient permissions");
   return { request, role: "authenticated", userId: user.id, pbmsRole: role };
 }
@@ -343,7 +345,7 @@ async function reviewProposal(input, ctx) {
 async function createReward(input, ctx) {
   const employeeId = uuid(input.employee_id, "employee_id");
   const type = required(input.reward_type, "reward_type");
-  if (type !== "Bonus" && type !== "Incentive") throw new HttpError(400, "INVALID_REWARD_TYPE", "Reward type must be Bonus or Incentive.");
+  if (!["Bonus", "Incentive", "Allowance", "Adjustment"].includes(type)) throw new HttpError(400, "INVALID_REWARD_TYPE", "Reward type must be Bonus, Incentive, Allowance, or Adjustment.");
   if (!(await listRows("employees", { id: employeeId }))[0]) throw new HttpError(404, "EMPLOYEE_NOT_FOUND", "Employee was not found.");
   const createdAt = (/* @__PURE__ */ new Date()).toISOString();
   const row = await insertRow("compensation_rewards", { employee_id: employeeId, reward_type: type, amount: amount(input.amount, "amount"), effective_date: isoDate(input.effective_date), notes: String(input.notes ?? "").trim(), status: "Planned", created_by: ctx.userId, created_at: createdAt });
@@ -354,7 +356,7 @@ async function reviewReward(input, ctx) {
   const id = uuid(input.id, "id");
   const rows = await listRows("compensation_rewards", { id });
   const reward = rows[0];
-  if (!reward) throw new HttpError(404, "REWARD_NOT_FOUND", "Bonus or incentive was not found.");
+  if (!reward) throw new HttpError(404, "REWARD_NOT_FOUND", "Bonus, incentive, allowance, or adjustment was not found.");
   if (reward.status !== "Planned") throw new HttpError(409, "REWARD_ALREADY_REVIEWED", "Only planned rewards can be approved.");
   const next = { status: "Approved", approved_by: ctx.userId, approved_at: (/* @__PURE__ */ new Date()).toISOString() };
   await updateRows("compensation_rewards", { id }, next);
@@ -368,7 +370,8 @@ var legacyTimestamp = (value) => typeof value === "string" && Number.isFinite(Da
 async function importLegacy(input, ctx) {
   const importId = "browser-compensation-v1";
   const prior = await listRows("compensation_legacy_imports", { id: importId });
-  if (prior[0]) return { alreadyImported: true, counts: prior[0].counts };
+  const retryFailed = input.retry_failed === true;
+  if (prior[0] && !retryFailed) return { alreadyImported: true, counts: prior[0].counts };
   const data = input.legacy_data && typeof input.legacy_data === "object" ? input.legacy_data : {};
   const legacyGradeRows = legacyRows(data, "compensation:salary-grades");
   const grades = await listRows("salary_grades");
@@ -395,6 +398,27 @@ async function importLegacy(input, ctx) {
   for (const employee of employees) {
     for (const value of [employee.id, employee.employee_number, employee.employee_no]) if (value !== null && value !== void 0) employeeByReference.set(String(value), employee);
   }
+  const legacyEmployees = legacyRows(data, "legacy_employee_records");
+  const normalizeReference = (value) => String(value ?? "").trim().toLowerCase();
+  const currentEmployeeForLegacy = (legacy) => {
+    const employeeNumber = legacy.employeeNo ?? legacy.employee_number;
+    const email = legacy.email;
+    const name = legacy.name;
+    return employees.find(
+      (employee) => employeeNumber !== void 0 && (normalizeReference(employee.employee_number) === normalizeReference(employeeNumber) || normalizeReference(employee.employee_no) === normalizeReference(employeeNumber)) || email !== void 0 && normalizeReference(employee.email) === normalizeReference(email) || name !== void 0 && (normalizeReference(employee.name) === normalizeReference(name) || normalizeReference(`${employee.first_name ?? ""} ${employee.last_name ?? ""}`) === normalizeReference(name))
+    );
+  };
+  const employeeForLegacyRow = (row) => {
+    const reference = row.employeeId ?? row.employee_id ?? row.employeeNo ?? row.employee_number;
+    if (reference === void 0 || reference === null) return void 0;
+    const direct = employeeByReference.get(String(reference));
+    if (direct) return direct;
+    const normalized = String(reference).trim().toLowerCase();
+    for (const [key2, employee] of employeeByReference) if (key2.trim().toLowerCase() === normalized) return employee;
+    const legacy = legacyEmployees.find((employee) => [employee.id, employee.employeeId, employee.employee_id].some((value) => normalizeReference(value) === normalized));
+    if (legacy) return currentEmployeeForLegacy(legacy);
+    return void 0;
+  };
   const counts = { grades: 0, grade_codes_normalized: 0, assignments: 0, proposals: 0, history: 0, rewards: 0, skipped: 0 };
   for (const row of legacyGradeRows) try {
     const originalCode = required(row.code, "code").trim();
@@ -415,7 +439,7 @@ async function importLegacy(input, ctx) {
   const importedProposals = /* @__PURE__ */ new Map();
   const oldProposals = legacyRows(data, "compensation:proposals");
   for (const row of oldProposals.length ? oldProposals : legacyRows(data, "compensation:salary-adjustments")) try {
-    const employee = employeeByReference.get(String(row.employeeId ?? ""));
+    const employee = employeeForLegacyRow(row);
     if (!employee) throw new Error("unknown employee");
     const type = String(row.type ?? "");
     if (!["Salary Adjustment", "Merit Increase", "Promotion Increase"].includes(type)) throw new Error("invalid proposal type");
@@ -432,7 +456,7 @@ async function importLegacy(input, ctx) {
     counts.skipped++;
   }
   for (const row of legacyRows(data, "compensation:employee-assignments")) try {
-    const employee = employeeByReference.get(String(row.employeeId ?? ""));
+    const employee = employeeForLegacyRow(row);
     if (!employee) throw new Error("unknown employee");
     const oldId = String(row.id ?? "");
     if (oldId && (await listRows("employee_compensation", { legacy_id: oldId }))[0]) continue;
@@ -447,7 +471,7 @@ async function importLegacy(input, ctx) {
     counts.skipped++;
   }
   for (const row of legacyRows(data, "compensation:history")) try {
-    const employee = employeeByReference.get(String(row.employeeId ?? ""));
+    const employee = employeeForLegacyRow(row);
     if (!employee) throw new Error("unknown employee");
     const oldId = String(row.id ?? "");
     if (oldId && (await listRows("compensation_history", { legacy_id: oldId }))[0]) continue;
@@ -459,19 +483,21 @@ async function importLegacy(input, ctx) {
     counts.skipped++;
   }
   for (const row of legacyRows(data, "compensation:bonuses-incentives")) try {
-    const employee = employeeByReference.get(String(row.employeeId ?? ""));
+    const employee = employeeForLegacyRow(row);
     if (!employee) throw new Error("unknown employee");
     const oldId = String(row.id ?? "");
     if (oldId && (await listRows("compensation_rewards", { legacy_id: oldId }))[0]) continue;
     const type = String(row.type ?? "");
-    if (type !== "Bonus" && type !== "Incentive") throw new Error("invalid reward type");
+    if (!["Bonus", "Incentive", "Allowance", "Adjustment"].includes(type)) throw new Error("invalid reward type");
     const status = row.status === "Approved" ? "Approved" : "Planned";
     await insertRow("compensation_rewards", { employee_id: employee.id, reward_type: type, amount: legacyMoney(row.amount, "amount"), effective_date: legacyDate(row.effectiveDate), notes: String(row.notes ?? ""), status, created_by: null, created_at: typeof row.createdAt === "string" && Number.isFinite(Date.parse(row.createdAt)) ? row.createdAt : (/* @__PURE__ */ new Date()).toISOString(), legacy_id: oldId || null });
     counts.rewards++;
   } catch {
     counts.skipped++;
   }
-  await insertRow("compensation_legacy_imports", { id: importId, imported_by: ctx.userId, counts, imported_at: (/* @__PURE__ */ new Date()).toISOString() });
+  const importRecord = { imported_by: ctx.userId, counts, imported_at: (/* @__PURE__ */ new Date()).toISOString() };
+  if (prior[0]) await updateRows("compensation_legacy_imports", { id: importId }, importRecord);
+  else await insertRow("compensation_legacy_imports", { id: importId, ...importRecord });
   await audit("compensation.legacy.imported", ctx.userId, "compensation_legacy_imports", importId, counts);
   return { alreadyImported: false, counts };
 }

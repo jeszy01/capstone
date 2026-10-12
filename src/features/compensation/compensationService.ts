@@ -1,4 +1,5 @@
 import {apiClient} from '../../services/api/apiClient';
+import {read} from '../../utils/storage';
 import type {BonusIncentive,CompensationHistory,CompensationProposal,EmployeeCompensation,SalaryGrade} from './compensationState';
 
 type Envelope<T>={data:T};
@@ -21,13 +22,15 @@ async function action<T>(payload:Record<string,unknown>){return apiClient.post<R
 
 export const compensationService={
  load:async()=>{
-  let response=await apiClient.get<Envelope<ServerBundle>>('/compensation');
-    if(!response.data.legacy_import_complete){
+ let response=await apiClient.get<Envelope<ServerBundle>>('/compensation');
+    if(!response.data.legacy_import_complete||((response.data.legacy_import_counts?.skipped??0)>0)){
    try{
     const legacyResponse=await apiClient.get<Envelope<LegacyAppDataRow[]>>('/app-data');
     const legacyData:Record<string,unknown>={};
     for(const item of legacyResponse.data){if(!item.deleted)legacyData[item.key]=item.value;}
-    await action({action:'import_legacy',legacy_data:legacyData});
+    const legacyEmployees=read<unknown[]>('employees:records',[]);
+    if(legacyEmployees.length)legacyData.legacy_employee_records=legacyEmployees;
+    await action({action:'import_legacy',legacy_data:legacyData,...(response.data.legacy_import_complete?{retry_failed:true}:{})});
     response=await apiClient.get<Envelope<ServerBundle>>('/compensation');
    }catch{/* legacy import is optional; show current records if app-data is unavailable */}
   }
@@ -35,8 +38,8 @@ export const compensationService={
   const skipped=data.legacy_import_counts?.skipped??0;
   const normalized=data.legacy_import_counts?.grade_codes_normalized??0;
   const importMessages:string[]=[];
-  if(normalized)importMessages.push(`${normalized} legacy salary-grade code(s) were normalized (SG-01 to SG-001); the original app-data remains preserved.`);
-  if(skipped)importMessages.push(`${skipped} legacy compensation record(s) could not be normalized. The original synchronized records remain preserved in app-data.`);
+  if(normalized)importMessages.push(`${normalized} legacy salary-grade code${normalized===1?'':'s'} ${normalized===1?'was':'were'} normalized (SG-01 to SG-001); the original app-data remains preserved.`);
+  if(skipped)importMessages.push(`${skipped} legacy compensation record${skipped===1?'':'s'} could not be imported because required fields or a matching employee record were missing. The original synchronized records remain preserved in app-data.`);
   return {grades:data.salary_grades.map(gradeFromServer),assignments:data.assignments.map(assignmentFromServer),proposals:data.proposals.map(proposalFromServer),history:data.history.map(historyFromServer),bonuses:data.rewards.map(rewardFromServer),legacyImportWarning:importMessages.join(' ')};
  },
  createGrade:(grade:Pick<SalaryGrade,'position'|'fixedSalary'|'status'>)=>action<ServerGrade>({action:'create_grade',position:grade.position,basic_salary:grade.fixedSalary,status:grade.status}),

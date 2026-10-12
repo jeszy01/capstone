@@ -64,8 +64,8 @@ describe('compensationService',()=>{
 	it('surfaces normalized codes and skipped legacy rows instead of hiding them',async()=>{
 	 api.get.mockResolvedValue({data:{...emptyBundle,legacy_import_counts:{skipped:2,grade_codes_normalized:1}}});
 	 const loaded=await compensationService.load();
-	 expect(loaded.legacyImportWarning).toContain('SG-01 to SG-001');
-  expect(loaded.legacyImportWarning).toContain('2 legacy compensation record(s) could not be normalized');
+  expect(loaded.legacyImportWarning).toContain('1 legacy salary-grade code was normalized (SG-01 to SG-001)');
+  expect(loaded.legacyImportWarning).toContain('2 legacy compensation records could not be imported because required fields or a matching employee record were missing');
   expect(loaded.legacyImportWarning).toContain('remain preserved in app-data');
  });
 });

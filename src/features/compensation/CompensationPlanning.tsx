@@ -1,5 +1,4 @@
 import {useCallback,useEffect,useMemo,useState} from 'react';
-import {Link} from 'react-router-dom';
 import {
   CheckCircle2,
   ClipboardCheck,
@@ -311,12 +310,6 @@ export default function CompensationPlanning({section}:{section:Section}){
       actions={<button type="button" className={ghost} aria-label="Refresh compensation and employee records" disabled={compensationLoading||saving} onClick={()=>{void loadCompensation();void loadEmployees()}}><RefreshCw size={15} className={compensationLoading?'animate-spin':''}/>Refresh</button>}
     />
 
-    <div className="mt-5 overflow-x-auto rounded-xl border border-blue-100 bg-white px-1.5 py-1.5 shadow-[0_2px_8px_rgba(23,52,91,0.035)]"><nav className="flex min-w-max gap-1" role="tablist" aria-label="Compensation Planning submodules">{[
-      {id:'salary-grades' as const,label:'Salary Grades',to:'/compensation/salary-grades',panel:'salary-grades-panel'},
-      {id:'employee-compensation' as const,label:'Employee Compensation',to:'/compensation/employee-compensation',panel:'employee-compensation-panel'},
-      {id:'adjustments' as const,label:'Adjustments',to:'/compensation/adjustments',panel:'adjustments-panel'},
-    ].map(item=><Link key={item.id} role="tab" id={`compensation-tab-${item.id}`} aria-selected={section===item.id} aria-controls={item.panel} to={item.to} className={`relative whitespace-nowrap rounded-t-lg px-4 py-3.5 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${section===item.id?'bg-blue-50 text-blue-700 after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-full after:bg-blue-600':'text-slate-500 hover:bg-slate-50 hover:text-[#17345b]'}`}>{item.label}</Link>)}</nav></div>
-
     {employeeLoading&&section!=='salary-grades'&&<p className="-mt-2 text-[12px] text-slate-500" role="status">Loading employee records…</p>}
     {employeeError&&section!=='salary-grades'&&<ErrorAlert title="Employee records could not be loaded." onRetry={()=>void loadEmployees()}>{employeeError} {legacyEmployees.length>0?'Existing local employee names remain available.':''}</ErrorAlert>}
     {!employeeLoading&&serverEmpty&&section!=='salary-grades'&&<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">The server employee list is empty. {legacyEmployees.length>0?'Existing local employee records can resolve names, but cannot be used for new assignments.':'Add or restore employee master records before assigning compensation.'}<button type="button" className={`${ghost} ml-3`} onClick={()=>void loadEmployees()}>Reload employees</button></div>}
@@ -326,7 +319,7 @@ export default function CompensationPlanning({section}:{section:Section}){
     {legacyImportWarning&&<div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">{legacyImportWarning}</div>}
     {success&&<div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[13px] font-medium text-emerald-800"><CheckCircle2 size={16}/>{success}</div>}
 
-    {section==='salary-grades'&&<section id="salary-grades-panel" role="tabpanel" aria-labelledby="compensation-tab-salary-grades">
+    {section==='salary-grades'&&<section id="salary-grades-panel" aria-label="Salary Grades">
       <SectionHeading id="salary-grades-heading" title="Salary Grades" description="Reference rates only. A grade changes employee pay only when an assignment or approved proposal takes effect." action={<Button disabled={compensationLoading||saving} onClick={()=>{setError('');setModal('grade')}}><Plus size={15}/>Add Salary Grade</Button>}/>
       <SearchToolbar label="Search salary grades" value={search} onChange={setSearch} shown={filteredGrades.length} total={grades.length} placeholder="Search code, position or status"/>
       <Card className="mt-3 overflow-hidden !p-0">
@@ -336,7 +329,7 @@ export default function CompensationPlanning({section}:{section:Section}){
       </Card>
     </section>}
 
-    {section==='employee-compensation'&&<section id="employee-compensation-panel" role="tabpanel" aria-labelledby="compensation-tab-employee-compensation">
+    {section==='employee-compensation'&&<section id="employee-compensation-panel" aria-label="Employee Compensation">
       <SectionHeading id="employee-compensation-heading" title="Employee Compensation" description="Assignments are effective-dated. Once an employee has a salary record, changes go through proposal review." action={<Button disabled={assignmentBlocked||compensationLoading||saving} onClick={openAssignment}><Plus size={15}/>Assign Compensation</Button>}/>
       {assignmentBlocked&&!employeeLoading&&<p className="mt-2 text-[12px] text-amber-700">No unassigned server employees are available. Restore or add an employee record to create an initial assignment.</p>}
       <Tabs label="Employee compensation sections" value={employeeTab} onChange={setEmployeeTab} tabs={[{id:'compensation',label:'Employee Compensation'},{id:'history',label:'Compensation History'}]}/>
@@ -355,7 +348,7 @@ export default function CompensationPlanning({section}:{section:Section}){
       </tbody></table></div></Card>
       </>}
     </section>}
-    {section==='adjustments'&&<section id="adjustments-panel" role="tabpanel" aria-labelledby="compensation-tab-adjustments">
+    {section==='adjustments'&&<section id="adjustments-panel" aria-label="Adjustments">
       <SectionHeading id="adjustments-heading" title="Adjustments" description="Review salary changes and monetary rewards. Approval is recorded on the server; future salaries remain scheduled until their effective date."/>
       <Tabs label="Compensation adjustments" value={rewardTab} onChange={setRewardTab} tabs={[{id:'changes',label:'Salary Changes'},{id:'rewards',label:'Bonuses & Incentive'},{id:'allowance',label:'Allowance'}]}/>
       <SearchToolbar label={rewardTab==='changes'?'Search salary proposals':rewardTab==='rewards'?'Search bonuses and incentives':'Search allowances and adjustments'} value={search} onChange={setSearch} shown={rewardTab==='changes'?filteredProposals.length:visibleRewardRows.length} total={rewardTab==='changes'?proposals.length:visibleRewardTotal} placeholder={rewardTab==='changes'?'Search employee, type, status or notes':'Search employee, type, status or notes'}/>

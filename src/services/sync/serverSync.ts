@@ -1,33 +1,38 @@
 import {apiClient} from '../api/apiClient';
 
+type PendingWrite={raw?:string;deleted?:boolean};
 const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
 const rawSet=Storage.prototype.setItem;
 const rawRemove=Storage.prototype.removeItem;
 const timers=new Map<string,number>();
+const pending=new Map<string,PendingWrite>();
 let hydrating=false;
 
-const push=(key:string,raw:string)=>{
+function sameWrite(left:PendingWrite|undefined,right:PendingWrite){
+ return Boolean(left&&left.deleted===right.deleted&&left.raw===right.raw);
+}
+function schedulePush(key:string,write:PendingWrite,delay=400){
  window.clearTimeout(timers.get(key));
+ pending.set(key,write);
  timers.set(key,window.setTimeout(()=>{
-  let value:unknown;
-  try{value=JSON.parse(raw)}catch{return}
-  void apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key,value}).catch(()=>undefined);
- },400));
-};
+  const current=pending.get(key);
+  if(!sameWrite(current,write))return;
+  const request=write.deleted
+   ?apiClient.post<{key:string;deleted:boolean},unknown>('/app-data',{key,deleted:true})
+   :apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key,value:JSON.parse(write.raw??'null')});
+  void request.then(()=>{if(sameWrite(pending.get(key),write))pending.delete(key)})
+   .catch(()=>{if(sameWrite(pending.get(key),write))schedulePush(key,write,2000)});
+ },delay));
+}
 
 Storage.prototype.setItem=function(this:Storage,key:string,value:string){
  rawSet.call(this,key,value);
- if(this===window.localStorage&&!hydrating&&synced(key))push(key,value);
+ if(this===window.localStorage&&!hydrating&&synced(key))schedulePush(key,{raw:value});
 };
 Storage.prototype.removeItem=function(this:Storage,key:string){
  rawRemove.call(this,key);
- if(this===window.localStorage&&!hydrating&&synced(key)){
-  window.clearTimeout(timers.get(key));
-  timers.set(key,window.setTimeout(()=>{
-   void apiClient.post<{key:string;deleted:boolean},unknown>('/app-data',{key,deleted:true}).catch(()=>undefined);
-  },400));
- }
+ if(this===window.localStorage&&!hydrating&&synced(key))schedulePush(key,{deleted:true});
 };
 export async function hydrateFromServer(reloadOnChange=false){
  hydrating=true;
@@ -37,6 +42,8 @@ export async function hydrateFromServer(reloadOnChange=false){
   const items=response.data;
   const serverKeys=new Set(items.map(item=>item.key));
   for(const item of items){
+   // A local edit is newer than this snapshot; do not overwrite it while it is queued.
+   if(pending.has(item.key))continue;
    if(item.deleted){
     if(window.localStorage.getItem(item.key)!==null)changed=true;
     rawRemove.call(window.localStorage,item.key);
@@ -48,9 +55,9 @@ export async function hydrateFromServer(reloadOnChange=false){
   }
   for(let i=0;i<window.localStorage.length;i++){
    const key=window.localStorage.key(i);
-   if(key&&synced(key)&&!serverKeys.has(key)){
+   if(key&&synced(key)&&!serverKeys.has(key)&&!pending.has(key)){
     const raw=window.localStorage.getItem(key);
-    if(raw)push(key,raw);
+    if(raw)schedulePush(key,{raw});
    }
   }
  }catch{/* keep the local copy when the server is unreachable */}

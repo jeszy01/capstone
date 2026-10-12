@@ -220,7 +220,8 @@ const legacyTimestamp=(value:unknown)=>typeof value==="string"&&Number.isFinite(
 async function importLegacy(input:Row,ctx:RequestContext){
 	const importId="browser-compensation-v1";
 	const prior=await listRows<Row>("compensation_legacy_imports",{id:importId});
-	if(prior[0])return {alreadyImported:true,counts:prior[0].counts};
+	const retryFailed=input.retry_failed===true;
+	if(prior[0]&&!retryFailed)return {alreadyImported:true,counts:prior[0].counts};
 	const data=(input.legacy_data&&typeof input.legacy_data==="object"?input.legacy_data:{}) as Row;
 	const legacyGradeRows=legacyRows(data,"compensation:salary-grades");
 	const grades=await listRows<Row>("salary_grades");
@@ -238,7 +239,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
 		const existingById=legacyId?gradeById.get(legacyId):undefined;
 		if(existingById&&gradeCodeKey(String(existingById.grade??""))!==codeKey)throw new HttpError(409,"LEGACY_SALARY_GRADE_ID_COLLISION",`Legacy salary-grade ID ${legacyId} already belongs to a different code.`);
 	}
-	const employees=await listRows<Row>("employees");
+ const employees=await listRows<Row>("employees");
  const users=await listRows<Row>("users");
  const userByReference=new Map<string,Row>();
  for(const user of users)for(const value of [user.id,user.name,user.email,user.employee_id])if(value!==null&&value!==undefined)userByReference.set(String(value),user);
@@ -247,6 +248,29 @@ async function importLegacy(input:Row,ctx:RequestContext){
  for(const employee of employees){
   for(const value of [employee.id,employee.employee_number,employee.employee_no])if(value!==null&&value!==undefined)employeeByReference.set(String(value),employee);
  }
+	const legacyEmployees=legacyRows(data,"legacy_employee_records");
+	const normalizeReference=(value:unknown)=>String(value??"").trim().toLowerCase();
+	const currentEmployeeForLegacy=(legacy:Row)=>{
+	 const employeeNumber=legacy.employeeNo??legacy.employee_number;
+	 const email=legacy.email;
+	 const name=legacy.name;
+	 return employees.find(employee=>
+  (employeeNumber!==undefined&&(normalizeReference(employee.employee_number)===normalizeReference(employeeNumber)||normalizeReference(employee.employee_no)===normalizeReference(employeeNumber)))||
+  (email!==undefined&&normalizeReference(employee.email)===normalizeReference(email))||
+  (name!==undefined&&(normalizeReference(employee.name)===normalizeReference(name)||normalizeReference(`${employee.first_name??""} ${employee.last_name??""}`)===normalizeReference(name)))
+	 );
+	};
+	const employeeForLegacyRow=(row:Row)=>{
+	 const reference=row.employeeId??row.employee_id??row.employeeNo??row.employee_number;
+	 if(reference===undefined||reference===null)return undefined;
+	 const direct=employeeByReference.get(String(reference));
+	 if(direct)return direct;
+	 const normalized=String(reference).trim().toLowerCase();
+	 for(const [key,employee] of employeeByReference)if(key.trim().toLowerCase()===normalized)return employee;
+	 const legacy=legacyEmployees.find(employee=>[employee.id,employee.employeeId,employee.employee_id].some(value=>normalizeReference(value)===normalized));
+	 if(legacy)return currentEmployeeForLegacy(legacy);
+	 return undefined;
+	};
 	const counts:Record<string,number>={grades:0,grade_codes_normalized:0,assignments:0,proposals:0,history:0,rewards:0,skipped:0};
 	for(const row of legacyGradeRows)try{
 		const originalCode=required(row.code,"code").trim();
@@ -265,7 +289,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
  const importedProposals=new Map<string,string>();
  const oldProposals=legacyRows(data,"compensation:proposals");
  for(const row of oldProposals.length?oldProposals:legacyRows(data,"compensation:salary-adjustments"))try{
-  const employee=employeeByReference.get(String(row.employeeId??""));
+  const employee=employeeForLegacyRow(row);
   if(!employee)throw new Error("unknown employee");
   const type=String(row.type??"");
   if(!["Salary Adjustment","Merit Increase","Promotion Increase"].includes(type))throw new Error("invalid proposal type");
@@ -279,7 +303,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
   if(oldId)importedProposals.set(oldId,String(proposal.id));counts.proposals++;
  }catch{counts.skipped++}
  for(const row of legacyRows(data,"compensation:employee-assignments"))try{
-  const employee=employeeByReference.get(String(row.employeeId??""));
+  const employee=employeeForLegacyRow(row);
   if(!employee)throw new Error("unknown employee");
   const oldId=String(row.id??"");
   if(oldId&&(await listRows<Row>("employee_compensation",{legacy_id:oldId}))[0])continue;
@@ -292,7 +316,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
   counts.assignments++;
  }catch{counts.skipped++}
  for(const row of legacyRows(data,"compensation:history"))try{
-  const employee=employeeByReference.get(String(row.employeeId??""));
+  const employee=employeeForLegacyRow(row);
   if(!employee)throw new Error("unknown employee");
   const oldId=String(row.id??"");
   if(oldId&&(await listRows<Row>("compensation_history",{legacy_id:oldId}))[0])continue;
@@ -302,7 +326,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
   counts.history++;
  }catch{counts.skipped++}
  for(const row of legacyRows(data,"compensation:bonuses-incentives"))try{
-  const employee=employeeByReference.get(String(row.employeeId??""));
+  const employee=employeeForLegacyRow(row);
   if(!employee)throw new Error("unknown employee");
   const oldId=String(row.id??"");
   if(oldId&&(await listRows<Row>("compensation_rewards",{legacy_id:oldId}))[0])continue;
@@ -311,7 +335,9 @@ async function importLegacy(input:Row,ctx:RequestContext){
   await insertRow("compensation_rewards",{employee_id:employee.id,reward_type:type,amount:legacyMoney(row.amount,"amount"),effective_date:legacyDate(row.effectiveDate),notes:String(row.notes??""),status,created_by:null,created_at:typeof row.createdAt==="string"&&Number.isFinite(Date.parse(row.createdAt))?row.createdAt:new Date().toISOString(),legacy_id:oldId||null});
   counts.rewards++;
  }catch{counts.skipped++}
- await insertRow("compensation_legacy_imports",{id:importId,imported_by:ctx.userId,counts,imported_at:new Date().toISOString()});
+	 const importRecord={imported_by:ctx.userId,counts,imported_at:new Date().toISOString()};
+	 if(prior[0])await updateRows("compensation_legacy_imports",{id:importId},importRecord);
+	 else await insertRow("compensation_legacy_imports",{id:importId,...importRecord});
  await audit("compensation.legacy.imported",ctx.userId,"compensation_legacy_imports",importId,counts);
  return {alreadyImported:false,counts};
 }
