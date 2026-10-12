@@ -178,3 +178,4 @@ var app_data_default = verifiedEdge(async (ctx) => {
 export {
   app_data_default as default
 };
+Deno.serve(app_data_default);
