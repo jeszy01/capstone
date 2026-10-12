@@ -13,7 +13,7 @@ function toServer(e:Employee){const parts=e.name.trim().split(/\s+/);const first
 const localEmployees=()=>read<Employee[]>(localEmployeeKey,[]);
 const saveLocalEmployees=(employees:Employee[])=>{write(localEmployeeKey,employees);return employees};
 const isNetworkFailure=(cause:unknown)=>cause instanceof TypeError&&/fetch|network|failed/i.test(cause.message);
-async function withCompensation(list:Employee[]){try{const data=await compensationService.load();const active=activeCompensations(data.assignments,today());return list.map(e=>{const a=active.find(x=>x.employeeId===e.id);return a?{...e,basicSalary:a.fixedSalary,positionRate:a.dailyRate}:e})}catch{return list}}
+async function withCompensation(list:Employee[]){try{const data=await compensationService.load();const active=activeCompensations(data.assignments,today());return list.map(e=>{const a=active.find(x=>x.employeeId===e.id);return a?{...e,basicSalary:a.fixedSalary,positionRate:a.dailyRate}:e})}catch(e){console.error('withCompensation failed',e);return list}}
 export const employeeService={
  getAll:async()=>{try{const r=await apiClient.get<Envelope<ServerEmployee[]>>(employeePath());const employees=await withCompensation(r.data.map(fromServer));saveLocalEmployees(employees);return employees}catch(cause){if(isNetworkFailure(cause))return localEmployees();throw cause}},
  create:async(e:Employee)=>{try{const r=await apiClient.post<ReturnType<typeof toServer>,Envelope<ServerEmployee>>(employeePath(),toServer(e));const employee=fromServer(r.data);saveLocalEmployees([...localEmployees().filter(item=>item.id!==employee.id),employee]);return employee}catch(cause){if(!isNetworkFailure(cause))throw cause;saveLocalEmployees([...localEmployees().filter(item=>item.id!==e.id),e]);return e}},
