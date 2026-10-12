@@ -14,7 +14,8 @@ export function computeDeductions(a:{employees:Employee[];records:AttendanceReco
  return a.employees.filter(e=>e.status==='Active').map(employee=>{
   const assignment=active.find(x=>x.employeeId===employee.id||x.employeeId===employee.employeeNo);
   const grade=a.grades.find(g=>g.status!=='Inactive'&&(g.position??'').trim().toLowerCase()===(employee.position??'').trim().toLowerCase());
-  const salary=assignment?assignment.fixedSalary:(grade?grade.fixedSalary:null);
+  const employeeSalary=Number(employee.basicSalary??0);
+  const salary=assignment?assignment.fixedSalary:employeeSalary>0?employeeSalary:(grade?grade.fixedSalary:null);
   let lateMin=0,undertimeMin=0,otMin=0,daysWorked=0,absentDays=0;
   a.records.filter(r=>r.date>=a.from&&r.date<=a.to&&(r.empId===employee.employeeNo||r.empId===employee.id)).forEach(r=>{const c=calculateAttendance(r,a.schedule);lateMin+=c.late;undertimeMin+=c.under;otMin+=c.ot;if(r.status==='Present'&&r.timeIn&&r.timeOut)daysWorked++;if(r.status==='Absent')absentDays++});
   const perMin=salary?salary/a.rates.daysPerMonth/a.rates.hoursPerDay/60:0;
