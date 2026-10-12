@@ -648,9 +648,11 @@ function EnrollmentSection({
   plans: HmoPlan[];
   employeeMap: Map<string, Employee>;
 }) {
+  const [selectedEnrollment, setSelectedEnrollment] = useState<HmoEnrollment | null>(null);
   return (
-    <Card className="mt-4 overflow-x-auto">
-      <table className="w-full min-w-[1250px] text-left text-[13px]">
+    <>
+      <Card className="mt-4 overflow-x-auto">
+      <table className="w-full min-w-[1120px] text-left text-[13px]">
         <thead>
           <tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
             {[
@@ -660,8 +662,6 @@ function EnrollmentSection({
               "Coverage Starts",
               "Coverage Ends",
               "Enrollment Status",
-              "HR Approval",
-              "Maxicare Status",
               "Action",
             ].map((h) => (
               <th key={h} className="px-4 py-3">
@@ -673,7 +673,7 @@ function EnrollmentSection({
         <tbody>
           {enrollments.length === 0 ? (
             <tr>
-              <td colSpan={9}>
+              <td colSpan={8}>
                 <Empty>No HMO enrollments yet.</Empty>
               </td>
             </tr>
@@ -709,80 +709,76 @@ function EnrollmentSection({
                   {formatHmoDate(e.expirationDate)}
                 </td>
                 <td className="px-4 py-3">
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{e.status}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">
-                    {e.approvalStatus}
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800">
+                    {enrollmentDisplayStatus(e)}
                   </span>
-                  {e.rejectionReason && (
-                    <div className="mt-1 text-[11px] text-red-600">
-                      {e.rejectionReason}
-                    </div>
-                  )}
                 </td>
                 <td className="px-4 py-3">
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">
-                    {e.maxicareStatus}
-                  </span>
-                  {e.maxicareReference && (
-                    <div className="mt-1 text-[11px] text-[#6b7794]">
-                      {e.maxicareReference}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {e.approvalStatus === "Pending" && ["Pending", "Submitted"].includes(e.status) && (
-                      <button
-                        className="text-blue-600 font-semibold"
-                        onClick={async () => {
-                          await hmoService.approveEnrollment(e.id);
-                          window.location.reload();
-                        }}
-                      >
-                        Approve
-                      </button>
-                    )}
-                    {e.approvalStatus === "Approved" &&
-                      e.maxicareStatus !== "Active" && (
-                        <button
-                          className="text-emerald-700 font-semibold"
-                          onClick={async () => {
-                            const reference = window.prompt(
-                              "Enter Maxicare activation reference",
-                            );
-                            if (reference) {
-                              await hmoService.activateEnrollment(
-                                e.id,
-                                reference,
-                              );
-                              window.location.reload();
-                            }
-                          }}
-                        >
-                          Activate
-                        </button>
-                      )}
-                    {e.status === "Active" && (
-                      <button
-                        className="text-[#b34a4a]"
-                        onClick={async () => {
-                          await hmoService.terminateEnrollment(e.id);
-                          window.location.reload();
-                        }}
-                      >
-                        Terminate
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    className="font-semibold text-blue-600 hover:text-blue-800"
+                    onClick={() => setSelectedEnrollment(e)}
+                  >
+                    View
+                  </button>
                 </td>
               </tr>;
             })
           )}
         </tbody>
       </table>
-    </Card>
+      </Card>
+      {selectedEnrollment && (
+        <EnrollmentViewModal
+          enrollment={selectedEnrollment}
+          employee={employeeMap.get(selectedEnrollment.employeeId)}
+          plan={plans.find((p) => p.id === selectedEnrollment.planId)}
+          onClose={() => setSelectedEnrollment(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function enrollmentDisplayStatus(enrollment: HmoEnrollment) {
+  if (enrollment.status === "Rejected" || enrollment.approvalStatus === "Rejected") return "Rejected";
+  if (enrollment.status === "Active" && enrollment.maxicareStatus === "Active") return "Active";
+  if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
+  if (enrollment.approvalStatus === "Approved") return "Ready for Submission";
+  return "Pending HR Approval";
+}
+
+function EnrollmentViewModal({
+  enrollment,
+  employee,
+  plan,
+  onClose,
+}: {
+  enrollment: HmoEnrollment;
+  employee?: Employee;
+  plan?: HmoPlan;
+  onClose: () => void;
+}) {
+  return (
+    <Modal title="Enrollment Details" onClose={onClose}>
+      <div className="grid gap-3 text-[13px] text-[#142b50]">
+        <div className="rounded-xl border border-[#e3e7ef] bg-[#f8fafc] p-3">
+          <div className="text-[11px] uppercase tracking-wide text-[#6b7794]">Enrollment Status</div>
+          <div className="mt-1 font-semibold">{enrollmentDisplayStatus(enrollment)}</div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div><div className="text-[11px] text-[#6b7794]">Employee</div><div className="font-medium">{employee?.name ?? enrollment.employeeId}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Plan</div><div className="font-medium">{plan?.name ?? "Unavailable"}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Eligibility Date</div><div className="font-medium">{formatHmoDate(enrollment.eligibilityDate)}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Coverage Period</div><div className="font-medium">{formatHmoDate(enrollment.effectiveDate)} – {formatHmoDate(enrollment.expirationDate)}</div></div>
+        </div>
+        {enrollment.maxicareReference && <div><div className="text-[11px] text-[#6b7794]">Maxicare Reference</div><div className="font-medium">{enrollment.maxicareReference}</div></div>}
+        {enrollment.rejectionReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{enrollment.rejectionReason}</div></div>}
+      </div>
+      <div className="mt-6 flex justify-end">
+        <Button onClick={onClose}>Close</Button>
+      </div>
+    </Modal>
   );
 }
 function DependentSection({
