@@ -1,5 +1,6 @@
 import {apiClient} from '../../services/api/apiClient';
 import type {HmoApprovalStatus,HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPayrollDeduction,HmoPlan,HmoProvider,HmoUtilization,MaxicareStatus} from './hmoTypes';
+
 type Envelope<T>={data:T};
 type ServerProvider={id:string;name:string;contact_person?:string|null;contact_number?:string|null;status:HmoProvider['status']};
 type ServerPlan={id:string;provider_id:string;name:string;coverage_start:string;coverage_end:string;annual_benefit_limit:number|null;inpatient:boolean;outpatient:boolean;emergency:boolean;preventive_care:boolean;dental:boolean;employee_company_share:number;employee_member_share:number;dependent_company_share:number;dependent_member_share:number;employee_monthly_premium:number|null;dependent_monthly_premium:number|null;collect_employee_share_via_payroll:boolean;status:HmoPlan['status']};
@@ -8,37 +9,121 @@ type ServerDependent={id:string;enrollment_id:string;name:string;relationship:st
 type ServerUtilization={id:string;enrollment_id:string;dependent_id:string|null;service_date:string;service_type:string;amount_used:number;status:HmoUtilization['status'];remarks:string|null};
 type ServerDeduction={id:string;employee_id:string;enrollment_id:string;period_start:string;period_end:string;amount:number;verification_status:'Pending'|'Verified'|'Rejected';verified_by:string|null;verified_at:string|null;created_at:string};
 type ServerHistory={id:string;entity_type:string;entity_id:string;action:string;actor_id:string|null;previous_values:Record<string,unknown>;new_values:Record<string,unknown>;created_at:string};
+
 const get=<T>(resource:string)=>apiClient.get<Envelope<T[]>>(`/hmo/${resource}`).then(r=>r.data);
-async function post<TRequest,TResponse>(resource:string,value:TRequest):Promise<TResponse>{const r=await apiClient.post<TRequest,Envelope<TResponse>>(`/hmo/${resource}`,value);return r.data;}
-async function patch<TRequest,TResponse>(resource:string,id:string,value:TRequest):Promise<TResponse>{const r=await apiClient.put<TRequest,Envelope<TResponse>>(`/hmo/${resource}/${id}`,value);return r.data;}
+
+async function post<TRequest,TResponse>(resource:string,value:TRequest):Promise<TResponse>{
+ const r=await apiClient.post<TRequest,Envelope<TResponse>>(`/hmo/${resource}`,value);
+ return r.data;
+}
+
+async function patch<TRequest,TResponse>(resource:string,id:string,value:TRequest):Promise<TResponse>{
+ const r=await apiClient.put<TRequest,Envelope<TResponse>>(`/hmo/${resource}/${id}`,value);
+ return r.data;
+}
+
 const provider=(x:ServerProvider):HmoProvider=>({id:x.id,name:x.name,contactPerson:x.contact_person??null,contactNumber:x.contact_number??null,status:x.status});
-const plan=(x:ServerPlan):HmoPlan=>({id:x.id,providerId:x.provider_id,name:x.name,coverageStart:x.coverage_start,coverageEnd:x.coverage_end,annualBenefitLimit:x.annual_benefit_limit==null?null:Number(x.annual_benefit_limit),inpatient:x.inpatient,outpatient:x.outpatient,emergency:x.emergency,preventiveCare:x.preventive_care,dental:x.dental,employeeCompanyShare:Number(x.employee_company_share),employeeMemberShare:Number(x.employee_member_share),dependentCompanyShare:Number(x.dependent_company_share),dependentMemberShare:Number(x.dependent_member_share),employeeMonthlyPremium:x.employee_monthly_premium==null?null:Number(x.employee_monthly_premium),dependentMonthlyPremium:x.dependent_monthly_premium==null?null:Number(x.dependent_monthly_premium),collectEmployeeShareViaPayroll:x.collect_employee_share_via_payroll,status:x.status});
+
+const plan=(x:ServerPlan):HmoPlan=>({
+ id:x.id,
+ providerId:x.provider_id,
+ name:x.name,
+ coverageStart:x.coverage_start,
+ coverageEnd:x.coverage_end,
+ annualBenefitLimit:x.annual_benefit_limit==null?null:Number(x.annual_benefit_limit),
+ inpatient:x.inpatient,
+ outpatient:x.outpatient,
+ emergency:x.emergency,
+ preventiveCare:x.preventive_care,
+ dental:x.dental,
+ employeeCompanyShare:Number(x.employee_company_share),
+ employeeMemberShare:Number(x.employee_member_share),
+ dependentCompanyShare:Number(x.dependent_company_share),
+ dependentMemberShare:Number(x.dependent_member_share),
+ employeeMonthlyPremium:x.employee_monthly_premium==null?null:Number(x.employee_monthly_premium),
+ dependentMonthlyPremium:x.dependent_monthly_premium==null?null:Number(x.dependent_monthly_premium),
+ collectEmployeeShareViaPayroll:x.collect_employee_share_via_payroll,
+ status:x.status
+});
+
 const enrollment=(x:ServerEnrollment):HmoEnrollment=>({id:x.id,planId:x.plan_id,employeeId:x.employee_id,eligibilityDate:x.eligibility_date,effectiveDate:x.effective_date,expirationDate:x.expiration_date,status:x.status,approvalStatus:x.approval_status??'Pending',approvedBy:x.approved_by??null,approvedAt:x.approved_at??null,rejectionReason:x.rejection_reason??null,maxicareStatus:x.maxicare_status??'Not Submitted',maxicareReference:x.maxicare_reference??null,maxicareActivatedAt:x.maxicare_activated_at??null,activatedAt:x.activated_at??null,terminatedAt:x.terminated_at??null});
+
 const dependent=(x:ServerDependent):HmoDependent=>({id:x.id,enrollmentId:x.enrollment_id,name:x.name,relationship:x.relationship,dateOfBirth:x.date_of_birth,eligibilityStatus:x.eligibility_status,effectiveDate:x.effective_date,expirationDate:x.expiration_date,status:x.status,approvalStatus:x.approval_status??'Pending',approvedBy:x.approved_by??null,approvedAt:x.approved_at??null,rejectionReason:x.rejection_reason??null,companySponsored:Boolean(x.company_sponsored),employeeShare:Number(x.employee_share??0),companyShare:Number(x.company_share??0)});
+
 const utilization=(x:ServerUtilization):HmoUtilization=>({id:x.id,enrollmentId:x.enrollment_id,dependentId:x.dependent_id,serviceDate:x.service_date,serviceType:x.service_type,amountUsed:Number(x.amount_used),status:x.status,remarks:x.remarks});
+
 const deduction=(x:ServerDeduction):HmoPayrollDeduction=>({id:x.id,employeeId:x.employee_id,enrollmentId:x.enrollment_id,periodStart:x.period_start,periodEnd:x.period_end,amount:Number(x.amount),verificationStatus:x.verification_status,verifiedBy:x.verified_by,verifiedAt:x.verified_at,createdAt:x.created_at});
+
 const history=(x:ServerHistory):HmoHistoryRow=>({id:x.id,entityType:x.entity_type,entityId:x.entity_id,action:x.action,actorId:x.actor_id,previousValues:x.previous_values,newValues:x.new_values,createdAt:x.created_at});
+
 export const hmoService={
  providers:async()=>get<ServerProvider>('providers').then(x=>x.map(provider)),
  plans:async()=>get<ServerPlan>('plans').then(x=>x.map(plan)),
  enrollments:async()=>get<ServerEnrollment>('enrollments').then(x=>x.map(enrollment)),
  dependents:async()=>get<ServerDependent>('dependents').then(x=>x.map(dependent)),
  utilizations:async()=>get<ServerUtilization>('utilizations').then(x=>x.map(utilization)),
+
  history:async(params:Record<string,string|number>={})=>apiClient.get<Envelope<{items:ServerHistory[];page:number;page_size:number;total:number}>>(`/hmo/history?${new URLSearchParams(Object.entries(params).map(([k,v])=>[k,String(v)]))}`).then(r=>({...r.data,items:r.data.items.map(history)})),
+
  createProvider:async(v:Partial<HmoProvider>)=>provider(await post('providers',{name:v.name,contact_person:v.contactPerson,contact_number:v.contactNumber,status:v.status??'Active'})),
+
  createPlan:async(v:Partial<HmoPlan>)=>plan(await post('plans',{provider_id:v.providerId,name:v.name,coverage_start:v.coverageStart,coverage_end:v.coverageEnd,annual_benefit_limit:v.annualBenefitLimit,inpatient:v.inpatient,outpatient:v.outpatient,emergency:v.emergency,preventive_care:v.preventiveCare,dental:v.dental,employee_company_share:v.employeeCompanyShare,employee_member_share:v.employeeMemberShare,dependent_company_share:v.dependentCompanyShare,dependent_member_share:v.dependentMemberShare,employee_monthly_premium:v.employeeMonthlyPremium,dependent_monthly_premium:v.dependentMonthlyPremium,collect_employee_share_via_payroll:v.collectEmployeeShareViaPayroll,status:v.status})),
+
+ updatePlan:async(id:string,v:Partial<HmoPlan>):Promise<HmoPlan>=>{
+  await patch('plans',id,{
+   provider_id:v.providerId,
+   name:v.name,
+   coverage_start:v.coverageStart,
+   coverage_end:v.coverageEnd,
+   annual_benefit_limit:v.annualBenefitLimit,
+   inpatient:v.inpatient,
+   outpatient:v.outpatient,
+   emergency:v.emergency,
+   preventive_care:v.preventiveCare,
+   dental:v.dental,
+   employee_company_share:v.employeeCompanyShare,
+   employee_member_share:v.employeeMemberShare,
+   dependent_company_share:v.dependentCompanyShare,
+   dependent_member_share:v.dependentMemberShare,
+   employee_monthly_premium:v.employeeMonthlyPremium,
+   dependent_monthly_premium:v.dependentMonthlyPremium,
+   collect_employee_share_via_payroll:v.collectEmployeeShareViaPayroll,
+   status:v.status
+  });
+
+  const updatedPlans=await hmoService.plans();
+  const updatedPlan=updatedPlans.find(item=>item.id===id);
+
+  if(!updatedPlan){
+   throw new Error('Plan was saved, but the updated plan could not be reloaded.');
+  }
+
+  return updatedPlan;
+ },
+
  createEnrollment:async(v:Partial<HmoEnrollment>)=>enrollment(await post('enrollments',{plan_id:v.planId,employee_id:v.employeeId,eligibility_date:v.eligibilityDate,effective_date:v.effectiveDate,expiration_date:v.expirationDate})),
+
  createDependent:async(v:Partial<HmoDependent>)=>dependent(await post('dependents',{enrollment_id:v.enrollmentId,name:v.name,relationship:v.relationship,date_of_birth:v.dateOfBirth,effective_date:v.effectiveDate})),
+
  createUtilization:async(v:Partial<HmoUtilization>)=>utilization(await post('utilizations',{enrollment_id:v.enrollmentId,dependent_id:v.dependentId,service_date:v.serviceDate,service_type:v.serviceType,amount_used:v.amountUsed,status:v.status,remarks:v.remarks})),
+
  approveEnrollment:(id:string)=>patch('enrollments',id,{action:'approve'}),
  rejectEnrollment:(id:string,rejection_reason:string)=>patch('enrollments',id,{action:'reject',rejection_reason}),
  activateEnrollment:(id:string,maxicare_reference:string)=>patch('enrollments',id,{action:'activate',maxicare_reference}),
  terminateEnrollment:(id:string)=>patch('enrollments',id,{action:'terminate'}),
+
  approveDependent:(id:string)=>patch('dependents',id,{action:'approve'}),
  rejectDependent:(id:string,rejection_reason:string)=>patch('dependents',id,{action:'reject',rejection_reason}),
  terminateDependent:(id:string)=>patch('dependents',id,{action:'terminate'}),
+
  createPayrollDeduction:async(v:{employeeId:string;enrollmentId:string;periodStart:string;periodEnd:string})=>deduction(await post('payroll-deductions',{employee_id:v.employeeId,enrollment_id:v.enrollmentId,period_start:v.periodStart,period_end:v.periodEnd})),
+
  verifyPayrollDeduction:(id:string)=>patch('payroll-deductions',id,{action:'verify'}),
+
  getPayrollDeductions:async()=>get<ServerDeduction>('payroll-deductions').then(x=>x.map(deduction)),
- getPayrollDeduction:async(employeeId:string)=>{const deductions=await hmoService.getPayrollDeductions();return Math.round(deductions.filter(item=>item.employeeId===employeeId&&item.verificationStatus==='Verified').reduce((sum,item)=>sum+item.amount,0)*100)/100}
+
+ getPayrollDeduction:async(employeeId:string)=>{
+  const deductions=await hmoService.getPayrollDeductions();
+  return Math.round(deductions.filter(item=>item.employeeId===employeeId&&item.verificationStatus==='Verified').reduce((sum,item)=>sum+item.amount,0)*100)/100;
+ }
 };
