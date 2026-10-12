@@ -16,6 +16,7 @@ const enrollment = (status: HmoEnrollment['status']): HmoEnrollment => ({
 describe('HMO employee enrollment rules', () => {
   it('calculates six calendar months from hire date and clamps month-end dates', () => {
     expect(hmoEligibilityDate('2026-01-31')).toBe('2026-07-31');
+    expect(hmoEligibilityDate(' 2026-01-31T00:00:00.000Z ')).toBe('2026-07-31');
     expect(hmoEligibilityDate('2026-08-31')).toBe('2027-02-28');
     expect(hmoEligibilityDate('2026-02-30')).toBeNull();
     expect(hmoEligibilityDate(null)).toBeNull();
