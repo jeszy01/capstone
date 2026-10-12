@@ -8,7 +8,7 @@ type ServerEnrollment={id:string;plan_id:string;employee_id:string;eligibility_d
 type ServerDependent={id:string;enrollment_id:string;name:string;relationship:string;date_of_birth:string|null;eligibility_status:HmoDependent['eligibilityStatus'];effective_date:string|null;expiration_date:string|null;status:HmoDependent['status'];approval_status?:HmoApprovalStatus;approved_by?:string|null;approved_at?:string|null;rejection_reason?:string|null;maxicare_status?:MaxicareStatus;maxicare_reference?:string|null;company_sponsored?:boolean;employee_share?:number;company_share?:number};
 type ServerUtilization={id:string;enrollment_id:string;dependent_id:string|null;service_date:string;service_type:string;amount_used:number;status:HmoUtilization['status'];remarks:string|null};
 type ServerDeduction={id:string;employee_id:string;enrollment_id:string;period_start:string;period_end:string;amount:number;verification_status:'Pending'|'Verified'|'Rejected';verified_by:string|null;verified_at:string|null;created_at:string};
-type ServerHistory={id:string;entity_type:string;entity_id:string;action:string;actor_id:string|null;previous_values:Record<string,unknown>;new_values:Record<string,unknown>;created_at:string};
+type ServerHistory={id:string;entity_type:string;entity_id:string;action:string;actor_id:string|null;actor_name?:string|null;previous_values:Record<string,unknown>;new_values:Record<string,unknown>;created_at:string};
 
 const get=<T>(resource:string)=>apiClient.get<Envelope<T[]>>(`/hmo/${resource}`).then(r=>r.data);
 
@@ -62,7 +62,7 @@ const utilization=(x:ServerUtilization):HmoUtilization=>({id:x.id,enrollmentId:x
 
 const deduction=(x:ServerDeduction):HmoPayrollDeduction=>({id:x.id,employeeId:x.employee_id,enrollmentId:x.enrollment_id,periodStart:x.period_start,periodEnd:x.period_end,amount:Number(x.amount),verificationStatus:x.verification_status,verifiedBy:x.verified_by,verifiedAt:x.verified_at,createdAt:x.created_at});
 
-const history=(x:ServerHistory):HmoHistoryRow=>({id:x.id,entityType:x.entity_type,entityId:x.entity_id,action:x.action,actorId:x.actor_id,previousValues:x.previous_values,newValues:x.new_values,createdAt:x.created_at});
+const history=(x:ServerHistory):HmoHistoryRow=>({id:x.id,entityType:x.entity_type,entityId:x.entity_id,action:x.action,actorId:x.actor_id,actorName:x.actor_name??null,previousValues:x.previous_values,newValues:x.new_values,createdAt:x.created_at});
 
 export const hmoService={
  providers:async()=>get<ServerProvider>('providers').then(x=>x.map(provider)),

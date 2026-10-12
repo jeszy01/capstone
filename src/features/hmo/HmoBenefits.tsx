@@ -1697,10 +1697,31 @@ function HistorySection() {
   }, [page, search, entityType, refresh]);
   const formatDate = (value: string) => {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? "Unavailable" : date.toLocaleString();
+    return Number.isNaN(date.getTime())
+      ? "Unavailable"
+      : new Intl.DateTimeFormat("en-PH", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(date);
   };
   const formatLabel = (value: string) =>
-    value.replace(/_/g, " ").replace(/\\\b\\\w/g, (c) => c.toUpperCase());
+    value
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  const actionLabel = (value: string) =>
+    ({
+      submitted: "Submitted",
+      approved: "HR Approved",
+      rejected: "Rejected",
+      maxicare_activated: "Maxicare Approved",
+      submitted_to_maxicare: "Submitted to Maxicare",
+      activated: "Activated",
+      terminated: "Terminated",
+      created: "Created",
+      updated: "Updated",
+      deleted: "Deleted",
+      verified: "Verified",
+    })[value] ?? formatLabel(value);
   return (
     <Card className="mt-4">
       {" "}
@@ -1799,13 +1820,13 @@ function HistorySection() {
                       {formatLabel(item.entityType)}
                     </td>{" "}
                     <td className="px-3 py-3 font-semibold">
-                      {formatLabel(item.action)}
+                      {actionLabel(item.action)}
                     </td>{" "}
                     <td className="px-3 py-3 font-mono text-[11px]">
                       {item.entityId}
                     </td>{" "}
                     <td className="px-3 py-3">
-                      {item.actorId ?? "Unavailable"}
+                      {item.actorName ?? (item.actorId ? item.actorId : "System")}
                     </td>{" "}
                   </tr>
                 ))}

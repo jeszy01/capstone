@@ -298,7 +298,7 @@ export default verifiedEdge(async ctx=>{
   }
   if(ctx.request.method==='DELETE'){
     if(['enrollments','dependents','plans','providers'].includes(resource))throw new HttpError(409,'HMO_DELETE_NOT_ALLOWED','HMO workflow records are retained; terminate or archive them instead.');
-    await deleteRows(table,{id:pathId});await history(resource,pathId,'deleted',ctx.userId,previous,{});return noContent();
+    await deleteRows(table,{id:pathId});await history(historyType(resource),pathId,'deleted',ctx.userId,previous,{});return noContent();
   }
   return new Response('Method Not Allowed',{status:405});
 });
