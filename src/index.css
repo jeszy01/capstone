@@ -42,7 +42,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @keyframes pbms-enter{from{opacity:.75;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:640px){.pbms-shell h1{font-size:23px}.pbms-card{padding:16px}.pbms-shell table thead th,.pbms-shell table tbody td{padding-left:12px;padding-right:12px}.pbms-modal>div{padding:20px}.pbms-shell [role="tab"]{padding:9px 12px}.pbms-content>div>div.flex.items-start{flex-wrap:wrap}.pbms-content .min-w-\[240px\]{min-width:0;max-width:100%}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-@media print{.pbms-shell aside,.pbms-topbar,.pbms-mobile-scrim,.pbms-shell [role="tablist"]{display:none!important}.pbms-shell,.pbms-content{background:white;padding:0}.pbms-card{box-shadow:none}.pbms-modal{position:static;background:white;backdrop-filter:none}.pbms-modal>div{max-height:none;max-width:none;box-shadow:none}}
+@media print{.pbms-shell aside,.pbms-topbar,.pbms-mobile-scrim,.pbms-shell [role="tablist"],.print\:hidden{display:none!important}.pbms-shell,.pbms-content{background:white;padding:0}.pbms-card{box-shadow:none}.hmo-records-report{margin:0!important;border:0!important;padding:0!important}.hmo-records-report table{min-width:0!important;width:100%!important;font-size:10px!important}.hmo-records-report table th,.hmo-records-report table td{padding:7px 5px!important;white-space:normal!important}.pbms-modal{position:static;background:white;backdrop-filter:none}.pbms-modal>div{max-height:none;max-width:none;box-shadow:none}}
 
 .pbms-dark body{background:#0f172a;color:#e2e8f0}
 .pbms-dark .pbms-shell{background:#0f172a!important;color:#e2e8f0}

@@ -24,7 +24,6 @@ import { recordAudit } from "../audit/auditService";
 import type {
   HmoDependent,
   HmoEnrollment,
-  HmoHistoryRow,
   HmoPlan,
   HmoProvider,
 } from "./hmoTypes";
@@ -223,7 +222,14 @@ export default function HmoBenefits({
                 employeeMap={employeeMap}
               />
             )}{" "}
-            {tab === "history" && <HistorySection />}
+            {tab === "history" && (
+              <HmoRecordsSection
+                enrollments={enrollments}
+                plans={plans}
+                dependents={dependents}
+                employeeMap={employeeMap}
+              />
+            )}
           </>
         )}
       </div>{" "}
@@ -1657,210 +1663,103 @@ function DependentModal({
     </Modal>
   );
 }
-function HistorySection() {
-  const [items, setItems] = useState<HmoHistoryRow[]>([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [entityType, setEntityType] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [refresh, setRefresh] = useState(0);
-  const pageSize = 10;
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    hmoService
-      .history({
-        page,
-        page_size: pageSize,
-        ...(search.trim() ? { search: search.trim() } : {}),
-        ...(entityType ? { entity_type: entityType } : {}),
-      })
-      .then((result) => {
-        if (cancelled) return;
-        setItems(result.items);
-        setTotal(result.total);
-      })
-      .catch((err) => {
-        console.error("HMO history load failed", err);
-        if (!cancelled)
-          setError(
-            "Unable to load HMO history. Please check the connection and try again.",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
+function HmoRecordsSection({
+  enrollments,
+  plans,
+  dependents,
+  employeeMap,
+}: {
+  enrollments: HmoEnrollment[];
+  plans: HmoPlan[];
+  dependents: HmoDependent[];
+  employeeMap: Map<string, Employee>;
+}) {
+  const [selectedEnrollment, setSelectedEnrollment] = useState<HmoEnrollment | null>(null);
+  const rows = enrollments.map((enrollment) => {
+    const employee = employeeMap.get(enrollment.employeeId);
+    const plan = plans.find((item) => item.id === enrollment.planId);
+    const coveredDependents = dependents.filter((item) => item.enrollmentId === enrollment.id);
+    const activeDependents = coveredDependents.filter(
+      (item) =>
+        item.status === "Active" &&
+        item.approvalStatus === "Approved" &&
+        item.maxicareStatus === "Active",
+    );
+    const companyShare =
+      (Number(plan?.employeeMonthlyPremium ?? 0) * Number(plan?.employeeCompanyShare ?? 0)) / 100 +
+      activeDependents.reduce((sum, item) => sum + Number(item.companyShare ?? 0), 0);
+    const employeeShare =
+      (Number(plan?.employeeMonthlyPremium ?? 0) * Number(plan?.employeeMemberShare ?? 0)) / 100 +
+      activeDependents.reduce((sum, item) => sum + Number(item.employeeShare ?? 0), 0);
+    return {
+      enrollment,
+      employee,
+      plan,
+      dependents: coveredDependents,
+      companyShare: Math.round(companyShare * 100) / 100,
+      employeeShare: Math.round(employeeShare * 100) / 100,
     };
-  }, [page, search, entityType, refresh]);
-  const formatDate = (value: string) => {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime())
-      ? "Unavailable"
-      : new Intl.DateTimeFormat("en-PH", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(date);
-  };
-  const formatLabel = (value: string) =>
-    value
-      .replace(/[_-]+/g, " ")
-      .replace(/\b\w/g, (character) => character.toUpperCase());
-  const actionLabel = (value: string) =>
-    ({
-      submitted: "Submitted",
-      approved: "HR Approved",
-      rejected: "Rejected",
-      maxicare_activated: "Maxicare Approved",
-      submitted_to_maxicare: "Submitted to Maxicare",
-      activated: "Activated",
-      terminated: "Terminated",
-      created: "Created",
-      updated: "Updated",
-      deleted: "Deleted",
-      verified: "Verified",
-    })[value] ?? formatLabel(value);
+  });
+  const printReport = () => window.print();
   return (
-    <Card className="mt-4">
-      {" "}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {" "}
+    <Card className="hmo-records-report mt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          {" "}
-          <h2 className="m-0 text-[16px] font-semibold">HMO Records</h2>{" "}
+          <h2 className="m-0 text-[16px] font-semibold">HMO Records</h2>
           <p className="mt-1 text-[12px] text-[#6b7794]">
-            HMO enrollment, dependent, plan, and payroll records.
-          </p>{" "}
-        </div>{" "}
-        <Button onClick={() => setRefresh((value) => value + 1)}>
-          Refresh
-        </Button>{" "}
-      </div>{" "}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {" "}
-        <Field label="Search history">
-          {" "}
-          <TextInput
-            value={search}
-            placeholder="Search records or record IDs"
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setPage(1);
-            }}
-          />{" "}
-        </Field>{" "}
-        <Field label="Record type">
-          {" "}
-          <select
-            className={input}
-            value={entityType}
-            onChange={(event) => {
-              setEntityType(event.target.value);
-              setPage(1);
-            }}
-          >
-            {" "}
-            <option value="">All record types</option>{" "}
-            <option value="provider">Provider</option>{" "}
-            <option value="plan">Plan</option>{" "}
-            <option value="enrollment">Enrollment</option>{" "}
-            <option value="dependent">Dependent</option>{" "}
-            <option value="utilization">Utilization</option>{" "}
-            <option value="payroll_deduction">Payroll deduction</option>{" "}
-          </select>{" "}
-        </Field>{" "}
-      </div>{" "}
-      {error ? (
-        <div className="mt-4">
-          <ErrorAlert onRetry={() => setRefresh((value) => value + 1)}>
-            {error}
-          </ErrorAlert>
+            Accurate employee enrollment summary, coverage, dependents, and contribution shares.
+          </p>
         </div>
-      ) : loading ? (
-        <div className="mt-4">
-          <LoadingState>Loading HMO records…</LoadingState>
+        <div className="flex gap-2 print:hidden">
+          <Button onClick={printReport}>Print HMO Summary Report</Button>
         </div>
-      ) : items.length === 0 ? (
-        <div className="mt-4">
-          <Empty>No HMO records found.</Empty>
-        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="mt-4"><Empty>No HMO records found.</Empty></div>
       ) : (
-        <>
-          {" "}
-          <div className="mt-4 overflow-x-auto">
-            {" "}
-            <table className="w-full min-w-[850px] text-left text-[13px]">
-              {" "}
-              <thead>
-                <tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
-                  {" "}
-                  {[
-                    "Date and time",
-                    "Record type",
-                    "Action",
-                    "Record ID",
-                    "Actor",
-                  ].map((label) => (
-                    <th key={label} className="px-3 py-3">
-                      {label}
-                    </th>
-                  ))}{" "}
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[1250px] text-left text-[13px]">
+            <thead>
+              <tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
+                {[
+                  "Employee",
+                  "Department",
+                  "HMO Plan",
+                  "Coverage Period",
+                  "Dependents",
+                  "Company Share",
+                  "Employee Share",
+                  "Enrollment Status",
+                  "Action",
+                ].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.enrollment.id} className="border-b border-[#eef1f6]">
+                  <td className="px-3 py-3 font-semibold">{row.employee?.name ?? row.enrollment.employeeId}</td>
+                  <td className="px-3 py-3">{row.employee?.department ?? "Unavailable"}</td>
+                  <td className="px-3 py-3">{row.plan?.name ?? "Unavailable"}</td>
+                  <td className="px-3 py-3 whitespace-nowrap">{formatHmoDate(row.enrollment.effectiveDate)} – {formatHmoDate(row.enrollment.expirationDate)}</td>
+                  <td className="px-3 py-3">{row.dependents.length ? row.dependents.map((item) => item.name).join(", ") : "None"}</td>
+                  <td className="px-3 py-3 whitespace-nowrap">{money(row.companyShare)}</td>
+                  <td className="px-3 py-3 whitespace-nowrap">{money(row.employeeShare)}</td>
+                  <td className="px-3 py-3"><span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{enrollmentDisplayStatus(row.enrollment)}</span></td>
+                  <td className="px-3 py-3"><button type="button" className="font-semibold text-blue-600 hover:text-blue-800 print:hidden" onClick={() => setSelectedEnrollment(row.enrollment)}>View</button></td>
                 </tr>
-              </thead>{" "}
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} className="border-b border-[#eef1f6]">
-                    {" "}
-                    <td className="px-3 py-3">
-                      {formatDate(item.createdAt)}
-                    </td>{" "}
-                    <td className="px-3 py-3">
-                      {formatLabel(item.entityType)}
-                    </td>{" "}
-                    <td className="px-3 py-3 font-semibold">
-                      {actionLabel(item.action)}
-                    </td>{" "}
-                    <td className="px-3 py-3 font-mono text-[11px]">
-                      {item.entityId}
-                    </td>{" "}
-                    <td className="px-3 py-3">
-                      {item.actorName ?? (item.actorId ? item.actorId : "System")}
-                    </td>{" "}
-                  </tr>
-                ))}
-              </tbody>{" "}
-            </table>{" "}
-          </div>{" "}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[12px]">
-            {" "}
-            <span>
-              {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of{" "}
-              {total} records
-            </span>{" "}
-            <div className="flex gap-2">
-              {" "}
-              <button
-                className="rounded-lg border border-[#e3e7ef] px-3 py-2 disabled:opacity-40"
-                disabled={page <= 1}
-                onClick={() => setPage((value) => value - 1)}
-              >
-                Previous
-              </button>{" "}
-              <button
-                className="rounded-lg border border-[#e3e7ef] px-3 py-2 disabled:opacity-40"
-                disabled={page * pageSize >= total}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                Next
-              </button>{" "}
-            </div>{" "}
-          </div>{" "}
-        </>
-      )}{" "}
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {selectedEnrollment && (
+        <EnrollmentViewModal
+          enrollment={selectedEnrollment}
+          employee={employeeMap.get(selectedEnrollment.employeeId)}
+          plan={plans.find((item) => item.id === selectedEnrollment.planId)}
+          onClose={() => setSelectedEnrollment(null)}
+        />
+      )}
     </Card>
   );
 }
