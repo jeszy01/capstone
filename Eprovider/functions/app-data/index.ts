@@ -16,13 +16,13 @@ function validateKey(value:unknown){
 export default verifiedEdge(async(ctx:RequestContext)=>{
  if(ctx.request.method==="GET"){
   const rows=await listRows<AppDataRow>("app_data");
-  return ok(rows.map(({key,value,deleted})=>({key,value,deleted})));
+  return ok(rows.map(({key,value,deleted})=>{let v:unknown=value;if(typeof v==="string"){try{v=JSON.parse(v)}catch{}}return {key,value:v,deleted}}));
  }
  if(ctx.request.method==="POST"){
   const input=await body<Record<string,unknown>>(ctx.request);
   const key=validateKey(input.key);
   if(input.deleted===true){
-   const values={value:{},deleted:true,updated_at:new Date().toISOString(),updated_by:ctx.userId??null};
+   const values={value:JSON.stringify({}),deleted:true,updated_at:new Date().toISOString(),updated_by:ctx.userId??null};
    const existing=(await listRows<AppDataRow>("app_data",{key}))[0];
    if(existing)await updateRows("app_data",{key},values);
    else await insertRow("app_data",{key,...values});
@@ -31,7 +31,7 @@ export default verifiedEdge(async(ctx:RequestContext)=>{
   if(!Object.prototype.hasOwnProperty.call(input,"value"))throw new HttpError(400,"VALIDATION_ERROR","value is required");
   const value=input.value;
   const existing=(await listRows<AppDataRow>("app_data",{key}))[0];
-  const values={value,deleted:false,updated_at:new Date().toISOString(),updated_by:ctx.userId??null};
+ const values={value:JSON.stringify(value),deleted:false,updated_at:new Date().toISOString(),updated_by:ctx.userId??null};
   if(existing)await updateRows("app_data",{key},values);
   else await insertRow("app_data",{key,...values});
   return ok({key,value,deleted:false});
@@ -39,7 +39,7 @@ export default verifiedEdge(async(ctx:RequestContext)=>{
  if(ctx.request.method==="DELETE"){
   const key=validateKey(new URL(ctx.request.url).searchParams.get("key"));
   const existing=(await listRows<AppDataRow>("app_data",{key}))[0];
-  const values={value:{},deleted:true,updated_at:new Date().toISOString(),updated_by:ctx.userId??null};
+  const values={value:JSON.stringify({}),deleted:true,updated_at:new Date().toISOString(),updated_by:ctx.userId??null};
   if(existing)await updateRows("app_data",{key},values);
   else await insertRow("app_data",{key,...values});
   return noContent();

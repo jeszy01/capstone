@@ -91,6 +91,7 @@ function corsPreflight(request) {
 }
 
 // Eprovider/lib/verified-function.ts
+var normalizePbmsRole = (value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_");
 async function verifiedContext(request) {
   const authorization = request.headers.get("authorization") ?? "";
   const match = /^Bearer ([^\s]+)$/i.exec(authorization);
@@ -99,7 +100,7 @@ async function verifiedContext(request) {
   const users = await mcp("select_rows", { table: "users", filter: { id: claims.sub }, limit: 1 });
   const user = users[0];
   if (!user || user.employee_id !== claims.employee_id || user.status?.toLowerCase() !== "active") throw new HttpError(401, "INVALID_SESSION", "Your account or session is inactive. Please sign in again.");
-  const role = user.role?.toLowerCase();
+  const role = normalizePbmsRole(user.role ?? "");
   if (role !== "admin" && role !== "hr_staff") throw new HttpError(403, "FORBIDDEN", "Insufficient permissions");
   return { request, role: "authenticated", userId: user.id, pbmsRole: role };
 }
@@ -145,13 +146,22 @@ function validateKey(value) {
 var app_data_default = verifiedEdge(async (ctx) => {
   if (ctx.request.method === "GET") {
     const rows = await listRows("app_data");
-    return ok(rows.map(({ key: key2, value, deleted }) => ({ key: key2, value, deleted })));
+    return ok(rows.map(({ key: key2, value, deleted }) => {
+      let v = value;
+      if (typeof v === "string") {
+        try {
+          v = JSON.parse(v);
+        } catch {
+        }
+      }
+      return { key: key2, value: v, deleted };
+    }));
   }
   if (ctx.request.method === "POST") {
     const input = await body(ctx.request);
     const key2 = validateKey(input.key);
     if (input.deleted === true) {
-      const values2 = { value: {}, deleted: true, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: ctx.userId ?? null };
+      const values2 = { value: JSON.stringify({}), deleted: true, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: ctx.userId ?? null };
       const existing2 = (await listRows("app_data", { key: key2 }))[0];
       if (existing2) await updateRows("app_data", { key: key2 }, values2);
       else await insertRow("app_data", { key: key2, ...values2 });
@@ -160,7 +170,7 @@ var app_data_default = verifiedEdge(async (ctx) => {
     if (!Object.prototype.hasOwnProperty.call(input, "value")) throw new HttpError(400, "VALIDATION_ERROR", "value is required");
     const value = input.value;
     const existing = (await listRows("app_data", { key: key2 }))[0];
-    const values = { value, deleted: false, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: ctx.userId ?? null };
+    const values = { value: JSON.stringify(value), deleted: false, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: ctx.userId ?? null };
     if (existing) await updateRows("app_data", { key: key2 }, values);
     else await insertRow("app_data", { key: key2, ...values });
     return ok({ key: key2, value, deleted: false });
@@ -168,7 +178,7 @@ var app_data_default = verifiedEdge(async (ctx) => {
   if (ctx.request.method === "DELETE") {
     const key2 = validateKey(new URL(ctx.request.url).searchParams.get("key"));
     const existing = (await listRows("app_data", { key: key2 }))[0];
-    const values = { value: {}, deleted: true, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: ctx.userId ?? null };
+    const values = { value: JSON.stringify({}), deleted: true, updated_at: (/* @__PURE__ */ new Date()).toISOString(), updated_by: ctx.userId ?? null };
     if (existing) await updateRows("app_data", { key: key2 }, values);
     else await insertRow("app_data", { key: key2, ...values });
     return noContent();
@@ -178,4 +188,3 @@ var app_data_default = verifiedEdge(async (ctx) => {
 export {
   app_data_default as default
 };
-
