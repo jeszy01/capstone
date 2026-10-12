@@ -759,6 +759,32 @@ function EnrollmentViewModal({
   plan?: HmoPlan;
   onClose: () => void;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const approve = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await hmoService.approveEnrollment(enrollment.id);
+      window.location.reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The enrollment could not be approved.");
+      setSaving(false);
+    }
+  };
+  const activate = async () => {
+    const reference = window.prompt("Enter Maxicare activation reference");
+    if (!reference?.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await hmoService.activateEnrollment(enrollment.id, reference.trim());
+      window.location.reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The enrollment could not be activated.");
+      setSaving(false);
+    }
+  };
   return (
     <Modal title="Enrollment Details" onClose={onClose}>
       <div className="grid gap-3 text-[13px] text-[#142b50]">
@@ -774,9 +800,16 @@ function EnrollmentViewModal({
         </div>
         {enrollment.maxicareReference && <div><div className="text-[11px] text-[#6b7794]">Maxicare Reference</div><div className="font-medium">{enrollment.maxicareReference}</div></div>}
         {enrollment.rejectionReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{enrollment.rejectionReason}</div></div>}
+        {error && <ErrorAlert>{error}</ErrorAlert>}
       </div>
-      <div className="mt-6 flex justify-end">
-        <Button onClick={onClose}>Close</Button>
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        {enrollment.approvalStatus === "Pending" && ["Pending", "Submitted"].includes(enrollment.status) && (
+          <Button onClick={() => void approve()} disabled={saving}>Approve Enrollment</Button>
+        )}
+        {enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus !== "Active" && (
+          <Button onClick={() => void activate()} disabled={saving}>Record Maxicare Approval</Button>
+        )}
+        <button className={ghost} onClick={onClose} disabled={saving}>Close</button>
       </div>
     </Modal>
   );
@@ -790,7 +823,20 @@ function DependentSection({
   enrollments: HmoEnrollment[];
   employeeMap: Map<string, Employee>;
 }) {
+  const [selectedDependent, setSelectedDependent] = useState<HmoDependent | null>(null);
+  const hasActiveEnrollment = enrollments.some(
+    (enrollment) =>
+      enrollment.status === "Active" &&
+      enrollment.approvalStatus === "Approved" &&
+      enrollment.maxicareStatus === "Active",
+  );
   return (
+    <>
+    {!hasActiveEnrollment && (
+      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-[12px] text-amber-900">
+        Dependents can be added only after the employee enrollment is <b>Active</b> and has confirmed Maxicare approval. Open an employee enrollment and use <b>View</b> to approve or record Maxicare approval first.
+      </div>
+    )}
     <Card className="mt-4 overflow-x-auto">
       <table className="w-full min-w-[1050px] text-left text-[13px]">
         <thead>
@@ -803,7 +849,7 @@ function DependentSection({
               "Sponsorship",
               "Employee Premium",
               "Company Premium",
-              "Approval",
+              "Enrollment Status",
               "Action",
             ].map((h) => (
               <th key={h} className="px-4 py-3">
@@ -841,29 +887,20 @@ function DependentSection({
                   <td className="px-4 py-3">{money(d.companyShare)}</td>
                   <td className="px-4 py-3">
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">
-                      {d.approvalStatus}
+                      {dependentDisplayStatus(d)}
                     </span>
                     <div className="mt-1 text-[11px] text-[#6b7794]">
-                      {d.eligibilityStatus} · {d.status}
+                      {d.eligibilityStatus}
                     </div>
-                    {d.rejectionReason && (
-                      <div className="mt-1 text-[11px] text-red-600">
-                        {d.rejectionReason}
-                      </div>
-                    )}
                   </td>
                   <td className="px-4 py-3">
-                    {d.approvalStatus === "Pending" && (
-                      <button
-                        className="text-blue-600 font-semibold"
-                        onClick={async () => {
-                          await hmoService.approveDependent(d.id);
-                          window.location.reload();
-                        }}
-                      >
-                        Approve
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="font-semibold text-blue-600 hover:text-blue-800"
+                      onClick={() => setSelectedDependent(d)}
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
               );
@@ -872,6 +909,60 @@ function DependentSection({
         </tbody>
       </table>
     </Card>
+    {selectedDependent && (
+      <DependentViewModal
+        dependent={selectedDependent}
+        employee={(() => {
+          const enrollment = enrollments.find((item) => item.id === selectedDependent.enrollmentId);
+          return enrollment ? employeeMap.get(enrollment.employeeId) : undefined;
+        })()}
+        enrollment={enrollments.find((item) => item.id === selectedDependent.enrollmentId)}
+        onClose={() => setSelectedDependent(null)}
+      />
+    )}
+    </>
+  );
+}
+
+function dependentDisplayStatus(dependent: HmoDependent) {
+  if (dependent.status === "Rejected" || dependent.approvalStatus === "Rejected") return "Rejected";
+  if (dependent.status === "Active" && dependent.maxicareStatus === "Active") return "Active";
+  if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
+  if (dependent.approvalStatus === "Approved") return "Ready for Submission";
+  return "Pending HR Approval";
+}
+
+function DependentViewModal({
+  dependent,
+  employee,
+  enrollment,
+  onClose,
+}: {
+  dependent: HmoDependent;
+  employee?: Employee;
+  enrollment?: HmoEnrollment;
+  onClose: () => void;
+}) {
+  return (
+    <Modal title="Dependent Details" onClose={onClose}>
+      <div className="grid gap-3 text-[13px] text-[#142b50]">
+        <div className="rounded-xl border border-[#e3e7ef] bg-[#f8fafc] p-3">
+          <div className="text-[11px] uppercase tracking-wide text-[#6b7794]">Enrollment Status</div>
+          <div className="mt-1 font-semibold">{dependentDisplayStatus(dependent)}</div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div><div className="text-[11px] text-[#6b7794]">Employee</div><div className="font-medium">{employee?.name ?? "Unavailable"}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Dependent</div><div className="font-medium">{dependent.name}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Relationship</div><div className="font-medium">{dependent.relationship}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Date of Birth</div><div className="font-medium">{formatHmoDate(dependent.dateOfBirth)}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Coverage Period</div><div className="font-medium">{formatHmoDate(dependent.effectiveDate)} – {formatHmoDate(dependent.expirationDate ?? enrollment?.expirationDate)}</div></div>
+          <div><div className="text-[11px] text-[#6b7794]">Sponsorship</div><div className="font-medium">{dependent.companySponsored ? "Company-sponsored" : "Employee-paid"}</div></div>
+        </div>
+        {dependent.maxicareReference && <div><div className="text-[11px] text-[#6b7794]">Maxicare Reference</div><div className="font-medium">{dependent.maxicareReference}</div></div>}
+        {dependent.rejectionReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{dependent.rejectionReason}</div></div>}
+      </div>
+      <div className="mt-6 flex justify-end"><Button onClick={onClose}>Close</Button></div>
+    </Modal>
   );
 }
 function PlanModal({
