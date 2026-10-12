@@ -1702,7 +1702,6 @@ function HmoRecordsSection({
       employeeShare: Math.round(employeeShare * 100) / 100,
     };
   });
-  const printReport = () => window.print();
   const exportPdf = () => {
     const document = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     document.setFontSize(16);
@@ -1752,7 +1751,6 @@ function HmoRecordsSection({
         </div>
         <div className="flex flex-wrap gap-2 print:hidden">
           <Button onClick={exportPdf}>Export PDF</Button>
-          <Button onClick={printReport}>Print HMO Summary Report</Button>
         </div>
       </div>
       {rows.length === 0 ? (
