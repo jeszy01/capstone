@@ -156,6 +156,7 @@ var app_data_default = verifiedEdge(async (ctx) => {
       }
       return { key: key2, value: v, deleted };
     }));
+    return ok(rows.map(({ key: key2, value, deleted }) => ({ key: key2, value, deleted })));
   }
   if (ctx.request.method === "POST") {
     const input = await body(ctx.request);
