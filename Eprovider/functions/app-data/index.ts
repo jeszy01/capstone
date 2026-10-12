@@ -16,7 +16,7 @@ function validateKey(value:unknown){
 export default verifiedEdge(async(ctx:RequestContext)=>{
  if(ctx.request.method==="GET"){
   const rows=await listRows<AppDataRow>("app_data");
-  return ok(rows.map(({key,value,deleted})=>{let v:unknown=value;if(typeof v==="string"){try{v=JSON.parse(v)}catch{}}return {key,value:v,deleted}}),{version:"json-fix-1"});
+  return ok(rows.map(({key,value,deleted})=>{let v:unknown=value;if(typeof v==="string"){try{v=JSON.parse(v)}catch{}}return {key,value:v,deleted}}));return ok(rows.map(({key,value,deleted})=>({key,value,deleted})));
  }
  if(ctx.request.method==="POST"){
   const input=await body<Record<string,unknown>>(ctx.request);
