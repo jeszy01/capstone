@@ -58,7 +58,13 @@ export default verifiedEdge(async ctx=>{
       const employeeCompanyShare=Number(input.employee_company_share??previous.employee_company_share??100);
       const employeeMemberShare=Number(input.employee_member_share??previous.employee_member_share??0);
       if(employeeCompanyShare!==100||employeeMemberShare!==0)throw new HttpError(400,'INVALID_EMPLOYEE_CONTRIBUTION_POLICY','The company must pay 100% of the employee HMO premium.');
-      if(String(input.status??previous.status)==='Active'&&previous.status!=='Active'&&(await first('hmo_plans',{status:'Active'})))throw new HttpError(409,'ACTIVE_HMO_PLAN_EXISTS','Only one active HMO plan is allowed.');
+      const requestedStatus=String(input.status??previous.status).trim().toLowerCase();
+      const currentStatus=String(previous.status??'').trim().toLowerCase();
+      if(requestedStatus==='active'&&currentStatus!=='active'){
+        const allPlans=await listRows<Row>('hmo_plans');
+        const anotherActivePlan=allPlans.some(plan=>plan.id!==updateId&&String(plan.status??'').trim().toLowerCase()==='active');
+        if(anotherActivePlan)throw new HttpError(409,'ACTIVE_HMO_PLAN_EXISTS','Only one active HMO plan is allowed.');
+      }
       const values:Record<string,unknown>={...input};
       delete values.action;
       delete values.id;
