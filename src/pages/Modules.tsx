@@ -10,6 +10,7 @@ import type {EmployeeCompensation} from '../features/compensation/compensationSt
 import {activeCompensations} from '../features/compensation/compensationState';
 import {compensationService} from '../features/compensation/compensationService';
 import {loadTaxBrackets} from '../features/settings/payrollSettings';
+import {canonicalAttendanceRecord,findAttendanceEmployee,hasAttendanceForEmployee} from '../features/attendance/attendanceState';
 
 const today=()=>new Date().toISOString().slice(0,10);
 const employeeLoadError=(cause:unknown)=>{if(cause instanceof TypeError&&/fetch/i.test(cause.message))return 'Unable to connect to the employee service. Check your connection or service availability, then try again.';return cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded. Please try again.'};
@@ -78,10 +79,10 @@ function workedHours(record:AttendanceRecord){
 export function Attendance(){
  const[records,setRecords]=useState<AttendanceRecord[]>([]),[employees,setEmployees]=useState<Employee[]>([]),[schedule]=useState<AttendanceSchedule>(()=>attendanceService.schedule()),[form,setForm]=useState<AttendanceRecord|null>(null),[date,setDate]=useState(today()),[q,setQ]=useState(''),[status,setStatus]=useState(''),[error,setError]=useState('');
  useEffect(()=>{attendanceService.list().then(setRecords);employeeService.getAll().then(setEmployees).catch(cause=>setError(cause instanceof Error?cause.message:'Unable to load employee records.'))},[]);
- const employeeFor=(reference:string)=>employees.find(employee=>employee.id===reference||employee.employeeNo===reference);
+ const employeeFor=(reference:string)=>findAttendanceEmployee(employees,reference);
  const moveDate=(offset:number)=>{const next=new Date(`${date}T12:00:00`);next.setDate(next.getDate()+offset);setDate(`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`)};
  const persistRecords=(next:AttendanceRecord[])=>{try{localStorage.setItem('attendance:records',JSON.stringify(next));setRecords(next);setError('');return true}catch{setError('Timesheet changes could not be saved. Please try again.');return false}};
- const save=()=>{if(!form)return;if(records.some(record=>record.id!==form.id&&record.empId===form.empId&&record.date===form.date)){setError('A timesheet record for this employee and date already exists.');return}if(persistRecords([...records.filter(record=>record.id!==form.id),form])){recordAudit({action:records.some(record=>record.id===form.id)?'Updated timesheet':'Created timesheet',module:'Timesheet',description:`${records.some(record=>record.id===form.id)?'Updated':'Recorded'} attendance for ${form.name} on ${form.date}.`});setForm(null)}};
+ const save=()=>{if(!form)return;const employee=findAttendanceEmployee(employees,form.empId);if(!employee){setError('Select an employee from the list before saving attendance.');return}const record=canonicalAttendanceRecord(form,employees);if(hasAttendanceForEmployee(records,record,employees)){setError(`A timesheet record for ${employee.name} on ${form.date} already exists.`);return}const editing=records.some(item=>item.id===record.id);if(persistRecords([...records.filter(item=>item.id!==record.id),record])){recordAudit({action:editing?'Updated timesheet':'Created timesheet',module:'Timesheet',description:`${editing?'Updated':'Recorded'} attendance for ${record.name} on ${record.date}.`});setForm(null)}};
  const shown=records.filter(record=>{const employee=employeeFor(record.empId);return record.date===date&&(!q||`${employee?.name??record.name} ${employee?.employeeNo??record.empId}`.toLowerCase().includes(q.toLowerCase()))&&(!status||timesheetStatus(record,schedule)===status)});
  const dayRecords=records.filter(record=>record.date===date);
  const summary=[
@@ -131,7 +132,7 @@ export function Timesheet(){
 }
 function AttendanceForm({form,employees,setForm,onSave}:{form:AttendanceRecord;employees:Employee[];setForm:(record:AttendanceRecord|null)=>void;onSave:()=>void}){
  const present=form.status==='Present';const update=(key:keyof AttendanceRecord,value:string)=>setForm({...form,[key]:value});
- const employee=employees.find(item=>item.id===form.empId||item.employeeNo===form.empId);
+ const employee=findAttendanceEmployee(employees,form.empId);
  return <Modal title="Timesheet Record" onClose={()=>setForm(null)}><div className="grid gap-3 sm:grid-cols-2"><Field label="Employee"><select className={input} value={employee?.id??form.empId} onChange={event=>{const selected=employees.find(item=>item.id===event.target.value);if(selected)setForm({...form,empId:selected.employeeNo,name:selected.name})}}><option value="">Select Employee</option>{!employee&&form.empId&&<option value={form.empId}>{form.name} ({form.empId})</option>}{employees.map(item=><option key={item.id} value={item.id}>{item.name} ({item.employeeNo})</option>)}</select></Field><Field label="Date"><TextInput type="date" value={form.date} onChange={event=>update('date',event.target.value)}/></Field><Field label="Status"><select className={input} value={form.status} onChange={event=>update('status',event.target.value)}><option>Present</option><option>Absent</option><option value="On Leave">Leave</option><option value="Day Off">Rest Day</option></select></Field><Field label="Time In"><TextInput type="time" disabled={!present} value={form.timeIn} onChange={event=>update('timeIn',event.target.value)}/></Field><Field label="Time Out"><TextInput type="time" disabled={!present} value={form.timeOut} onChange={event=>update('timeOut',event.target.value)}/></Field></div><div className="mt-4 flex justify-end gap-2"><button className={ghost} onClick={()=>setForm(null)}>Cancel</button><Button disabled={!form.empId.trim()||!form.name.trim()||!form.date||(present&&(!form.timeIn||!form.timeOut||form.timeOut<=form.timeIn))} onClick={onSave}>Save</Button></div></Modal>;
 }
 
