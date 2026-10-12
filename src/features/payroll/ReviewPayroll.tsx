@@ -49,7 +49,7 @@ const assignments=bundle?.assignments??read<EmployeeCompensation[]>('compensatio
 const grades=bundle?.grades??read<{position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]);
 const bonuses=bundle?.bonuses??read<{employeeId:string;amount:number;effectiveDate:string;status:string}[]>('compensation:bonuses-incentives',[]);
 const base=computeDeductions({employees,records,schedule:attendanceService.schedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
-    const built:RunRow[]=[];
+const built:RunRow[]=[];
     for(const item of base){
      const employee=item.employee;
      const mine=records.filter(record=>(record.empId===employee.employeeNo||record.empId===employee.id)&&record.date>=from&&record.date<=to);
