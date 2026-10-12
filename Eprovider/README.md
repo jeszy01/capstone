@@ -31,3 +31,6 @@ The frontend synchronizes shared browser-backed module data through the `app-dat
 
 ## Compensation allowances and adjustments
 The Compensation Planning Allowances & Incentives section supports `Allowance` and `Adjustment` entries in addition to legacy `Bonus` and `Incentive` records. Apply migration `0022_compensation_reward_types.sql` before creating the new entry types, then deploy the updated `functions/compensation` function.
+
+## Employee loans and cash advances
+Apply migration `0023_employee_loans.sql`, then deploy `functions/loans` with its `config.json`. The API uses the active Employee Management database records, records new loans/advances as pending HR approval, and supplies due installments to payroll review. It does not seed loan data. Actual repayments are posted as one immutable database batch only after the corresponding approved payroll run is marked paid and synchronized under `payroll:runs` in `app_data`; the batch is unique per run and pay period. Outstanding balances are derived from the original principal less posted payroll repayments. Keep the migration and function deployment paired with the frontend release; if the API is unavailable, payroll review must not silently omit a scheduled loan deduction.

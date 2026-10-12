@@ -1,9 +1,12 @@
 import type {PayrollInput,PayrollResult} from '../../types/domain';
 import {read,write} from '../../utils/storage';
 import {recordAudit} from '../audit/auditService';
+import {apiClient} from '../../services/api/apiClient';
+import {loanService} from '../deductions/loanService';
 
 export type RunStatus='Pending Approval'|'Approved'|'Rejected';
-export type RunRow={position:string;rest:number;hmo:number;input:PayrollInput;result:PayrollResult};
+export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:'Loan'|'Cash Advance';loanType:string;amount:number;installmentNumber:number;installmentCount:number};
+export type RunRow={position:string;rest:number;hmo:number;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[]};
 // released: department name -> ISO date-time when released to ESS
 export type PayrollRun={id:string;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string};
 export const RUNS_KEY='payroll:runs';
@@ -36,13 +39,23 @@ export function releaseDepartment(id:string,dept:string,by:string){
  return next;
 }
 
-export function payRun(id:string,method:PaymentMethod,by:string){
+export async function payRun(id:string,method:PaymentMethod,by:string):Promise<PayrollRun[]|undefined>{
  const runs=read<PayrollRun[]>(RUNS_KEY,[]);
  const run=runs.find(item=>item.id===id);
  if(!run||run.status!=='Approved'||run.paidAt)return undefined;
  const next=runs.map(item=>item.id===id?{...item,paymentMethod:method,paidAt:new Date().toISOString(),paidBy:by}:item);
  write(RUNS_KEY,next);
+ if(run.rows.some(row=>Boolean(row.loanRepayments?.length))){
+  try{
+   await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:next});
+   await loanService.postPaidPayrollRun(id);
+  }catch(cause){
+   const rollback=read<PayrollRun[]>(RUNS_KEY,[]).map(item=>item.id===id?{...item,paidAt:undefined,paidBy:undefined,paymentMethod:undefined}:item);
+   write(RUNS_KEY,rollback);
+   try{await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:rollback})}catch{/* local sync retries the rollback */}
+   throw cause;
+  }
+ }
  recordAudit({action:'Confirmed payment method',module:'Payroll',description:`${by} set ${method} for ${periodLabel(run.from,run.to)}.`});
  return next;
 }
-

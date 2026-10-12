@@ -17,6 +17,7 @@ import {numberValue,peso,read,write} from '../../utils/storage';
 import {loadWithholdingRules,ruleForDate} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
 import {compensationService} from '../compensation/compensationService';
+import {loanService} from '../deductions/loanService';
 
 type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions'|'thirteenthMonthAndOtherBenefits'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
@@ -33,9 +34,10 @@ export default function ReviewPayroll(){
  const[rows,setRows]=useState<RunRow[]>(saved?.rows??[]);
  const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
  const[error,setError]=useState('');
- const[confirming,setConfirming]=useState(false);
- const[paying,setPaying]=useState(false),[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
-const pay=()=>{if(!saved)return;payRun(saved.id,method,user?.name??'Admin');nav('/payroll?tab=runs')};
+ const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
+ const[paying,setPaying]=useState(false),[paymentBusy,setPaymentBusy]=useState(false),[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
+ const[loanError,setLoanError]=useState('');
+ const pay=async()=>{if(!saved)return;setPaymentBusy(true);setError('');try{const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');nav('/payroll?tab=runs')}catch(cause){setError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setPaymentBusy(false)}};
  const priorHistory=(employeeId:string):AnnualTaxHistory=>{
   const year=from.slice(0,4);const priorRuns=read<PayrollRun[]>(RUNS_KEY,[]).filter(run=>run.status==='Approved'&&run.from.slice(0,4)===year&&run.to<from);
   return priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===employeeId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{
@@ -49,14 +51,16 @@ const pay=()=>{if(!saved)return;payRun(saved.id,method,user?.name??'Admin');nav(
  useEffect(()=>{
   if(saved||!from||!to)return;
   let active=true;
+  setLoanError('');
   (async()=>{
    try{
- const[employees,records,bundle]=await Promise.all([
- employeeService.getAll(),
+ const[employees,records,bundle,scheduledLoans]=await Promise.all([
+ employeeService.getAllFromServer(),
  attendanceService.list(),
  compensationService.load().catch(()=>null),
+ loanService.schedule(from,to),
 ]);
-const assignments=bundle?.assignments??read<EmployeeCompensation[]>('compensation:employee-assignments',[]);
+ const assignments=bundle?.assignments??read<EmployeeCompensation[]>('compensation:employee-assignments',[]);
 const grades=bundle?.grades??read<{position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]);
 const bonuses=bundle?.bonuses??read<{employeeId:string;amount:number;effectiveDate:string;status:string}[]>('compensation:bonuses-incentives',[]);
 const base=computeDeductions({employees,records,schedule:attendanceService.schedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
@@ -66,12 +70,14 @@ const built:RunRow[]=[];
      const mine=records.filter(record=>(record.empId===employee.employeeNo||record.empId===employee.id)&&record.date>=from&&record.date<=to);
      const bonus=bonuses.filter(entry=>(entry.employeeId===employee.id||entry.employeeId===employee.employeeNo)&&entry.status==='Approved'&&entry.effectiveDate>=from&&entry.effectiveDate<=to).reduce((total,entry)=>total+entry.amount,0);
      const hmo=Number(await hmoService.getPayrollDeduction(employee.id).catch(()=>0))||0;
-     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate:(item.salary as number)/rates.daysPerMonth,daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:bonus};
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()})};
+     const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
+     const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
+     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate:(item.salary as number)/rates.daysPerMonth,daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:bonus,...loanAmounts};
+     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
     if(active){setRows(built);setLoading(false)}
-   }catch{if(active){setError('Payroll data could not be loaded. Please try again.');setLoading(false)}}
+   }catch(cause){if(active){const message=cause instanceof Error?cause.message:'The approved loan installment schedule could not be loaded.';setLoanError(`Payroll cannot be submitted or paid until approved loan schedules load from the database. ${message}`);setError('Payroll data could not be loaded. Please retry after the employee, attendance, compensation, and loan schedule services are available.');setLoading(false)}}
   })();
   return()=>{active=false};
  },[from,to,saved]);
@@ -82,9 +88,26 @@ const built:RunRow[]=[];
  const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
  const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
  const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
- const editCell=(index:number,row:RunRow,key:EditKey)=>saved?nf(numberValue(row.input[key])):<input className="paper-input" type="number" min="0" step="0.01" value={String(row.input[key]??0)} onChange={event=>setField(index,key,event.target.value)}/>;
+ const automatedLoanFields:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance'];
+ const editCell=(index:number,row:RunRow,key:EditKey)=>saved||automatedLoanFields.includes(key)?nf(numberValue(row.input[key])):<input className="paper-input" type="number" min="0" step="0.01" value={String(row.input[key]??0)} onChange={event=>setField(index,key,event.target.value)}/>;
 
- const submit=()=>{
+ const submit=async()=>{
+  if(loanError){setConfirming(false);setError(loanError);return}
+  setSubmitBusy(true);setError('');
+  try{
+   const [currentEmployees,currentSchedule]=await Promise.all([employeeService.getAllFromServer(),loanService.schedule(from,to)]);
+   const payrollEmployeeNumbers=new Set(rows.map(row=>row.input.empId));
+   const currentLines=currentSchedule.filter(item=>{const employee=currentEmployees.find(candidate=>candidate.id===item.employeeId);return Boolean(employee&&payrollEmployeeNumbers.has(employee.employeeNo))});
+   const plannedLines=rows.flatMap(row=>row.loanRepayments??[]);
+   const signature=(items:{loanId:string;employeeId:string;amount:number;recordType:'Loan'|'Cash Advance';loanType:string;installmentNumber:number;installmentCount:number}[])=>items.map(item=>`${item.loanId}|${item.employeeId}|${item.amount.toFixed(2)}|${item.recordType}|${item.loanType}|${item.installmentNumber}|${item.installmentCount}`).sort().join('\n');
+   if(signature(plannedLines)!==signature(currentLines)){
+    const message='The approved loan schedule changed while this payroll was being reviewed. Reload the payroll preview to recalculate before submission.';
+    setLoanError(message);setError(message);setConfirming(false);return;
+   }
+  }catch(cause){
+   const message=`The current employee and loan schedule could not be verified. Payroll was not submitted. ${cause instanceof Error?cause.message:''}`;
+   setLoanError(message);setError(message);setConfirming(false);return;
+  }finally{setSubmitBusy(false)}
   const runs=read<PayrollRun[]>(RUNS_KEY,[]);
   if(runs.some(run=>run.from===from&&run.to===to&&run.status!=='Rejected')){setConfirming(false);setError('A payroll for this cutoff has already been submitted.');return}
   const run:PayrollRun={id:crypto.randomUUID(),from,to,status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
@@ -104,15 +127,16 @@ const built:RunRow[]=[];
    <button className={ghost} onClick={()=>nav('/payroll')}>Back</button>
    <div className="flex flex-wrap gap-2">
     <button className={ghost} onClick={()=>window.print()}>Print</button>
-    {!saved&&<Button disabled={!rows.length} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
+    {!saved&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
     {saved&&saved.status==='Pending Approval'&&user?.role==='Admin'&&<><button className={ghost} onClick={()=>decide('Rejected')}>Reject</button><Button onClick={()=>decide('Approved')}>Approve</Button></>}
    {saved&&saved.status==='Approved'&&!saved.paidAt&&user?.role==='Admin'&&<Button onClick={()=>setPaying(true)}>Proceed to Payment</Button>}
    </div>
   </div>
-  {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
+   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
+  {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
   {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
    <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">Cutoff: {from&&to?periodLabel(from,to):'-'}</div>{saved&&<div className="text-[11px]">Status: {saved.status}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
-   {!saved&&<p className="no-print mb-3 text-[10px] leading-relaxed text-slate-600">For new hires with another employer this calendar year, enter that employer’s taxable compensation (after mandatory contributions and eligible exemptions), 13th-month/other-benefits paid, tax withheld, and related payroll-period count in the prior-employer columns. Use verified year-to-date amounts; leave at zero when not applicable. These figures are used only for cumulative/annualized withholding, not added to this payroll’s gross pay.</p>}
+   {!saved&&<p className="no-print mb-3 text-[10px] leading-relaxed text-slate-600">For new hires with another employer this calendar year, enter that employer’s taxable compensation (after mandatory contributions and eligible exemptions), 13th-month/other-benefits paid, tax withheld, and related payroll-period count in the prior-employer columns. Use verified year-to-date amounts; leave at zero when not applicable. These figures are used only for cumulative/annualized withholding, not added to this payroll’s gross pay. HR-approved employee loans and cash advances are loaded from the database into the four loan deduction columns; those amounts are locked so they cannot be double-entered.</p>}
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>No employees with an assigned salary for this cutoff.</Empty>:<>
     <div className="overflow-x-auto"><table>
      <thead>
@@ -139,12 +163,12 @@ const built:RunRow[]=[];
   {confirming&&<Modal title="Confirm Payroll Submission" onClose={()=>setConfirming(false)}>
    <dl className="grid gap-3 text-[13px]">{[['Cutoff',periodLabel(from,to)],['Employees',String(rows.length)],['Gross Pay',peso(totals.gross)],['Total Deductions',peso(totals.deductions)],['Net Pay',peso(totals.net)]].map(([label,value])=><div key={label} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{label}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
    <p className="mt-4 text-[13px]">Submit this payroll for Admin approval?</p>
-   <div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={()=>setConfirming(false)}>Cancel</button><Button onClick={submit}>Confirm</Button></div>
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={submitBusy} onClick={()=>setConfirming(false)}>Cancel</button><Button disabled={Boolean(loanError)||submitBusy} onClick={submit}>{submitBusy?'Verifying schedule…':'Confirm'}</Button></div>
   </Modal>}
-  {paying&&<Modal title="Payment Method" onClose={()=>setPaying(false)}>
+  {paying&&<Modal title="Payment Method" onClose={()=>{if(!paymentBusy)setPaying(false)}}>
  <p className="text-[13px] text-slate-500">Payslips are generated after this step.</p>
  <div className="mt-3 grid gap-2">{(['Bank Transfer','Direct Deposit'] as PaymentMethod[]).map(m=><label key={m} className="flex items-center gap-2 text-[13px]"><input type="radio" name="pm" checked={method===m} onChange={()=>setMethod(m)}/>{m}</label>)}</div>
- <div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={()=>setPaying(false)}>Cancel</button><Button onClick={pay}>Confirm &amp; Generate Payslips</Button></div>
+ <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={paymentBusy} onClick={()=>setPaying(false)}>Cancel</button><Button disabled={paymentBusy} onClick={pay}>{paymentBusy?'Verifying repayments…':'Confirm &amp; Generate Payslips'}</Button></div>
 </Modal>}
  </div>;
 }

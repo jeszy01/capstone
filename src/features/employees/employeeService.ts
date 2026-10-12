@@ -14,8 +14,10 @@ const localEmployees=()=>read<Employee[]>(localEmployeeKey,[]);
 const saveLocalEmployees=(employees:Employee[])=>{write(localEmployeeKey,employees);return employees};
 const isNetworkFailure=(cause:unknown)=>cause instanceof TypeError&&/fetch|network|failed/i.test(cause.message);
 async function withCompensation(list:Employee[]){try{const data=await compensationService.load();const active=activeCompensations(data.assignments,today());return list.map(e=>{const a=active.find(x=>x.employeeId===e.id);return a?{...e,basicSalary:a.fixedSalary,positionRate:a.dailyRate}:e})}catch(e){console.error('withCompensation failed',e);return list}}
+async function serverEmployees(){const r=await apiClient.get<Envelope<ServerEmployee[]>>(employeePath());const employees=await withCompensation(r.data.map(fromServer));saveLocalEmployees(employees);return employees}
 export const employeeService={
- getAll:async()=>{try{const r=await apiClient.get<Envelope<ServerEmployee[]>>(employeePath());const employees=await withCompensation(r.data.map(fromServer));saveLocalEmployees(employees);return employees}catch(cause){if(isNetworkFailure(cause))return localEmployees();throw cause}},
+ getAll:async()=>{try{return await serverEmployees()}catch(cause){if(isNetworkFailure(cause))return localEmployees();throw cause}},
+ getAllFromServer:serverEmployees,
  create:async(e:Employee)=>{try{const r=await apiClient.post<ReturnType<typeof toServer>,Envelope<ServerEmployee>>(employeePath(),toServer(e));const employee=fromServer(r.data);saveLocalEmployees([...localEmployees().filter(item=>item.id!==employee.id),employee]);return employee}catch(cause){if(!isNetworkFailure(cause))throw cause;saveLocalEmployees([...localEmployees().filter(item=>item.id!==e.id),e]);return e}},
  update:async(e:Employee)=>{try{const r=await apiClient.put<ReturnType<typeof toServer>,Envelope<{id:string}>>(`${employeePath()}/${e.id}`,toServer(e));const updated={...e,id:r.data.id};saveLocalEmployees([...localEmployees().filter(item=>item.id!==e.id),updated]);return updated}catch(cause){if(!isNetworkFailure(cause))throw cause;saveLocalEmployees([...localEmployees().filter(item=>item.id!==e.id),e]);return e}},
  remove:async(id:string)=>{try{await apiClient.delete(`${employeePath()}/${id}`)}catch(cause){if(!isNetworkFailure(cause))throw cause}saveLocalEmployees(localEmployees().filter(item=>item.id!==id))}
