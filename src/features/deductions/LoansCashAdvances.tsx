@@ -23,10 +23,12 @@ const loanEmployeeName=(loan:EmployeeLoan)=>loan.employeeName||'Employee unavail
 
 function LoanFormModal({recordType,employees,saving,error,onClose,onSave}:{recordType:LoanRecordType;employees:Employee[];saving:boolean;error:string;onClose:()=>void;onSave:(input:CreateLoanInput)=>Promise<void>}){
  const[form,setForm]=useState<FormState>(()=>newForm(recordType));
+ const[attempted,setAttempted]=useState(false);
  const principalAmount=Number(form.principalAmount),installmentCount=Number(form.installmentCount);
  const terms={recordType,loanType:form.loanType,purpose:form.purpose,principalAmount,installmentCount,repaymentFrequency:form.repaymentFrequency,releaseDate:form.releaseDate,repaymentStartDate:form.repaymentStartDate};
- const errors=validateLoanTerms(terms);const selectedEmployee=employees.find(employee=>employee.id===form.employeeId);
- const submit=()=>{if(errors.length||!selectedEmployee)return;void onSave({...terms,employeeId:selectedEmployee.id})};
+ const selectedEmployee=employees.find(employee=>employee.id===form.employeeId);
+ const errors=[...validateLoanTerms(terms),...(selectedEmployee?[]:['Select an active employee.'])];
+ const submit=()=>{setAttempted(true);if(errors.length||!selectedEmployee)return;void onSave({...terms,employeeId:selectedEmployee.id})};
  const title=recordType==='Loan'?'Record Employee Loan':'Record Cash Advance';
  return <Modal title={title} wide onClose={saving?()=>{}:onClose}>
   <p className="mb-4 mt-0 text-[12px] leading-relaxed text-slate-500">Select an existing employee. New records are saved to the payroll database as <b>Pending</b> and are not deducted until HR approval and a paid payroll run.</p>
@@ -43,9 +45,9 @@ function LoanFormModal({recordType,employees,saving,error,onClose,onSave}:{recor
    <Field label="Approval status"><TextInput readOnly value="Pending HR approval"/></Field>
   </div>
   <p className="mb-0 mt-3 text-[11px] leading-relaxed text-slate-500">Installment amount is rounded up to cents; the final installment is capped at the remaining balance so total repayment never exceeds the principal. Monthly schedules deduct on the selected first or second cutoff only.</p>
-  {!!errors.length&&<div role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">{errors.map(error=><div key={error}>{error}</div>)}</div>}
+  {attempted&&!!errors.length&&<div role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">{errors.map(error=><div key={error}>{error}</div>)}</div>}
   {error&&<div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{error}</div>}
-  <div className="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!selectedEmployee||errors.length>0} onClick={submit}>{saving?'Saving…':'Save pending approval'}</Button></div>
+  <div className="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving} onClick={submit}>{saving?'Saving…':'Save pending approval'}</Button></div>
  </Modal>;
 }
 
