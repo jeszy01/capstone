@@ -48,35 +48,23 @@ export default verifiedEdge(async ctx=>{
       if(!previous)throw new HttpError(404,'HMO_RECORD_NOT_FOUND','HMO plan was not found.');
       const providerId=required(input.provider_id??previous.provider_id,'provider_id');
       await ensureMaxicare(providerId);
-      const name=required(input.name,'name');
-      const start=dateValue(input.coverage_start,'coverage_start');
-      const end=dateValue(input.coverage_end,'coverage_end');
+      const name=required(input.name??previous.name,'name');
+      const start=dateValue(input.coverage_start??previous.coverage_start,'coverage_start');
+      const end=dateValue(input.coverage_end??previous.coverage_end,'coverage_end');
       if(end<start)throw new HttpError(400,'INVALID_HMO_DATES','coverage_end must be on or after coverage_start.');
-      const employeeCompanyShare=Number(input.employee_company_share??100);
-      const employeeMemberShare=Number(input.employee_member_share??0);
+      const employeeCompanyShare=Number(input.employee_company_share??previous.employee_company_share??100);
+      const employeeMemberShare=Number(input.employee_member_share??previous.employee_member_share??0);
       if(employeeCompanyShare!==100||employeeMemberShare!==0)throw new HttpError(400,'INVALID_EMPLOYEE_CONTRIBUTION_POLICY','The company must pay 100% of the employee HMO premium.');
       if(String(input.status??previous.status)==='Active'&&previous.status!=='Active'&&(await first('hmo_plans',{status:'Active'})))throw new HttpError(409,'ACTIVE_HMO_PLAN_EXISTS','Only one active HMO plan is allowed.');
-      const values:Record<string,unknown>={
-        provider_id:providerId,
-        name,
-        coverage_start:start,
-        coverage_end:end,
-        annual_benefit_limit:input.annual_benefit_limit??null,
-        inpatient:input.inpatient===true,
-        outpatient:input.outpatient===true,
-        emergency:input.emergency===true,
-        preventive_care:input.preventive_care===true,
-        dental:input.dental===true,
-        employee_company_share:employeeCompanyShare,
-        employee_member_share:employeeMemberShare,
-        dependent_company_share:Number(input.dependent_company_share??previous.dependent_company_share??0),
-        dependent_member_share:Number(input.dependent_member_share??previous.dependent_member_share??0),
-        employee_monthly_premium:input.employee_monthly_premium??null,
-        dependent_monthly_premium:input.dependent_monthly_premium??null,
-        collect_employee_share_via_payroll:input.collect_employee_share_via_payroll===true,
-        status:String(input.status??previous.status),
-        updated_at:now
-      };
+      const values:Record<string,unknown>={...input};
+      delete values.action;
+      values.provider_id=providerId;
+      values.name=name;
+      values.coverage_start=start;
+      values.coverage_end=end;
+      values.employee_company_share=employeeCompanyShare;
+      values.employee_member_share=employeeMemberShare;
+      values.updated_at=now;
       await updateRows(table,{id},values);
       await history('plan',id,'updated',ctx.userId,previous,values);
       return ok({id,...values});
