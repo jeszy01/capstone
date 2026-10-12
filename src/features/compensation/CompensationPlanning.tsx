@@ -36,6 +36,7 @@ import {
   adjustmentTypes,
   allowanceTypes,
   compensationEmployeeLabel,
+  compensationEntryAction,
   dailyFromSalary,
   findCompensationEmployee,
   mergeCompensationEmployees,
@@ -174,8 +175,8 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
   const missingReferences=[...new Set([...assignments,...proposals,...bonuses,...history].map(item=>item.employeeId))]
     .filter(reference=>!findCompensationEmployee(employees,reference));
   const employeeReady=!employeeLoading&&employees.length>0;
-  const assignmentBlocked=!employeeReady||unassignedEmployees.length===0;
   const proposalBlocked=!employeeReady||!activeAssignments.some(item=>findCompensationEmployee(employees,item.employeeId));
+  const entryAction=compensationEntryAction(employeeReady,unassignedEmployees.length,!proposalBlocked);
 
   function employeeLabelFor(reference:string,snapshot?:string){
     return compensationEmployeeLabel(employees,reference,snapshot);
@@ -338,8 +339,8 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
     </section>}
 
     {section==='employee-compensation'&&<section id="employee-compensation-panel" role="tabpanel" aria-labelledby="compensation-tab-employee-compensation">
-      <SectionHeading id="employee-compensation-heading" title="Employee Compensation" description="Assignments are effective-dated. Once an employee has a salary record, changes go through proposal review." action={<Button disabled={assignmentBlocked||compensationLoading||saving} onClick={openAssignment}><Plus size={15}/>Assign Compensation</Button>}/>
-      {assignmentBlocked&&!employeeLoading&&<p className="mt-2 text-[12px] text-amber-700">No unassigned server employees are available. Restore or add an employee record to create an initial assignment.</p>}
+      <SectionHeading id="employee-compensation-heading" title="Employee Compensation" description="Assignments are effective-dated. Once an employee has a salary record, changes go through proposal review." action={<Button disabled={entryAction==='unavailable'||employeeLoading||compensationLoading||saving} onClick={entryAction==='assign'?openAssignment:()=>openProposal()}><Plus size={15}/>{entryAction==='assign'?'Assign Compensation':entryAction==='propose'?'Propose Salary Change':'No Eligible Action'}</Button>}/>
+      {!employeeLoading&&employeeReady&&unassignedEmployees.length===0&&<div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[12px] leading-relaxed text-blue-900">{entryAction==='propose'?'All employees already have compensation. Use “Propose Salary Change” to submit an effective-dated change for HR review.':'All employees already have compensation, but none has an effective salary to use for a proposal yet. Check the scheduled effective dates or employee records.'}</div>}
       <SearchToolbar label="Search employee compensation" value={search} onChange={setSearch} shown={filteredAssignments.length} total={visibleAssignments.length} placeholder="Search employee, ID, position or grade"/>
       <Card className="mt-3 overflow-hidden !p-0">
         <div className="overflow-x-auto"><table className={`${tableClass} min-w-[1030px]`}><thead><tr className={headerClass}>{['Employee','Position','Department','Salary','Effective Date','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>

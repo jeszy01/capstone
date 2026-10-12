@@ -1,12 +1,26 @@
 import {describe,expect,it} from 'vitest';
 import type {Employee} from '../types/domain';
-import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,dailyFromSalary,mergeCompensationEmployees,normalizeLegacySalaryGradeCode,salaryDefaultForPosition,saveCompensationAssignment} from '../features/compensation/compensationState';
+import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,compensationEntryAction,dailyFromSalary,mergeCompensationEmployees,normalizeLegacySalaryGradeCode,salaryDefaultForPosition,saveCompensationAssignment} from '../features/compensation/compensationState';
 import {employeePositionOptions} from '../features/employees/positionOptions';
 import type {CompensationProposal,EmployeeCompensation} from '../features/compensation/compensationState';
 
 const employee:Employee={id:'c24c73a8-2d7d-47a9-a38e-13046e8c4fbf',employeeNo:'EMP-0002',name:'Existing Employee Name',email:null,position:'Finance Manager',department:'Finance',dateHired:'2026-01-01',basicSalary:65000,positionRate:65000,status:'Active'};
 const assignment:EmployeeCompensation={id:'assignment-1',employeeId:employee.id,salaryCode:'SAL-001',position:'Finance Manager',fixedSalary:65000,dailyRate:2500,effectiveDate:'2026-10-07'};
 const proposal:CompensationProposal={id:'proposal-1',employeeId:employee.id,type:'Merit Increase',previousSalary:65000,newSalary:70000,adjustmentAmount:5000,effectiveDate:'2026-10-10',notes:'Approved salary change',status:'Approved',createdAt:'2026-10-08T00:00:00Z'};
+describe('Employee Compensation entry action',()=>{
+  it('keeps initial assignment unavailable until employee records have loaded',()=>{
+    expect(compensationEntryAction(false,1,true)).toBe('unavailable');
+  });
+  it('offers initial assignment when at least one employee has no compensation history',()=>{
+    expect(compensationEntryAction(true,1,true)).toBe('assign');
+  });
+  it('offers a salary proposal when all employees already have compensation and an active assignment exists',()=>{
+    expect(compensationEntryAction(true,0,true)).toBe('propose');
+  });
+  it('does not offer a proposal when there is no effective salary assignment',()=>{
+    expect(compensationEntryAction(true,0,false)).toBe('unavailable');
+  });
+});
 describe('Salary-grade form data',()=>{
   it('shares Employee Directory position options and includes existing employee titles without duplicates',()=>{
     const positions=employeePositionOptions(['HR Officer','finance manager','Custom Existing Role']);

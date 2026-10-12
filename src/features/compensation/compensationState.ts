@@ -16,6 +16,12 @@ export const salaryDefaults:Record<string,number>={
 export const adjustmentTypes:CompensationProposal['type'][]=['Salary Adjustment','Merit Increase','Promotion Increase'];
 export const today=()=>new Date().toISOString().slice(0,10);
 export const dailyFromSalary=(salary:number)=>Math.round(salary/DEFAULT_RATES.daysPerMonth*100)/100;
+export type CompensationEntryAction='assign'|'propose'|'unavailable';
+export function compensationEntryAction(employeeReady:boolean,unassignedCount:number,hasProposalEligibleEmployee:boolean):CompensationEntryAction{
+  if(!employeeReady)return 'unavailable';
+  if(unassignedCount>0)return 'assign';
+  return hasProposalEligibleEmployee?'propose':'unavailable';
+}
 export function salaryDefaultForPosition(position:string):number|undefined{
   const key=Object.keys(salaryDefaults).find(item=>item.trim().toLowerCase()===position.trim().toLowerCase());
   return key?salaryDefaults[key]:undefined;
