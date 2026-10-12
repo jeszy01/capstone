@@ -1,7 +1,7 @@
 import {apiClient} from '../api/apiClient';
 
 type PendingWrite={raw?:string;deleted?:boolean};
-const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
+const PREFIXES=['admin:','audit:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
 const rawSet=Storage.prototype.setItem;
 const rawRemove=Storage.prototype.removeItem;
