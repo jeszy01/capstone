@@ -836,7 +836,7 @@ function DependentSection({
                   <td className="px-4 py-3 font-semibold">{d.name}</td>
                   <td className="px-4 py-3">{d.relationship}</td>
                   <td className="px-4 py-3">
-                    {d.dateOfBirth ?? "Unavailable"}
+                    {formatHmoDate(d.dateOfBirth)}
                   </td>
                   <td className="px-4 py-3">
                     {d.companySponsored ? "Company-sponsored" : "Employee-paid"}
@@ -847,6 +847,9 @@ function DependentSection({
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">
                       {d.approvalStatus}
                     </span>
+                    <div className="mt-1 text-[11px] text-[#6b7794]">
+                      {d.eligibilityStatus} · {d.status}
+                    </div>
                     {d.rejectionReason && (
                       <div className="mt-1 text-[11px] text-red-600">
                         {d.rejectionReason}
@@ -1460,23 +1463,40 @@ function DependentModal({
     relationship: "Spouse",
     dob: "",
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const selectedEnrollment = enrollments.find((e) => e.id === f.enrollmentId);
+  const effectiveDate = selectedEnrollment?.effectiveDate ?? "";
   const save = async () => {
-    if (!f.enrollmentId || !f.name) return;
-    await hmoService.createDependent({
-      enrollmentId: f.enrollmentId,
-      name: f.name,
-      relationship: f.relationship,
-      dateOfBirth: f.dob || null,
-      eligibilityStatus: "Pending",
-      effectiveDate: today(),
-      status: "Pending",
-    });
-    recordAudit({
-      action: "Submitted dependent",
-      module: "HMO & Benefits",
-      description: `Submitted dependent ${f.name} for HMO coverage.`,
-    });
-    onSaved();
+    const name = f.name.trim();
+    if (!f.enrollmentId || !name || !effectiveDate || saving) return;
+    if (f.dob && f.dob > today()) {
+      setError("Date of birth cannot be in the future.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await hmoService.createDependent({
+        enrollmentId: f.enrollmentId,
+        name,
+        relationship: f.relationship,
+        dateOfBirth: f.dob || null,
+        eligibilityStatus: "Pending",
+        effectiveDate,
+        status: "Pending",
+      });
+      recordAudit({
+        action: "Submitted dependent",
+        module: "HMO & Benefits",
+        description: `Submitted dependent ${name} for HMO coverage.`,
+      });
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The dependent could not be submitted.");
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <Modal title="Add Dependent" onClose={onClose}>
@@ -1485,7 +1505,10 @@ function DependentModal({
           <select
             className={input}
             value={f.enrollmentId}
-            onChange={(e) => setF({ ...f, enrollmentId: e.target.value })}
+            onChange={(e) => {
+              setF({ ...f, enrollmentId: e.target.value });
+              setError("");
+            }}
           >
             <option value="">Select employee</option>
             {enrollments.map((e) => (
@@ -1498,7 +1521,10 @@ function DependentModal({
         <Field label="Dependent Name">
           <TextInput
             value={f.name}
-            onChange={(e) => setF({ ...f, name: e.target.value })}
+            onChange={(e) => {
+              setF({ ...f, name: e.target.value });
+              setError("");
+            }}
           />
         </Field>
         <Field label="Relationship">
@@ -1509,28 +1535,34 @@ function DependentModal({
           >
             <option>Spouse</option>
             <option>Child</option>
-            <option>Parent</option>
-            <option>Other Eligible Dependent</option>
           </select>
         </Field>
         <Field label="Date of Birth">
           <TextInput
             type="date"
+            max={today()}
             value={f.dob}
-            onChange={(e) => setF({ ...f, dob: e.target.value })}
+            onChange={(e) => {
+              setF({ ...f, dob: e.target.value });
+              setError("");
+            }}
           />
         </Field>
+        <Field label="Coverage Effective Date">
+          <TextInput type="date" value={effectiveDate} readOnly />
+        </Field>
         <p className="text-[12px] text-[#6b7794]">
-          Dependent coverage follows the active plan contribution policy and
-          requires eligibility/HMO confirmation.
+          Coverage starts with the employee&apos;s active HMO enrollment. Only a
+          spouse or child can be submitted as an eligible dependent.
         </p>
+        {error && <ErrorAlert>{error}</ErrorAlert>}
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <button className={ghost} onClick={onClose}>
+        <button className={ghost} onClick={onClose} disabled={saving}>
           Cancel
         </button>
-        <Button disabled={!f.enrollmentId || !f.name} onClick={save}>
-          Submit Dependent
+        <Button disabled={saving || !f.enrollmentId || !f.name.trim() || !effectiveDate} onClick={() => void save()}>
+          {saving ? "Submitting…" : "Submit Dependent"}
         </Button>
       </div>
     </Modal>

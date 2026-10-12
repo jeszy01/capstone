@@ -248,6 +248,8 @@ export default verifiedEdge(async ctx=>{
       const name=required(input.name,'name');const plan=await ensurePlan(String(enrollment.plan_id));
       const effective=input.effective_date?dateValue(input.effective_date,'effective_date'):dateValue(enrollment.effective_date,'enrollment.effective_date');
       const expiration=input.expiration_date?dateValue(input.expiration_date,'expiration_date'):(enrollment.expiration_date?dateValue(enrollment.expiration_date,'enrollment.expiration_date'):null);
+      const dateOfBirth=input.date_of_birth?dateValue(input.date_of_birth,'date_of_birth'):null;
+      if(dateOfBirth&&dateOfBirth>new Date().toISOString().slice(0,10))throw new HttpError(400,'INVALID_HMO_DATE','date_of_birth cannot be in the future.');
       if(expiration&&expiration<effective)throw new HttpError(400,'INVALID_HMO_DATES','Dependent expiration date must be on or after its effective date.');
       ensureActivePlanCoverage(plan,effective,expiration);
       if(effective<String(enrollment.effective_date)||Boolean(enrollment.expiration_date&&effective>String(enrollment.expiration_date)))throw new HttpError(409,'DEPENDENT_DATE_OUTSIDE_ENROLLMENT','Dependent coverage must fall within the employee enrollment dates.');
@@ -259,7 +261,7 @@ export default verifiedEdge(async ctx=>{
       const sponsored=input.company_sponsored===undefined?!hasSponsored:input.company_sponsored===true;
       if(sponsored&&hasSponsored)throw new HttpError(409,'COMPANY_SPONSORED_DEPENDENT_EXISTS','Only one spouse or child per employee can be company-sponsored.');
       const premium=numberValue(plan.dependent_monthly_premium??0,'dependent_monthly_premium');
-      const row=await insertRow<Row>('hmo_dependents',{enrollment_id:enrollmentId,name,relationship,date_of_birth:input.date_of_birth?dateValue(input.date_of_birth,'date_of_birth'):null,eligibility_status:'Pending',submitted_by:ctx.userId??null,effective_date:effective,expiration_date:expiration,status:'Submitted',approval_status:'Pending',company_sponsored:sponsored,employee_share:sponsored?0:premium,company_share:sponsored?premium:0,maxicare_status:'Not Submitted',maxicare_reference:null,maxicare_activated_at:null,created_at:now,updated_at:now});
+      const row=await insertRow<Row>('hmo_dependents',{enrollment_id:enrollmentId,name,relationship,date_of_birth:dateOfBirth,eligibility_status:'Pending',submitted_by:ctx.userId??null,effective_date:effective,expiration_date:expiration,status:'Submitted',approval_status:'Pending',company_sponsored:sponsored,employee_share:sponsored?0:premium,company_share:sponsored?premium:0,maxicare_status:'Not Submitted',maxicare_reference:null,maxicare_activated_at:null,created_at:now,updated_at:now});
       await history('dependent',row.id,'submitted',ctx.userId,undefined,row);return created(row);
     }
     if(resource==='payroll-deductions'){
