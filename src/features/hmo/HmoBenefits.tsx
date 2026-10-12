@@ -19,6 +19,7 @@ import {
 import { employeeService } from "../employees/employeeService";
 import type { Employee } from "../../types/domain";
 import { hmoService } from "./hmoService";
+import { hasOpenHmoEnrollment, hmoEligibilityDate, isHmoEmployeeEligible } from "./hmoEnrollment";
 import { recordAudit } from "../audit/auditService";
 import type {
   HmoDependent,
@@ -103,6 +104,12 @@ export default function HmoBenefits({
     plans.find((p) => p.status === "Active") ??
     plans.find((p) => p.status === "Draft") ??
     plans[0];
+  const enrollmentPlan = plans.find(
+    (p) => maxicareProviders.some((provider) => provider.id === p.providerId) && p.status === "Active",
+  );
+  const availableEnrollmentEmployees = employees.filter(
+    (employee) => employee.status === "Active" && employee.employmentStatus?.toLowerCase() !== "resigned" && !hasOpenHmoEnrollment(employee.id, enrollments),
+  );
   const displayedProvider =
     providers.find((provider) => provider.id === activePlan?.providerId) ??
     maxicareProvider;
@@ -140,9 +147,7 @@ export default function HmoBenefits({
               {tab === "enrollment" && (
                 <Button
                   disabled={
-                    !employees.length ||
-                    !activePlan ||
-                    !["Active", "Draft"].includes(activePlan.status)
+                    !availableEnrollmentEmployees.length || !enrollmentPlan
                   }
                   onClick={() => setEnrollModal(true)}
                 >
@@ -200,13 +205,15 @@ export default function HmoBenefits({
                 onEdit={() => setEditPlanModal(true)}
               />
             )}{" "}
-            {tab === "enrollment" && (
+            {tab === "enrollment" && <>
               <EnrollmentSection
                 enrollments={enrollments}
                 plans={plans}
                 employeeMap={employeeMap}
               />
-            )}{" "}
+              {!enrollmentPlan && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">An active Maxicare plan is required before employees can be enrolled.</p>}
+              {enrollmentPlan && !availableEnrollmentEmployees.length && <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[12px] text-blue-900">There are no active employees without an open HMO enrollment to select.</p>}
+            </>}{" "}
             {tab === "dependents" && (
               <DependentSection
                 dependents={dependents}
@@ -241,11 +248,8 @@ export default function HmoBenefits({
       {enrollModal && (
         <EnrollmentModal
           employees={employees}
-          plan={
-            activePlan && ["Active", "Draft"].includes(activePlan.status)
-              ? activePlan
-              : undefined
-          }
+          enrollments={enrollments}
+          plan={enrollmentPlan}
           onClose={() => setEnrollModal(false)}
           onSaved={() => {
             setEnrollModal(false);
@@ -1303,37 +1307,55 @@ function EditPlanModal({
 }
 function EnrollmentModal({
   employees,
+  enrollments,
   plan,
   onClose,
   onSaved,
 }: {
   employees: Employee[];
+  enrollments: HmoEnrollment[];
   plan?: HmoPlan;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [f, setF] = useState({
     employeeId: "",
-    eligibility: today(),
     effective: today(),
     expiration: plan?.coverageEnd ?? "",
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const eligibleEmployeeChoices = employees.filter(
+    (employee) => employee.status === "Active" && employee.employmentStatus?.toLowerCase() !== "resigned" && !hasOpenHmoEnrollment(employee.id, enrollments),
+  );
+  const selectedEmployee = eligibleEmployeeChoices.find((employee) => employee.id === f.employeeId);
+  const eligibilityDate = selectedEmployee ? hmoEligibilityDate(selectedEmployee.dateHired) : null;
+  const eligibleForEffectiveDate = Boolean(selectedEmployee && isHmoEmployeeEligible(selectedEmployee, f.effective));
+  const withinPlanDates = Boolean(plan && f.effective >= plan.coverageStart && f.effective <= plan.coverageEnd);
+  const validExpiration = !f.expiration || Boolean(plan && f.expiration >= f.effective && f.expiration <= plan.coverageEnd);
   const save = async () => {
-    if (!f.employeeId || !plan) return;
-    await hmoService.createEnrollment({
-      planId: plan.id,
-      employeeId: f.employeeId,
-      eligibilityDate: f.eligibility,
-      effectiveDate: f.effective,
-      expirationDate: f.expiration || null,
-      status: "Pending",
-    });
-    recordAudit({
-      action: "Submitted HMO enrollment",
-      module: "HMO & Benefits",
-      description: `Submitted HMO enrollment for employee ${f.employeeId}.`,
-    });
-    onSaved();
+    if (!f.employeeId || !plan || !eligibleForEffectiveDate || !withinPlanDates || !validExpiration || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await hmoService.createEnrollment({
+        planId: plan.id,
+        employeeId: f.employeeId,
+        effectiveDate: f.effective,
+        expirationDate: f.expiration || null,
+        status: "Submitted",
+      });
+      recordAudit({
+        action: "Submitted HMO enrollment",
+        module: "HMO & Benefits",
+        description: `Submitted HMO enrollment for employee ${f.employeeId}.`,
+      });
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The HMO enrollment could not be submitted.");
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <Modal title="Enroll Employee" onClose={onClose}>
@@ -1342,12 +1364,17 @@ function EnrollmentModal({
           <select
             className={input}
             value={f.employeeId}
-            onChange={(e) => setF({ ...f, employeeId: e.target.value })}
+            onChange={(e) => {
+              const employeeId = e.target.value;
+              const employee = eligibleEmployeeChoices.find((item) => item.id === employeeId);
+              const eligibility = employee ? hmoEligibilityDate(employee.dateHired) : null;
+              const earliest = [today(), plan?.coverageStart ?? "", eligibility ?? ""].filter(Boolean).sort().slice(-1)[0] ?? today();
+              setF({ ...f, employeeId, effective: earliest });
+              setError("");
+            }}
           >
-            <option value="">Select eligible employee</option>
-            {employees
-              .filter((e) => e.status === "Active")
-              .map((e) => (
+            <option value="">Select employee</option>
+            {eligibleEmployeeChoices.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.name} ({e.employeeNo})
                 </option>
@@ -1356,38 +1383,42 @@ function EnrollmentModal({
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Eligibility Date">
-            <TextInput
-              type="date"
-              value={f.eligibility}
-              onChange={(e) => setF({ ...f, eligibility: e.target.value })}
-            />
+            <TextInput value={eligibilityDate ?? "Unavailable — hire date required"} readOnly />
           </Field>
           <Field label="Effective Date">
             <TextInput
               type="date"
+              min={eligibilityDate ?? plan?.coverageStart}
+              max={plan?.coverageEnd}
               value={f.effective}
-              onChange={(e) => setF({ ...f, effective: e.target.value })}
+              onChange={(e) => { setF({ ...f, effective: e.target.value }); setError(""); }}
             />
           </Field>
         </div>
+        {selectedEmployee && !eligibilityDate && <p role="alert" className="text-[12px] text-amber-800">This employee record has no valid hire date. Update the employee record before submitting enrollment.</p>}
+        {selectedEmployee && eligibilityDate && !eligibleForEffectiveDate && <p role="alert" className="text-[12px] text-amber-800">The employee becomes eligible on {formatHmoDate(eligibilityDate)} after completing the six-month waiting period.</p>}
+        {plan && !withinPlanDates && <p role="alert" className="text-[12px] text-amber-800">The effective date must fall within the active plan coverage period ({formatHmoDate(plan.coverageStart)} – {formatHmoDate(plan.coverageEnd)}).</p>}
         <Field label="Expiration Date">
           <TextInput
             type="date"
+            min={f.effective}
+            max={plan?.coverageEnd}
             value={f.expiration}
-            onChange={(e) => setF({ ...f, expiration: e.target.value })}
+            onChange={(e) => { setF({ ...f, expiration: e.target.value }); setError(""); }}
           />
         </Field>
+        {!validExpiration && <p role="alert" className="text-[12px] text-amber-800">Expiration must be on or after the effective date and within the plan coverage period.</p>}
         <p className="text-[12px] text-[#6b7794]">
-          Enrollment starts as Pending. HMO confirmation is required before it
-          becomes Active.
+          Enrollment is submitted for HR approval. Maxicare confirmation is required before it becomes Active.
         </p>
+        {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">{error}</div>}
       </div>
       <div className="mt-6 flex justify-end gap-2">
-        <button className={ghost} onClick={onClose}>
+        <button className={ghost} onClick={onClose} disabled={saving}>
           Cancel
         </button>
-        <Button disabled={!f.employeeId || !plan} onClick={save}>
-          Submit Enrollment
+        <Button disabled={saving || !f.employeeId || !plan || !eligibleForEffectiveDate || !withinPlanDates || !validExpiration} onClick={() => void save()}>
+          {saving ? "Submitting…" : "Submit Enrollment"}
         </Button>
       </div>
     </Modal>
