@@ -132,7 +132,9 @@ export default function HmoBenefits({
             ? "Dependents"
             : tab === "plan"
               ? "HMO Plan"
-              : "HMO"
+              : tab === "history"
+                ? "HMO Records"
+                : "HMO"
         }
         description="Manage the company HMO plan, employee enrollment, and dependents."
         actions={
@@ -1729,9 +1731,9 @@ function HistorySection() {
         {" "}
         <div>
           {" "}
-          <h2 className="m-0 text-[16px] font-semibold">HMO History</h2>{" "}
+          <h2 className="m-0 text-[16px] font-semibold">HMO Records</h2>{" "}
           <p className="mt-1 text-[12px] text-[#6b7794]">
-            Recorded changes to HMO records and workflows.
+            HMO enrollment, dependent, plan, and payroll records.
           </p>{" "}
         </div>{" "}
         <Button onClick={() => setRefresh((value) => value + 1)}>
@@ -1744,7 +1746,7 @@ function HistorySection() {
           {" "}
           <TextInput
             value={search}
-            placeholder="Search actions or record IDs"
+            placeholder="Search records or record IDs"
             onChange={(event) => {
               setSearch(event.target.value);
               setPage(1);
@@ -1780,11 +1782,11 @@ function HistorySection() {
         </div>
       ) : loading ? (
         <div className="mt-4">
-          <LoadingState>Loading HMO history…</LoadingState>
+          <LoadingState>Loading HMO records…</LoadingState>
         </div>
       ) : items.length === 0 ? (
         <div className="mt-4">
-          <Empty>No history records found.</Empty>
+          <Empty>No HMO records found.</Empty>
         </div>
       ) : (
         <>
