@@ -61,8 +61,8 @@ export default verifiedEdge(async ctx=>{
       const requestedStatus=String(input.status??previous.status).trim().toLowerCase();
       const currentStatus=String(previous.status??'').trim().toLowerCase();
       if(requestedStatus==='active'&&currentStatus!=='active'){
-        const activePlans=await listRows<Row>('hmo_plans',{status:'Active'});
-        const anotherActivePlan=activePlans.some(plan=>plan.id!==updateId&&String(plan.status??'').trim().toLowerCase()==='active');
+        const allPlans=await listRows<Row>('hmo_plans');
+        const anotherActivePlan=allPlans.some(plan=>plan.id!==updateId&&String(plan.status??'').trim().toLowerCase()==='active');
         if(anotherActivePlan)throw new HttpError(409,'ACTIVE_HMO_PLAN_EXISTS','Only one active HMO plan is allowed.');
       }
       const values:Record<string,unknown>={...input};
