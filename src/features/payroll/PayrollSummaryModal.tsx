@@ -22,7 +22,12 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
       ['Allowances',sum(rows,r=>r.result.allowances??0)],
       ['Bonuses / other earnings',sum(rows,r=>numberValue(r.input.otherEarnings))],
     ];
-    const attendance=sum(rows,r=>(r.result.absences??0)+r.result.lateUt);
+    const att:[string,number][]=[
+      ['Absences',sum(rows,r=>r.result.absences??0)],
+      ['Late',sum(rows,r=>r.result.late??0)],
+      ['Undertime',sum(rows,r=>r.result.undertime??0)],
+    ];
+    const attendance=att.reduce((t,r)=>t+r[1],0);
     const stat:[string,number][]=[
       ['SSS',sum(rows,r=>r.result.sss)],
       ['PhilHealth',sum(rows,r=>r.result.phil)],
@@ -46,7 +51,7 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
       return {name,count:group.length,gross:g,deductions:d,net:g-d};
     });
     const previousGross=previousRun?sum(previousRun.rows,r=>r.result.gross):0;
-    return {earn,attendance,stat,company,gross,deductions,net,departments,statTotal:stat.reduce((t,r)=>t+r[1],0),companyTotal:company.reduce((t,r)=>t+r[1],0),previousGross,
+    return {earn,attendance,att,stat,company,gross,deductions,net,departments,statTotal:stat.reduce((t,r)=>t+r[1],0),companyTotal:company.reduce((t,r)=>t+r[1],0),previousGross,
       lowNet:rows.filter(r=>r.result.net<=0).length};
   },[rows,employees,previousRun]);
 
@@ -54,6 +59,8 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
     [Math.abs(data.net-(data.gross-data.deductions))<0.01,`Net pay (${peso(data.net)}) equals gross minus deductions.`],
     [data.lowNet===0,data.lowNet===0?'No employees with zero or negative net pay.':`${data.lowNet} employee(s) have zero or negative net pay.`],
   ];
+  const listed=data.statTotal+data.attendance+data.companyTotal;
+  checks.push([Math.abs(listed-data.deductions)<0.01,Math.abs(listed-data.deductions)<0.01?'Deduction lines add up to total deductions.':`Deduction lines (${peso(listed)}) differ from total deductions (${peso(data.deductions)}). Check whether HMO is included in the payroll result.`]);
   if(data.previousGross>0){
     const change=((data.gross-data.previousGross)/data.previousGross)*100;
     checks.push([Math.abs(change)<10,`Gross is ${change>=0?'+':''}${change.toFixed(1)}% compared with the previous run.`]);
@@ -97,10 +104,10 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
       <div className="grid gap-5 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">Earnings</h3><p className="mb-2 mt-0.5 text-[11px] text-slate-500">What was earned this cutoff.</p>
           {lines(data.earn)}
-          {data.attendance>0&&<div className="flex justify-between border-b border-slate-100 py-1.5 text-[12px]"><span>Absent / undertime / late</span><span className="tabular-nums">({peso(data.attendance)})</span></div>}
           <div className="mt-2">{total('Total gross pay',data.gross)}</div></div>
         <div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">Deductions</h3><p className="mb-0 mt-0.5 text-[11px] text-slate-500">Taken from employee pay.</p>
           {group('Statutory',COLORS.stat,data.stat)}
+          {group('Attendance',COLORS.att,data.att)}
           {group('Company',COLORS.co,data.company)}
           <div className="mt-3">{total('Total deductions',data.deductions)}</div></div>
       </div>
