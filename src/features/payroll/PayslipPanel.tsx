@@ -91,7 +91,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
   <style>{`@media print{body *{visibility:hidden}.payslip-print,.payslip-print *{visibility:visible}.payslip-print{position:absolute;left:0;top:0;width:100%;border:0!important}.no-print{display:none!important}}`}</style>
   <div className="payslip-print rounded-xl border border-slate-300 bg-white p-6 text-slate-800">
    <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-    <div className="flex items-center gap-3"><img src="/ani-logo.png" alt="Archon Nell Inc." className="h-10 w-10 object-contain"/><div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INCORPORATED</div><div className="text-[11px] text-slate-500">Payslip</div></div></div>
+    <div className="flex items-center gap-3"><img src="/logo.png" alt="Archon Nell Inc." className="h-10 w-10 object-contain"/><div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INCORPORATED</div><div className="text-[11px] text-slate-500">Payslip</div></div></div>
     <div className="text-right"><div className="text-[13px] font-semibold">{period}</div><span className="mt-1 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Approved</span></div>
    </div>
    <div className="grid gap-1.5 border-b border-slate-200 py-4 text-[12px] sm:grid-cols-2">
