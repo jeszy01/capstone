@@ -193,7 +193,7 @@ async function reviewProposal(input:Row,ctx:RequestContext){
 async function createReward(input:Row,ctx:RequestContext){
  const employeeId=uuid(input.employee_id,"employee_id");
  const type=required(input.reward_type,"reward_type");
- if(!["Bonus","Incentive","Allowance","Adjustment"].includes(type))throw new HttpError(400,"INVALID_REWARD_TYPE","Reward type must be Bonus, Incentive, Allowance, or Adjustment.");
+ if(!String(type||'').trim()) throw new HttpError(400,"INVALID_REWARD_TYPE","Reward type is required.");
  if(!(await listRows<EmployeeRow>("employees",{id:employeeId}))[0])throw new HttpError(404,"EMPLOYEE_NOT_FOUND","Employee was not found.");
  const createdAt=new Date().toISOString();
  const row=await insertRow("compensation_rewards",{employee_id:employeeId,reward_type:type,amount:amount(input.amount,"amount"),effective_date:isoDate(input.effective_date),notes:String(input.notes??"").trim(),status:"Planned",created_by:ctx.userId,created_at:createdAt});
