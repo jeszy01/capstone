@@ -40,6 +40,35 @@ export default verifiedEdge(async ctx=>{
 
   if(ctx.request.method==='POST'){
     const input=await body<Record<string,unknown>>(ctx.request);const now=new Date().toISOString();
+
+    // Existing records are updated through POST because the eProvider browser gateway
+    // may reject PATCH/PUT before the request reaches this handler.
+    if(resource==='plans'&&id&&input.action==='update'){
+      const previous=await first(table,{id});
+      if(!previous)throw new HttpError(404,'HMO_RECORD_NOT_FOUND','HMO plan was not found.');
+      const providerId=required(input.provider_id??previous.provider_id,'provider_id');
+      await ensureMaxicare(providerId);
+      const name=required(input.name??previous.name,'name');
+      const start=dateValue(input.coverage_start??previous.coverage_start,'coverage_start');
+      const end=dateValue(input.coverage_end??previous.coverage_end,'coverage_end');
+      if(end<start)throw new HttpError(400,'INVALID_HMO_DATES','coverage_end must be on or after coverage_start.');
+      const employeeCompanyShare=Number(input.employee_company_share??previous.employee_company_share??100);
+      const employeeMemberShare=Number(input.employee_member_share??previous.employee_member_share??0);
+      if(employeeCompanyShare!==100||employeeMemberShare!==0)throw new HttpError(400,'INVALID_EMPLOYEE_CONTRIBUTION_POLICY','The company must pay 100% of the employee HMO premium.');
+      if(String(input.status??previous.status)==='Active'&&previous.status!=='Active'&&(await first('hmo_plans',{status:'Active'})))throw new HttpError(409,'ACTIVE_HMO_PLAN_EXISTS','Only one active HMO plan is allowed.');
+      const values:Record<string,unknown>={...input};
+      delete values.action;
+      values.provider_id=providerId;
+      values.name=name;
+      values.coverage_start=start;
+      values.coverage_end=end;
+      values.employee_company_share=employeeCompanyShare;
+      values.employee_member_share=employeeMemberShare;
+      values.updated_at=now;
+      await updateRows(table,{id},values);
+      await history('plan',id,'updated',ctx.userId,previous,values);
+      return ok({id,...values});
+    }
     if(resource==='providers'){
       const name=required(input.name,'name');if(name.toLowerCase()!=='maxicare')throw new HttpError(400,'MAXICARE_REQUIRED','Only Maxicare is supported by the PBMS HMO module.');
     }

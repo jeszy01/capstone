@@ -25,6 +25,11 @@ async function patch<TRequest,TResponse>(resource:string,id:string,value:TReques
  return r.data;
 }
 
+async function postById<TRequest,TResponse>(resource:string,id:string,value:TRequest):Promise<TResponse>{
+ const r=await apiClient.post<TRequest,Envelope<TResponse>>(`/hmo/${resource}/${id}`,value);
+ return r.data;
+}
+
 const provider=(x:ServerProvider):HmoProvider=>({id:x.id,name:x.name,contactPerson:x.contact_person??null,contactNumber:x.contact_number??null,status:x.status});
 
 const plan=(x:ServerPlan):HmoPlan=>({
@@ -73,7 +78,8 @@ export const hmoService={
  createPlan:async(v:Partial<HmoPlan>)=>plan(await post('plans',{provider_id:v.providerId,name:v.name,coverage_start:v.coverageStart,coverage_end:v.coverageEnd,annual_benefit_limit:v.annualBenefitLimit,inpatient:v.inpatient,outpatient:v.outpatient,emergency:v.emergency,preventive_care:v.preventiveCare,dental:v.dental,employee_company_share:v.employeeCompanyShare,employee_member_share:v.employeeMemberShare,dependent_company_share:v.dependentCompanyShare,dependent_member_share:v.dependentMemberShare,employee_monthly_premium:v.employeeMonthlyPremium,dependent_monthly_premium:v.dependentMonthlyPremium,collect_employee_share_via_payroll:v.collectEmployeeShareViaPayroll,status:v.status})),
 
  updatePlan:async(id:string,v:Partial<HmoPlan>):Promise<HmoPlan>=>{
-  await patch('plans',id,{
+  await postById('plans',id,{
+   action:'update',
    provider_id:v.providerId,
    name:v.name,
    coverage_start:v.coverageStart,
