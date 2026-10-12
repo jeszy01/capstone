@@ -7,7 +7,7 @@ import {employeeService} from '../employees/employeeService';
 import type {Employee} from '../../types/domain';
 import {hmoService} from './hmoService';
 import {recordAudit} from '../audit/auditService';
-import type {HmoDependent,HmoEnrollment,HmoPlan,HmoProvider} from './hmoTypes';
+import type {HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPlan,HmoProvider} from './hmoTypes';
 
 const today=()=>new Date().toISOString().slice(0,10);
 const money=(n:number|null|undefined)=>n==null?'Unavailable':new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP',maximumFractionDigits:2}).format(n);
@@ -31,7 +31,7 @@ export default function HmoBenefits({section='hmo'}:{section?:'hmo'|'dependents'
  return <div>
   <PageHeader title={section==='dependents'?'Dependents':'HMO'} description="Manage the company HMO plan, employee enrollment, and dependents." actions={!loading&&!loadError?<>{tab==='plan'&&!plans.length&&<Button onClick={()=>setPlanModal(true)}><Plus size={15}/>Create HMO Plan</Button>}{tab==='enrollment'&&<Button disabled={!employees.length||!activePlan||!['Active','Draft'].includes(activePlan.status)} onClick={()=>setEnrollModal(true)}><Plus size={15}/>Enroll Employee</Button>}{tab==='dependents'&&<Button disabled={!activeEnrollments.length} onClick={()=>setDependentModal(true)}><Plus size={15}/>Add Dependent</Button>}</>:undefined}/>
   {section==='hmo'&&<Tabs label="HMO & Benefits sections" tabs={hmoTabs} value={tab} onChange={id=>navigate(hmoTabs.find(item=>item.id===id)?.to??'/hmo-benefits/hmo')} idPrefix="hmo-tab" panelId="hmo-panel"/>}
-  <div id="hmo-panel" role="tabpanel" aria-labelledby={section==='hmo'?`hmo-tab-${tab}`:undefined} aria-label={section==='hmo'?undefined:'Dependents'}>{loadError&&<ErrorAlert onRetry={()=>void load()}>{loadError}</ErrorAlert>}{loading?<Card className="mt-4"><LoadingState>Loading HMO records…</LoadingState></Card>:<>{tab==='plan'&&<PlanSection provider={displayedProvider} plan={activePlan} hasAnyPlan={plans.length>0}/>} {tab==='enrollment'&&<EnrollmentSection enrollments={enrollments} plans={plans} employeeMap={employeeMap}/>} {tab==='dependents'&&<DependentSection dependents={dependents} enrollments={enrollments} employeeMap={employeeMap}/>}</>}</div>
+  <div id="hmo-panel" role="tabpanel" aria-labelledby={section==='hmo'?`hmo-tab-${tab}`:undefined} aria-label={section==='hmo'?undefined:'Dependents'}>{loadError&&<ErrorAlert onRetry={()=>void load()}>{loadError}</ErrorAlert>}{loading?<Card className="mt-4"><LoadingState>Loading HMO records…</LoadingState></Card>:<>{tab==='plan'&&<PlanSection provider={displayedProvider} plan={activePlan} hasAnyPlan={plans.length>0}/>} {tab==='enrollment'&&<EnrollmentSection enrollments={enrollments} plans={plans} employeeMap={employeeMap}/>} {tab==='dependents'&&<DependentSection dependents={dependents} enrollments={enrollments} employeeMap={employeeMap}/>} {tab==='history'&&<HistorySection/>}</>}</div>
   {planModal&&<PlanModal provider={maxicareProvider} onClose={()=>setPlanModal(false)} onSaved={()=>{setPlanModal(false);load()}}/>}{enrollModal&&<EnrollmentModal employees={employees} plan={activePlan&&['Active','Draft'].includes(activePlan.status)?activePlan:undefined} onClose={()=>setEnrollModal(false)} onSaved={()=>{setEnrollModal(false);load()}}/>}{dependentModal&&<DependentModal enrollments={activeEnrollments} employeeMap={employeeMap} onClose={()=>setDependentModal(false)} onSaved={()=>{setDependentModal(false);load()}}/>}
  </div>
 }
@@ -49,3 +49,103 @@ function PlanModal({provider,onClose,onSaved}:{provider?:HmoProvider;onClose:()=
 function EnrollmentModal({employees,plan,onClose,onSaved}:{employees:Employee[];plan?:HmoPlan;onClose:()=>void;onSaved:()=>void}){const[f,setF]=useState({employeeId:'',eligibility:today(),effective:today(),expiration:plan?.coverageEnd??''});const save=async()=>{if(!f.employeeId||!plan)return;await hmoService.createEnrollment({planId:plan.id,employeeId:f.employeeId,eligibilityDate:f.eligibility,effectiveDate:f.effective,expirationDate:f.expiration||null,status:'Pending'});recordAudit({action:'Submitted HMO enrollment',module:'HMO & Benefits',description:`Submitted HMO enrollment for employee ${f.employeeId}.`});onSaved()};return <Modal title="Enroll Employee" onClose={onClose}><div className="grid gap-4"><Field label="Employee"><select className={input} value={f.employeeId} onChange={e=>setF({...f,employeeId:e.target.value})}><option value="">Select eligible employee</option>{employees.filter(e=>e.status==='Active').map(e=><option key={e.id} value={e.id}>{e.name} ({e.employeeNo})</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Eligibility Date"><TextInput type="date" value={f.eligibility} onChange={e=>setF({...f,eligibility:e.target.value})}/></Field><Field label="Effective Date"><TextInput type="date" value={f.effective} onChange={e=>setF({...f,effective:e.target.value})}/></Field></div><Field label="Expiration Date"><TextInput type="date" value={f.expiration} onChange={e=>setF({...f,expiration:e.target.value})}/></Field><p className="text-[12px] text-[#6b7794]">Enrollment starts as Pending. HMO confirmation is required before it becomes Active.</p></div><div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={onClose}>Cancel</button><Button disabled={!f.employeeId||!plan} onClick={save}>Submit Enrollment</Button></div></Modal>}
 
 function DependentModal({enrollments,employeeMap,onClose,onSaved}:{enrollments:HmoEnrollment[];employeeMap:Map<string,Employee>;onClose:()=>void;onSaved:()=>void}){const[f,setF]=useState({enrollmentId:'',name:'',relationship:'Spouse',dob:''});const save=async()=>{if(!f.enrollmentId||!f.name)return;await hmoService.createDependent({enrollmentId:f.enrollmentId,name:f.name,relationship:f.relationship,dateOfBirth:f.dob||null,eligibilityStatus:'Pending',effectiveDate:today(),status:'Pending'});recordAudit({action:'Submitted dependent',module:'HMO & Benefits',description:`Submitted dependent ${f.name} for HMO coverage.`});onSaved()};return <Modal title="Add Dependent" onClose={onClose}><div className="grid gap-4"><Field label="Employee"><select className={input} value={f.enrollmentId} onChange={e=>setF({...f,enrollmentId:e.target.value})}><option value="">Select employee</option>{enrollments.map(e=><option key={e.id} value={e.id}>{employeeMap.get(e.employeeId)?.name??e.employeeId}</option>)}</select></Field><Field label="Dependent Name"><TextInput value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Relationship"><select className={input} value={f.relationship} onChange={e=>setF({...f,relationship:e.target.value})}><option>Spouse</option><option>Child</option><option>Parent</option><option>Other Eligible Dependent</option></select></Field><Field label="Date of Birth"><TextInput type="date" value={f.dob} onChange={e=>setF({...f,dob:e.target.value})}/></Field><p className="text-[12px] text-[#6b7794]">Dependent coverage follows the active plan contribution policy and requires eligibility/HMO confirmation.</p></div><div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={onClose}>Cancel</button><Button disabled={!f.enrollmentId||!f.name} onClick={save}>Submit Dependent</Button></div></Modal>}
+
+
+function HistorySection(){
+ const [items,setItems]=useState<HmoHistoryRow[]>([]);
+ const [page,setPage]=useState(1);
+ const [total,setTotal]=useState(0);
+ const [search,setSearch]=useState('');
+ const [entityType,setEntityType]=useState('');
+ const [loading,setLoading]=useState(true);
+ const [error,setError]=useState('');
+ const [refresh,setRefresh]=useState(0);
+ const pageSize=10;
+
+ useEffect(()=>{
+  let cancelled=false;
+  setLoading(true);
+  setError('');
+  hmoService.history({
+   page,
+   page_size:pageSize,
+   ...(search.trim()?{search:search.trim()}:{}),
+   ...(entityType?{entity_type:entityType}:{})
+  }).then(result=>{
+   if(cancelled)return;
+   setItems(result.items);
+   setTotal(result.total);
+  }).catch(err=>{
+   console.error('HMO history load failed',err);
+   if(!cancelled)setError('Unable to load HMO history. Please check the connection and try again.');
+  }).finally(()=>{
+   if(!cancelled)setLoading(false);
+  });
+  return ()=>{cancelled=true};
+ },[page,search,entityType,refresh]);
+
+ const formatDate=(value:string)=>{
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?'Unavailable':date.toLocaleString();
+ };
+ const formatLabel=(value:string)=>value.replace(/_/g,' ').replace(/\\b\\w/g,c=>c.toUpperCase());
+
+ return <Card className="mt-4">
+  <div className="flex flex-wrap items-center justify-between gap-3">
+   <div>
+    <h2 className="m-0 text-[16px] font-semibold">HMO History</h2>
+    <p className="mt-1 text-[12px] text-[#6b7794]">Recorded changes to HMO records and workflows.</p>
+   </div>
+   <Button onClick={()=>setRefresh(value=>value+1)}>Refresh</Button>
+  </div>
+
+  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+   <Field label="Search history">
+    <TextInput value={search} placeholder="Search actions or record IDs"
+     onChange={event=>{setSearch(event.target.value);setPage(1)}}/>
+   </Field>
+   <Field label="Record type">
+    <select className={input} value={entityType}
+     onChange={event=>{setEntityType(event.target.value);setPage(1)}}>
+     <option value="">All record types</option>
+     <option value="provider">Provider</option>
+     <option value="plan">Plan</option>
+     <option value="enrollment">Enrollment</option>
+     <option value="dependent">Dependent</option>
+     <option value="utilization">Utilization</option>
+     <option value="payroll_deduction">Payroll deduction</option>
+    </select>
+   </Field>
+  </div>
+
+  {error?<div className="mt-4"><ErrorAlert onRetry={()=>setRefresh(value=>value+1)}>{error}</ErrorAlert></div>
+  :loading?<div className="mt-4"><LoadingState>Loading HMO history…</LoadingState></div>
+  :items.length===0?<div className="mt-4"><Empty>No history records found.</Empty></div>
+  :<>
+   <div className="mt-4 overflow-x-auto">
+    <table className="w-full min-w-[850px] text-left text-[13px]">
+     <thead><tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
+      {['Date and time','Record type','Action','Record ID','Actor'].map(label=>
+       <th key={label} className="px-3 py-3">{label}</th>)}
+     </tr></thead>
+     <tbody>{items.map(item=><tr key={item.id} className="border-b border-[#eef1f6]">
+      <td className="px-3 py-3">{formatDate(item.createdAt)}</td>
+      <td className="px-3 py-3">{formatLabel(item.entityType)}</td>
+      <td className="px-3 py-3 font-semibold">{formatLabel(item.action)}</td>
+      <td className="px-3 py-3 font-mono text-[11px]">{item.entityId}</td>
+      <td className="px-3 py-3">{item.actorId??'Unavailable'}</td>
+     </tr>)}</tbody>
+    </table>
+   </div>
+   <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[12px]">
+    <span>{(page-1)*pageSize+1}–{Math.min(page*pageSize,total)} of {total} records</span>
+    <div className="flex gap-2">
+     <button className="rounded-lg border border-[#e3e7ef] px-3 py-2 disabled:opacity-40"
+      disabled={page<=1} onClick={()=>setPage(value=>value-1)}>Previous</button>
+     <button className="rounded-lg border border-[#e3e7ef] px-3 py-2 disabled:opacity-40"
+      disabled={page*pageSize>=total} onClick={()=>setPage(value=>value+1)}>Next</button>
+    </div>
+   </div>
+  </>}
+ </Card>;
+}
