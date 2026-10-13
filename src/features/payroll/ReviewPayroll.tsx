@@ -121,10 +121,10 @@ const built:RunRow[]=[];
   nav('/payroll?tab=runs');
  };
 
- return <div>
+ return <div className="space-y-4">
   <style>{`.paper table{border-collapse:collapse;width:100%}.paper th,.paper td{border:1px solid #94a3b8;padding:3px 4px;font-size:9px;color:#0f172a}.paper th{background:#f1f5f9;text-align:center}.paper td.n{text-align:right;font-variant-numeric:tabular-nums}.paper-input{width:52px;border:1px solid #cbd5e1;border-radius:4px;padding:1px 3px;text-align:right;font-size:9px}@media print{@page{size:landscape;margin:8mm}aside,header,.no-print{display:none!important}.paper{box-shadow:none!important;border:0!important;padding:0!important}.paper-input{border:0!important;padding:0!important;background:transparent!important}}`}</style>
-  <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
-   <button className={ghost} onClick={()=>nav('/payroll')}>Back</button>
+  <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
+   <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{from&&to?periodLabel(from,to):'Payroll entry'}</div></div>{saved&&<span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${saved.status==='Approved'?'bg-emerald-100 text-emerald-800':saved.status==='Rejected'?'bg-rose-100 text-rose-800':'bg-amber-100 text-amber-800'}`}>{saved.status}</span>}</div>
    <div className="flex flex-wrap gap-2">
     <button className={ghost} onClick={()=>window.print()}>Print</button>
     {!saved&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
@@ -132,13 +132,14 @@ const built:RunRow[]=[];
    {saved&&saved.status==='Approved'&&!saved.paidAt&&user?.role==='Admin'&&<Button onClick={()=>setPaying(true)}>Proceed to Payment</Button>}
    </div>
   </div>
-   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
+  {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
   {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
-  {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+  {!loading&&rows.length>0&&<div className="no-print grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Employees</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{rows.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gross compensation</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{peso(totals.gross)}</div></div><div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Net pay</div><div className="mt-1 text-[22px] font-semibold text-blue-800">{peso(totals.net)}</div><div className="mt-1 text-[10px] text-slate-500">Total deductions · {peso(totals.deductions)}</div></div></div>}
+  {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_28px_rgba(23,52,91,0.06)]">
    <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">Cutoff: {from&&to?periodLabel(from,to):'-'}</div>{saved&&<div className="text-[11px]">Status: {saved.status}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
    {!saved&&<p className="no-print mb-3 text-[10px] leading-relaxed text-slate-600">For new hires with another employer this calendar year, enter that employer’s taxable compensation (after mandatory contributions and eligible exemptions), 13th-month/other-benefits paid, tax withheld, and related payroll-period count in the prior-employer columns. Use verified year-to-date amounts; leave at zero when not applicable. These figures are used only for cumulative/annualized withholding, not added to this payroll’s gross pay. HR-approved employee loans and cash advances are loaded from the database into the four loan deduction columns; those amounts are locked so they cannot be double-entered.</p>}
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>No employees with an assigned salary for this cutoff.</Empty>:<>
-    <div className="overflow-x-auto"><table>
+    <div className="overflow-x-auto rounded-xl border border-slate-200"><table>
      <thead>
       <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={6}>Earnings</th><th colSpan={19}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
       <tr>{heads.map(label=><th key={label}>{label}</th>)}</tr>
