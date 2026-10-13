@@ -15,12 +15,16 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
   const rows=run.rows;
   const data=useMemo(()=>{
     const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
-    const earn:[string,number][]=[
+ const earn:[string,number][]=[
       ['Basic pay',sum(rows,r=>r.result.basic)],
       ['Overtime',sum(rows,r=>r.result.overtime)],
       ['Leave pay',sum(rows,r=>r.result.leavePay)],
+      ['Holiday pay',sum(rows,r=>numberValue(r.input.holidayPay))],
+      ['Service incentive leave conversion',sum(rows,r=>numberValue(r.input.slConversion))],
       ['Allowances',sum(rows,r=>r.result.allowances??0)],
       ['Bonuses / other earnings',sum(rows,r=>numberValue(r.input.otherEarnings))],
+      ['13th-month and other benefits',sum(rows,r=>numberValue(r.input.thirteenthMonthAndOtherBenefits))],
+      ['Eligible tax-exempt benefits',sum(rows,r=>numberValue(r.input.taxExemptBenefits))],
     ];
     const att:[string,number][]=[
       ['Absences',sum(rows,r=>r.result.absences??0)],
@@ -57,6 +61,7 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
 
   const checks:[boolean,string][]=[
     [Math.abs(data.net-(data.gross-data.deductions))<0.01,`Net pay (${peso(data.net)}) equals gross minus deductions.`],
+    [Math.abs(data.earn.reduce((total,line)=>total+line[1],0)-data.gross)<0.01,'Itemized earnings add up to total gross pay.'],
     [data.lowNet===0,data.lowNet===0?'No employees with zero or negative net pay.':`${data.lowNet} employee(s) have zero or negative net pay.`],
   ];
   const listed=data.statTotal+data.attendance+data.companyTotal;

@@ -69,7 +69,7 @@ const built:RunRow[]=[];
      const employee=item.employee;
      const mine=records.filter(record=>(record.empId===employee.employeeNo||record.empId===employee.id)&&record.date>=from&&record.date<=to);
      const bonus=bonuses.filter(entry=>(entry.employeeId===employee.id||entry.employeeId===employee.employeeNo)&&entry.status==='Approved'&&entry.effectiveDate>=from&&entry.effectiveDate<=to).reduce((total,entry)=>total+entry.amount,0);
-     const hmo=Number(await hmoService.getPayrollDeduction(employee.id).catch(()=>0))||0;
+     const hmo=await hmoService.getPayrollDeduction(employee.id,from,to);
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
      const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
      const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate:(item.salary as number)/rates.daysPerMonth,daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:bonus,...loanAmounts};

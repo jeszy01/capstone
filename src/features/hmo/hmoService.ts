@@ -1,4 +1,5 @@
 import {apiClient} from '../../services/api/apiClient';
+import {verifiedHmoDeductionTotal} from './hmoPayroll';
 import type {HmoApprovalStatus,HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPayrollDeduction,HmoPlan,HmoProvider,HmoUtilization,MaxicareStatus} from './hmoTypes';
 
 type Envelope<T>={data:T};
@@ -132,8 +133,8 @@ export const hmoService={
 
  getPayrollDeductions:async()=>get<ServerDeduction>('payroll-deductions').then(x=>x.map(deduction)),
 
- getPayrollDeduction:async(employeeId:string)=>{
+ getPayrollDeduction:async(employeeId:string,periodStart:string,periodEnd:string)=>{
   const deductions=await hmoService.getPayrollDeductions();
-  return Math.round(deductions.filter(item=>item.employeeId===employeeId&&item.verificationStatus==='Verified').reduce((sum,item)=>sum+item.amount,0)*100)/100;
+  return verifiedHmoDeductionTotal(deductions,employeeId,periodStart,periodEnd);
  }
 };

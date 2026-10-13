@@ -2,6 +2,7 @@ import type {PayrollInput,PayrollRates,PayrollResult} from '../../types/domain';
 import {numberValue} from '../../utils/storage';
 import {calculateWithholdingTax,detectPayrollPeriod} from './withholdingTax';
 import type {AnnualTaxHistory,PayrollPeriod,WithholdingTaxRuleSet} from './withholdingTax';
+import {pagibigEmployeeRate} from '../contributions/contributionCalculator';
 const round=(v:number)=>Math.round((v+Number.EPSILON)*100)/100;
 const clamp=(v:number,lo:number,hi:number)=>Math.min(hi,Math.max(lo,v));
 
@@ -28,7 +29,7 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const has=rate>0&&round(gross-absences)>0;
  const sss=has?round(clamp(Math.round(monthly/R.sssStep)*R.sssStep,R.sssMin,R.sssMax)*R.sssRate/100/R.payPeriodsPerMonth):0;
  const phil=has?round(clamp(monthly,R.philMin,R.philMax)*R.philRate/100/R.payPeriodsPerMonth):0;
- const pagibig=has?round(Math.min(monthly,R.pagibigMax)*R.pagibigRate/100/R.payPeriodsPerMonth):0;
+ const pagibig=has?round(Math.min(monthly,R.pagibigMax)*pagibigEmployeeRate(monthly,R)/100/R.payPeriodsPerMonth):0;
  const periodStart=taxContext.periodStart??new Date().toISOString().slice(0,10),periodEnd=taxContext.periodEnd??periodStart;
  const period=taxContext.period??(taxContext.periodStart||taxContext.periodEnd?detectPayrollPeriod(periodStart,periodEnd,R.payPeriodsPerMonth):(R.payPeriodsPerMonth===1?'monthly':'semi-monthly'));
  const regular=Math.max(0,basic-absences-late-undertime)+allowances;

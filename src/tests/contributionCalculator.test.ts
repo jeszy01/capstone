@@ -17,4 +17,9 @@ describe('government contributions',()=>{
   expect(calculateContributions(4000).SSS.base).toBe(5000);
   expect(calculateContributions(0).SSS.total).toBe(0);
  });
+ it('uses the Pag-IBIG 1% employee tier at ₱1,500 and 2% above it',()=>{
+  expect(calculateContributions(1500)['Pag-IBIG'].employee).toBe(15);
+  expect(calculateContributions(1501)['Pag-IBIG'].employee).toBeCloseTo(30.02,2);
+  expect(calculateContributions(1500)['Pag-IBIG'].employer).toBe(30);
+ });
 });

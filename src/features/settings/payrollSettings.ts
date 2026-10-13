@@ -40,8 +40,10 @@ export const SETTING_GROUPS:SettingGroup[]=[
   {key:'philMin',label:'Salary floor',unit:'₱'},
   {key:'philMax',label:'Salary ceiling',unit:'₱'},
  ]},
- {id:'pagibig',title:'Pag-IBIG',description:'Contribution is a percentage of monthly salary, capped at the maximum fund salary.',fields:[
-  {key:'pagibigRate',label:'Employee rate',unit:'%'},
+ {id:'pagibig',title:'Pag-IBIG',description:'The employee share is 1% at or below the lower salary threshold and 2% above it. Contribution salary is capped at the maximum fund salary.',fields:[
+  {key:'pagibigRate',label:'Employee rate above threshold',unit:'%'},
+  {key:'pagibigLowerEmployeeRate',label:'Employee rate at/below threshold',unit:'%'},
+  {key:'pagibigLowerSalaryThreshold',label:'Lower employee-rate threshold',unit:'₱ monthly'},
   {key:'pagibigEmployerRate',label:'Employer rate',unit:'%'},
   {key:'pagibigMax',label:'Maximum fund salary',unit:'₱'},
  ]},
@@ -60,9 +62,10 @@ export function validateRates(v:PayrollRates):string[]{
  if(v.otMultiplier<1||v.otRestMultiplier<1)errors.push('Overtime multipliers must be at least 1.');
  if(v.sssStep<=0)errors.push('SSS salary credit step must be more than 0.');
  if(v.pagibigMax<=0)errors.push('Pag-IBIG maximum fund salary must be more than 0.');
+ if(v.pagibigLowerSalaryThreshold<=0)errors.push('Pag-IBIG lower employee-rate threshold must be more than 0.');
  if(v.sssMin>v.sssMax)errors.push('SSS minimum salary credit cannot be higher than the maximum.');
  if(v.philMin>v.philMax)errors.push('PhilHealth salary floor cannot be higher than the ceiling.');
- for(const key of ['sssRate','sssEmployerRate','philRate','philEmployerRate','pagibigRate','pagibigEmployerRate'] as const){
+ for(const key of ['sssRate','sssEmployerRate','philRate','philEmployerRate','pagibigRate','pagibigLowerEmployeeRate','pagibigEmployerRate'] as const){
   if(v[key]>100)errors.push(`${FIELD_LABELS[key]} cannot be more than 100%.`);
  }
  return errors;

@@ -1,10 +1,11 @@
 import {useMemo,useState} from 'react';
 import {Button,Card,Empty,Modal,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
-import {numberValue,peso,read} from '../../utils/storage';
+import {peso,read} from '../../utils/storage';
 import {RUNS_KEY,periodLabel,releaseDepartment} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {getCurrentUser} from '../auth/authService';
+import {buildPayslipBreakdownFromRun} from './payslipMath';
 
 const when=(iso?:string)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'—';
 const Badge=({on,text}:{on:boolean;text?:string})=><span className={`inline-flex rounded-md px-2.5 py-1 text-[11px] font-semibold ${on?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-500'}`}>{text??(on?'Released':'Not released')}</span>;
@@ -64,22 +65,13 @@ const ONES=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','T
 const TENS=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
 const below1000=(n:number):string=>n<20?ONES[n]:n<100?`${TENS[Math.floor(n/10)]}${n%10?' '+ONES[n%10]:''}`:`${ONES[Math.floor(n/100)]} Hundred${n%100?' '+below1000(n%100):''}`;
 const words=(n:number)=>{let r='';for(const[v,l]of [[1e9,'Billion'],[1e6,'Million'],[1e3,'Thousand']] as [number,string][]){if(n>=v){r+=`${below1000(Math.floor(n/v))} ${l} `;n%=v}}if(n>0)r+=below1000(n);return r.trim()||'Zero'};
-const pesoWords=(amount:number)=>{const a=Math.max(0,amount),whole=Math.floor(a),cents=Math.round((a-whole)*100);return `${words(whole)} and ${String(cents).padStart(2,'0')}/100 Pesos`};
+const pesoWords=(amount:number)=>{const totalCents=Math.round((Math.abs(amount)+Number.EPSILON)*100),whole=Math.floor(totalCents/100),cents=totalCents%100;return `${amount<0?'Negative ':''}${words(whole)} and ${String(cents).padStart(2,'0')}/100 Pesos`};
 
 function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string;onClose:()=>void}){
- const c=row.result,i=row.input;
- const earnings:[string,string][]=[
-  ['Basic Salary',nf(c.basic)],
-  ['Overtime',dash(c.overtime)],
-  ['Leave Pay',dash(c.leavePay)],
-  ['Allowances',dash(c.allowances??0)],
-  ['Bonuses / Other Earnings',dash(numberValue(i.otherEarnings))],
-  ['Absent / Undertime / Late',(c.absences??0)+c.lateUt?`(${nf((c.absences??0)+c.lateUt)})`:'-'],
- ];
- const deductions:[string,string][]=[
-  ['SSS',dash(c.sss)],['PhilHealth',dash(c.phil)],['Pag-IBIG (HDMF)',dash(c.pagibig)],['HMO',dash(row.hmo)],['Withholding Tax',dash(c.tax)],
-  ['SSS Loan',dash(numberValue(i.sssLoan))],['Pag-IBIG Loan',dash(numberValue(i.pagibigLoan))],['Company Loan',dash(numberValue(i.companyLoan))],['Cash Advance',dash(numberValue(i.cashAdvance))],['Other Deductions',dash(numberValue(i.otherDeductions))],
- ];
+ const c=row.result;
+ const breakdown=buildPayslipBreakdownFromRun(row);
+ const earnings:[string,string][] = breakdown.earnings.map(line=>[line.label,dash(line.amount)]);
+ const deductions:[string,string][] = breakdown.deductions.map(line=>[line.label,dash(line.amount)]);
  const period=periodLabel(run.from,run.to);
  const info=(l:string,v:string)=><div className="flex gap-2"><span className="text-slate-500">{l}:</span><span className="font-semibold text-slate-800">{v}</span></div>;
  const table=(title:string,rows:[string,string][],totalLabel:string,total:number)=><div className="overflow-hidden rounded-lg border border-slate-200">
@@ -98,6 +90,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
     <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}</div>
     <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',run.paidAt?new Date(run.paidAt).toLocaleDateString('en-PH',{dateStyle:'medium'}):'—')}</div>
    </div>
+   {Math.abs(breakdown.earningsDifference)>0.01||Math.abs(breakdown.deductionsDifference)>0.01||Math.abs(breakdown.netDifference)>0.01?<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-900">This saved payroll does not reconcile. Earnings difference: {nf(breakdown.earningsDifference)}; deductions difference: {nf(breakdown.deductionsDifference)}; net-pay difference: {nf(breakdown.netDifference)}. Have Payroll review the run before relying on this payslip.</div>:<div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] font-medium text-emerald-800">Payslip reconciliation passed: itemized earnings, deductions, and net pay match the payroll calculation.</div>}
    <div className="grid gap-4 py-4 sm:grid-cols-2">
     {table('Earnings',earnings,'Total Salary',c.gross)}
     {table('Deductions',deductions,'Total Deductions',c.deductions)}

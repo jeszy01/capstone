@@ -9,6 +9,7 @@ export interface Contribution{agency:Agency;base:number;employee:number;employer
 
 const round=(value:number)=>Math.round(value*100)/100;
 const clamp=(value:number,low:number,high:number)=>Math.min(high,Math.max(low,value));
+export const pagibigEmployeeRate=(salary:number,rates:PayrollRates=DEFAULT_RATES)=>salary<=rates.pagibigLowerSalaryThreshold?rates.pagibigLowerEmployeeRate:rates.pagibigRate;
 const make=(agency:Agency,base:number,employeeRate:number,employerRate:number):Contribution=>{
  const employee=round(base*employeeRate/100),employer=round(base*employerRate/100);
  return {agency,base,employee,employer,total:round(employee+employer)};
@@ -24,6 +25,6 @@ export function calculateContributions(monthlySalary:number,rates:PayrollRates=D
  return {
   SSS:make('SSS',sssBase,rates.sssRate,rates.sssEmployerRate),
   PhilHealth:make('PhilHealth',philBase,rates.philRate,rates.philEmployerRate),
-  'Pag-IBIG':make('Pag-IBIG',pagibigBase,rates.pagibigRate,rates.pagibigEmployerRate),
+  'Pag-IBIG':make('Pag-IBIG',pagibigBase,pagibigEmployeeRate(salary,rates),rates.pagibigEmployerRate),
  };
 }
