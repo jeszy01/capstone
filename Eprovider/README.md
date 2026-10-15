@@ -52,3 +52,6 @@ Apply migration `0027_user_passkey.sql`. The `account` function also supports `s
 
 ## User roles
 Admins change a user's role with the Edit action in Settings & Privacy > Account Settings (`users` function, `{"action":"update_role","id":"...","role":"admin"|"hr_staff"}`). The last active Admin cannot be changed to HR. Server functions read the role from the `users` table on every request, so a change applies on the user's next request; the browser re-reads it from `current-user` (deploy `dist-fn/current-user.js` with its `config.json`) and reloads when it changes. `current-user` returns only public fields.
+
+## Employee deletion
+The function gateway blocks browser `DELETE` requests, so the frontend deletes an employee with `POST /employees` and `{"action":"delete","id":"..."}` (admin only). Deploy the updated `dist-fn/employees.js` with `functions/employees/config.json` together with the frontend.

@@ -163,12 +163,20 @@ async function audit(action, actorId, entity, entityId, metadata = {}) {
 // Eprovider/functions/employees/index.ts
 var FIELDS = ["employee_number", "first_name", "middle_name", "last_name", "email", "phone", "address", "birth_date", "hire_date", "employment_status", "employment_type", "position", "department", "status"];
 var pick = (input) => Object.fromEntries(Object.entries(input).filter(([k]) => FIELDS.includes(k)));
+async function remove(ctx, id) {
+  requirePbmsRole(ctx, ["admin"]);
+  await deleteRows("employees", { id });
+  await audit("employee.deleted", ctx.userId, "employees", id);
+  return noContent();
+}
 var employees_default = verifiedEdge(async (ctx) => {
   requirePbmsRole(ctx, ["admin", "hr_staff"]);
   const method = ctx.request.method;
   if (method === "GET") return ok(await listRows("employees"));
   if (method === "POST") {
-    const input = pick(await body(ctx.request));
+    const raw = await body(ctx.request);
+    if (raw.action === "delete") return remove(ctx, required(raw.id, "id"));
+    const input = pick(raw);
     required(input.employee_number, "employee_number");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const row = await insertRow("employees", { ...input, created_at: now, updated_at: now });
@@ -183,12 +191,7 @@ var employees_default = verifiedEdge(async (ctx) => {
     await audit("employee.updated", ctx.userId, "employees", id, { fields: Object.keys(input) });
     return ok({ id });
   }
-  if (method === "DELETE") {
-    requirePbmsRole(ctx, ["admin"]);
-    await deleteRows("employees", { id });
-    await audit("employee.deleted", ctx.userId, "employees", id);
-    return noContent();
-  }
+  if (method === "DELETE") return remove(ctx, id);
   return new Response("Method Not Allowed", { status: 405 });
 });
 export {
