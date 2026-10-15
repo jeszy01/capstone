@@ -151,6 +151,7 @@ var created = (data) => json({ data }, 201);
 // Eprovider/lib/database.ts
 var listRows = (table, filter = {}) => mcp("select_rows", { table, filter, limit: 1e3 });
 var insertRow = (table, values) => mcp("insert_row", { table, values });
+var updateRows = (table, pk, values) => mcp("update_rows", { table, pk, values });
 var deleteRows = (table, pk) => mcp("delete_rows", { table, pk });
 
 // Eprovider/lib/audit.ts
@@ -214,6 +215,20 @@ var users_default = verifiedEdge(async (ctx) => {
   }
   if (method === "POST") {
     const input = await body(ctx.request);
+    if (input.action === "update_role") {
+      const id = required(input.id, "id");
+      const role2 = String(input.role ?? "").toLowerCase();
+      if (role2 !== "admin" && role2 !== "hr_staff") throw new HttpError(400, "INVALID_ROLE", "Unsupported user role.");
+      const target = (await listRows("users", { id }))[0];
+      if (!target) throw new HttpError(404, "USER_NOT_FOUND", "User account was not found.");
+      const previous = String(target.role).toLowerCase();
+      if (previous === role2) return ok({ user: publicUser(target) });
+      const admins = (await listRows("users")).filter((row2) => String(row2.role).toLowerCase() === "admin" && String(row2.status).toLowerCase() === "active");
+      if (previous === "admin" && admins.every((row2) => row2.id === id)) throw new HttpError(409, "LAST_ADMIN", "The last Admin cannot be changed to HR.");
+      await updateRows("users", { id }, { role: role2, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+      await audit("user.role.changed", ctx.userId, "users", id, { from: previous, to: role2 });
+      return ok({ user: publicUser({ ...target, role: role2 }) });
+    }
     if (input.action === "delete") {
       const id = required(input.id, "id");
       if (id === ctx.userId) throw new HttpError(400, "CANNOT_DELETE_SELF", "You cannot delete your own account.");

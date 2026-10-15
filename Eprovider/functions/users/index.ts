@@ -2,7 +2,7 @@ import {verifiedEdge} from "../../lib/verified-function";
 import {requirePbmsRole} from "../../lib/auth";
 import {body,required} from "../../lib/validation";
 import {ok,created} from "../../lib/response";
-import {listRows,insertRow,deleteRows} from "../../lib/database";
+import {listRows,insertRow,deleteRows,updateRows} from "../../lib/database";
 import {mcp} from "../../lib/eprovider";
 import {audit} from "../../lib/audit";
 import {hashPassword} from "../../lib/password";
@@ -18,6 +18,21 @@ export default verifiedEdge(async ctx=>{
  if(method==='GET'){const rows=await listRows<UserRow>('users');return ok(rows.map(publicUser));}
  if(method==='POST'){
   const input=await body<Record<string,unknown>>(ctx.request);
+  if(input.action==='update_role'){
+   const id=required(input.id,'id');
+   const role=String(input.role??'').toLowerCase();
+   if(role!=='admin'&&role!=='hr_staff')throw new HttpError(400,'INVALID_ROLE','Unsupported user role.');
+   const target=(await listRows<UserRow>('users',{id}))[0];
+   if(!target)throw new HttpError(404,'USER_NOT_FOUND','User account was not found.');
+   const previous=String(target.role).toLowerCase();
+   if(previous===role)return ok({user:publicUser(target)});
+   // At least one active Admin must remain.
+   const admins=(await listRows<UserRow>('users')).filter(row=>String(row.role).toLowerCase()==='admin'&&String(row.status).toLowerCase()==='active');
+   if(previous==='admin'&&admins.every(row=>row.id===id))throw new HttpError(409,'LAST_ADMIN','The last Admin cannot be changed to HR.');
+   await updateRows('users',{id},{role,updated_at:new Date().toISOString()});
+   await audit('user.role.changed',ctx.userId,'users',id,{from:previous,to:role});
+   return ok({user:publicUser({...target,role})});
+  }
   if(input.action==='delete'){
    const id=required(input.id,'id');
    if(id===ctx.userId)throw new HttpError(400,'CANNOT_DELETE_SELF','You cannot delete your own account.');

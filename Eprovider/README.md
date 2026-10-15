@@ -49,3 +49,6 @@ Apply migration `0026_account_security.sql` (per-user `users.otp_enabled` and th
 
 ### Passkey
 Apply migration `0027_user_passkey.sql`. The `account` function also supports `set_passkey` and `reset_passkey` (login password required), `change_passkey` (current passkey required) and `verify_passkey` (`purpose` export or release). Only a PBKDF2 hash of the passkey is stored; it is never returned or logged. Five wrong passkeys lock it for 15 minutes. The browser asks for the passkey before every CSV export and before releasing payroll to Finance. The deployable single-file build of the function is `dist-fn/account.js`; paste it into the eProvider function editor as `account` with `functions/account/config.json`.
+
+## User roles
+Admins change a user's role with the Edit action in Settings & Privacy > Account Settings (`users` function, `{"action":"update_role","id":"...","role":"admin"|"hr_staff"}`). The last active Admin cannot be changed to HR. Server functions read the role from the `users` table on every request, so a change applies on the user's next request; the browser re-reads it from `current-user` (deploy `dist-fn/current-user.js` with its `config.json`) and reloads when it changes. `current-user` returns only public fields.
