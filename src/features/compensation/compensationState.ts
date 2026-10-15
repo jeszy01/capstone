@@ -1,9 +1,9 @@
 import type {Employee} from '../../types/domain';
-import {DEFAULT_RATES} from '../payroll/payrollRules';
+import {loadRates} from '../settings/payrollSettings';
 
 export type SalaryGrade={id:string;code:string;position:string;fixedSalary:number;dailyRate:number;status:'Active'|'Inactive';createdAt:string};
 export type EmployeeCompensation={id:string;employeeId:string;salaryCode:string;position:string;fixedSalary:number;dailyRate:number;effectiveDate:string;employeeName?:string;department?:string};
-export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string;rejectionReason?:string;reviewedBy?:string};
+export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string;rejectionReason?:string;reviewedBy?:string;salaryCode?:string};
 export type BonusIncentive={id:string;employeeId:string;type:string;amount:number;effectiveDate:string;notes:string;status:'Planned'|'Approved';createdAt:string};
 export const allowanceTypes=['Transportation','Rice Subsidy','Meal','Communication','Clothing','Medical','Housing'];
 export const rewardTypes=['Bonus','Incentive'];
@@ -15,7 +15,7 @@ export const salaryDefaults:Record<string,number>={
 };
 export const adjustmentTypes:CompensationProposal['type'][]=['Salary Adjustment','Merit Increase','Promotion Increase'];
 export const today=()=>new Date().toISOString().slice(0,10);
-export const dailyFromSalary=(salary:number)=>Math.round(salary/DEFAULT_RATES.daysPerMonth*100)/100;
+export const dailyFromSalary=(salary:number,daysPerMonth=loadRates().daysPerMonth)=>Math.round(salary/daysPerMonth*100)/100;
 export type CompensationEntryAction='assign'|'propose'|'unavailable';
 export function compensationEntryAction(employeeReady:boolean,unassignedCount:number,hasProposalEligibleEmployee:boolean):CompensationEntryAction{
   if(!employeeReady)return 'unavailable';
@@ -71,7 +71,7 @@ export function applyApprovedProposals(assignments:EmployeeCompensation[],propos
     const current=activeCompensations(nextAssignments,proposal.effectiveDate).find(item=>item.employeeId===proposal.employeeId);
     if(!current)continue;
     const assignmentId=`proposal:${proposal.id}`;
-    nextAssignments.push({...current,id:assignmentId,fixedSalary:proposal.newSalary,dailyRate:dailyFromSalary(proposal.newSalary),effectiveDate:proposal.effectiveDate});
+    nextAssignments.push({...current,id:assignmentId,...(proposal.salaryCode?{salaryCode:proposal.salaryCode}:{}),fixedSalary:proposal.newSalary,dailyRate:dailyFromSalary(proposal.newSalary),effectiveDate:proposal.effectiveDate});
     nextHistory.push({id:`history:${proposal.id}`,employeeId:proposal.employeeId,source:'Compensation Proposal',type:proposal.type,previousSalary:current.fixedSalary,newSalary:proposal.newSalary,adjustmentAmount:proposal.newSalary-current.fixedSalary,reason:proposal.notes,effectiveDate:proposal.effectiveDate,status:'Applied',recordedAt:new Date().toISOString(),appliedAt:proposal.effectiveDate,proposalId:proposal.id,assignmentId});
   }
   return {assignments:nextAssignments,history:nextHistory};

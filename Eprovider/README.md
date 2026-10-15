@@ -34,3 +34,6 @@ The Compensation Planning Allowances & Incentives section supports `Allowance` a
 
 ## Employee loans and cash advances
 Apply migration `0023_employee_loans.sql`, then deploy `functions/loans` with its `config.json`. The API uses the active Employee Management database records, records new loans/advances as pending HR approval, and supplies due installments to payroll review. It does not seed loan data. Actual repayments are posted as one immutable database batch only after the corresponding approved payroll run is marked paid and synchronized under `payroll:runs` in `app_data`; the batch is unique per run and pay period. Outstanding balances are derived from the original principal less posted payroll repayments. Keep the migration and function deployment paired with the frontend release; if the API is unavailable, payroll review must not silently omit a scheduled loan deduction.
+
+## Salary Structure
+Salary change proposals select a salary grade; the server takes the proposed salary from that grade and copies the grade to the approved, effective-dated assignment. Daily rates use the working-days-per-month payroll setting (`payroll:rates` in `app_data`, default 22). Apply migration `0024_proposal_salary_grade.sql`, then deploy the updated `functions/compensation` function together with the frontend.

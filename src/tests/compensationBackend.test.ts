@@ -85,6 +85,17 @@ describe('Backend-authoritative compensation workflow',()=>{
   expect(tables.employee_compensation[1]).toMatchObject({basic_salary:60000,effective_date:'2099-01-01',source:'Approved Proposal'});
   expect(tables.compensation_history[0]).toMatchObject({status:'Scheduled',actor_name:'HR Reviewer',proposal_id:proposal.id});
  });
+ it('derives a graded proposal salary from the grade and applies the grade on approval',async()=>{
+  const {tables}=setup(true);const authorization=`Bearer ${await session()}`;
+  tables.salary_grades.push({id:'b6f0b2a1-3c4d-4e5f-8a9b-0c1d2e3f4a5b',grade:'SG-002',position:'Developer',monthly_salary:66000,status:'Active'});
+  tables.app_data=[{key:'payroll:rates',value:{daysPerMonth:20},deleted:false}];
+  const submitted=await call({action:'create_proposal',employee_id:employeeId,proposal_type:'Promotion Increase',salary_code:'SG-002',new_salary:1,effective_date:'2099-01-01'},authorization);
+  expect(submitted.status).toBe(200);
+  expect(tables.compensation_proposals[0]).toMatchObject({new_salary:66000,salary_code:'SG-002'});
+  const proposal=(await submitted.json() as {data:{id:string}}).data;
+  expect((await call({action:'review_proposal',id:proposal.id,decision:'approve'},authorization)).status).toBe(200);
+  expect(tables.employee_compensation[1]).toMatchObject({basic_salary:66000,daily_rate:3300,salary_code:'SG-002',salary_grade_id:'b6f0b2a1-3c4d-4e5f-8a9b-0c1d2e3f4a5b'});
+ });
  it('rejects a proposal only with a reason and records the reviewer decision',async()=>{
   const {tables}=setup(true);const authorization=`Bearer ${await session()}`;
   const submitted=await call({action:'create_proposal',employee_id:employeeId,proposal_type:'Promotion Increase',new_salary:65000,effective_date:'2099-01-01'},authorization);

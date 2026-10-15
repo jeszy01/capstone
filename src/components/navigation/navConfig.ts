@@ -9,9 +9,8 @@ export const modules:NavItem[]=[
   {label:'Payroll Runs',to:'/payroll'},{label:'Time & Attendance',to:'/time-attendance'},
   {label:'Deductions',to:'/deductions'},
  ]},
- {label:'Compensation Planning',to:'/compensation/salary-grades',icon:BarChart3,children:[
-  {label:'Salary Grades',to:'/compensation/salary-grades'},
-  {label:'Employee Compensation',to:'/compensation/employee-compensation'},
+ {label:'Compensation Planning',to:'/compensation/salary-structure',icon:BarChart3,children:[
+  {label:'Salary Structure',to:'/compensation/salary-structure'},
   {label:'Adjustments',to:'/compensation/adjustments'},
   {label:'History',to:'/compensation/history'},
  ]},

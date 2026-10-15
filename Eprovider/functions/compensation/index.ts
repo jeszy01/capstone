@@ -12,8 +12,19 @@ type EmployeeRow=Row&{id:string;basic_salary:number|string;position_rate:number|
 type AssignmentRow=Row&{id:string;employee_id:string;basic_salary:number|string;daily_rate:number|string;effective_date:string;proposal_id?:string|null};
 type ProposalRow=Row&{id:string;employee_id:string;proposal_type:string;previous_salary:number|string;new_salary:number|string;effective_date:string;status:string};
 
-const MONTHLY_WORK_DAYS=22;
+const DEFAULT_MONTHLY_WORK_DAYS=22;
 const roundMoney=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
+// Working days per month is the payroll setting synchronized under app_data "payroll:rates".
+async function monthlyWorkDays(){
+ const row=(await listRows<Row>("app_data",{key:"payroll:rates"}))[0];
+ const days=Number((row&&!row.deleted&&typeof row.value==="object"&&row.value)?(row.value as Row).daysPerMonth:NaN);
+ return Number.isFinite(days)&&days>=1&&days<=31?days:DEFAULT_MONTHLY_WORK_DAYS;
+}
+async function activeGradeByCode(code:string){
+ const grade=(await listRows<Row>("salary_grades")).find(row=>String(row.grade??"").toLowerCase()===code.toLowerCase()&&row.status!=="Inactive");
+ if(!grade)throw new HttpError(400,"INVALID_SALARY_GRADE","Select an active salary grade.");
+ return grade;
+}
 const amount=(value:unknown,name:string,allowZero=false)=>{
  const parsed=typeof value==="number"?value:typeof value==="string"&&value.trim()!==""?Number(value):NaN;
  if(!Number.isFinite(parsed)||parsed<(allowZero?0:Number.EPSILON))throw new HttpError(400,"INVALID_AMOUNT",`${name} must be a ${allowZero?"non-negative":"positive"} number.`);
@@ -82,7 +93,7 @@ async function createGrade(input:Row,ctx:RequestContext){
 	const imported=await listRows<Row>("compensation_legacy_imports",{id:"browser-compensation-v1"});
 	if(!imported[0])throw new HttpError(409,"LEGACY_COMPENSATION_IMPORT_REQUIRED","Refresh Compensation Planning to import existing salary grades before creating a new grade.");
 	const createdAt=new Date().toISOString();
-	const row=await insertRow<Row>("salary_grades",{grade:"",position,monthly_salary:basicSalary,daily_rate:roundMoney(basicSalary/MONTHLY_WORK_DAYS),status,created_at:createdAt,updated_at:createdAt});
+	const row=await insertRow<Row>("salary_grades",{grade:"",position,monthly_salary:basicSalary,daily_rate:roundMoney(basicSalary/await monthlyWorkDays()),status,created_at:createdAt,updated_at:createdAt});
 	const code=String(row.grade??"");
 	if(!/^SG-\d{3,}$/i.test(code))throw new HttpError(500,"SALARY_GRADE_CODE_GENERATION_FAILED","The database did not return an automatically generated salary-grade code.");
 	await audit("compensation.grade.created",ctx.userId,"salary_grades",String(row.id??code));
@@ -114,7 +125,7 @@ async function createInitialAssignment(input:Row,ctx:RequestContext){
   if(!grade)throw new HttpError(400,"INVALID_SALARY_GRADE","Select an active salary grade or leave the grade blank.");
   salaryGradeId=String(grade.id);
  }
- const dailyRate=roundMoney(salary/MONTHLY_WORK_DAYS);
+ const dailyRate=roundMoney(salary/await monthlyWorkDays());
  const createdAt=new Date().toISOString();
  const assignment=await insertRow("employee_compensation",{
   employee_id:employeeId,salary_grade_id:salaryGradeId,salary_code:salaryCode,
@@ -137,11 +148,16 @@ async function createProposal(input:Row,ctx:RequestContext){
  const rows=await listRows<AssignmentRow>("employee_compensation",{employee_id:employeeId});
  const current=latestOnOrBefore(rows,employeeId,new Date().toISOString().slice(0,10));
  if(!current)throw new HttpError(409,"COMPENSATION_NOT_ASSIGNED","Assign an initial salary before proposing a change.");
- const newSalary=amount(input.new_salary,"new_salary");
- if(newSalary===Number(current.basic_salary))throw new HttpError(400,"UNCHANGED_SALARY","The proposed salary must differ from the current salary.");
+ // A proposal for a salary grade takes its salary from that grade, never from the request.
+ const salaryCode=String(input.salary_code??"").trim();
+ const grade=salaryCode?await activeGradeByCode(salaryCode):null;
+ const newSalary=grade?amount(grade.monthly_salary,"monthly_salary"):amount(input.new_salary,"new_salary");
+ const sameGrade=!grade||String(grade.grade).toLowerCase()===String(current.salary_code??"").toLowerCase();
+ if(newSalary===Number(current.basic_salary)&&sameGrade)throw new HttpError(400,"UNCHANGED_SALARY","The proposed salary must differ from the current salary.");
  const createdAt=new Date().toISOString();
  const proposal=await insertRow("compensation_proposals",{
   employee_id:employeeId,proposal_type:type,previous_salary:Number(current.basic_salary),new_salary:newSalary,
+  ...(grade?{salary_grade_id:String(grade.id),salary_code:String(grade.grade)}:{}),
   effective_date:effectiveDate,notes:String(input.notes??"").trim(),status:"Pending HR Review",
   created_by:ctx.userId,created_at:createdAt,
  });
@@ -174,9 +190,10 @@ async function reviewProposal(input:Row,ctx:RequestContext){
   const prior=latestOnOrBefore(allAssignments,proposal.employee_id,String(proposal.effective_date));
   if(!prior)throw new HttpError(409,"COMPENSATION_NOT_ASSIGNED","No salary assignment exists before the proposal effective date.");
   const newSalary=Number(proposal.new_salary);
+  const graded=Boolean(proposal.salary_code);
   assignment=await insertRow<AssignmentRow>("employee_compensation",{
-   employee_id:proposal.employee_id,salary_grade_id:prior.salary_grade_id??null,salary_code:String(prior.salary_code??""),
-   position:String(prior.position??""),basic_salary:newSalary,daily_rate:roundMoney(newSalary/MONTHLY_WORK_DAYS),
+   employee_id:proposal.employee_id,salary_grade_id:graded?proposal.salary_grade_id??null:prior.salary_grade_id??null,salary_code:String((graded?proposal.salary_code:prior.salary_code)??""),
+   position:String(prior.position??""),basic_salary:newSalary,daily_rate:roundMoney(newSalary/await monthlyWorkDays()),
    effective_date:proposal.effective_date,source:"Approved Proposal",proposal_id:id,created_by:ctx.userId,created_at:reviewedAt,
   });
  }
@@ -184,7 +201,7 @@ async function reviewProposal(input:Row,ctx:RequestContext){
  await updateRows("compensation_proposals",{id},next);
  await recordHistory({employee_id:proposal.employee_id,source:"Compensation Proposal",event_type:"Approved",previous_salary:Number(proposal.previous_salary),new_salary:Number(proposal.new_salary),adjustment_amount:Number(proposal.new_salary)-Number(proposal.previous_salary),reason:String(proposal.notes??""),effective_date:proposal.effective_date,status:String(proposal.effective_date)<=asOf?"Applied":"Scheduled",recorded_at:reviewedAt,applied_at:String(proposal.effective_date)<=asOf?proposal.effective_date:null,actor_id:ctx.userId,actor_name:actor,proposal_id:id,assignment_id:assignment.id});
  if(String(proposal.effective_date)<=asOf){
-  await updateRows("employees",{id:proposal.employee_id},{basic_salary:Number(proposal.new_salary),position_rate:roundMoney(Number(proposal.new_salary)/MONTHLY_WORK_DAYS),salary_grade_id:assignment.salary_grade_id??null,updated_at:reviewedAt});
+  await updateRows("employees",{id:proposal.employee_id},{basic_salary:Number(proposal.new_salary),position_rate:Number(assignment.daily_rate),salary_grade_id:assignment.salary_grade_id??null,updated_at:reviewedAt});
  }
  await audit("compensation.proposal.approved",ctx.userId,"compensation_proposals",id,{effective_date:proposal.effective_date});
  return {id,...next,assignment};
@@ -280,7 +297,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
 		if(gradeIdByCode.has(codeKey))continue;
 		const salary=legacyMoney(row.fixedSalary,"fixedSalary");
 		const createdAt=typeof row.createdAt==="string"&&Number.isFinite(Date.parse(row.createdAt))?row.createdAt:new Date().toISOString();
-		const inserted=await insertRow<Row>("salary_grades",{...(legacyId?{id:legacyId}:{}),grade:code,position:String(row.position??""),monthly_salary:salary,daily_rate:legacyMoney(row.dailyRate??roundMoney(salary/MONTHLY_WORK_DAYS),"dailyRate"),status:row.status==="Inactive"?"Inactive":"Active",created_at:createdAt,updated_at:createdAt});
+		const inserted=await insertRow<Row>("salary_grades",{...(legacyId?{id:legacyId}:{}),grade:code,position:String(row.position??""),monthly_salary:salary,daily_rate:legacyMoney(row.dailyRate??roundMoney(salary/DEFAULT_MONTHLY_WORK_DAYS),"dailyRate"),status:row.status==="Inactive"?"Inactive":"Active",created_at:createdAt,updated_at:createdAt});
 		gradeIdByCode.set(codeKey,String(inserted.id));
 		if(legacyId)gradeById.set(legacyId,inserted);
 		counts.grades++;
@@ -312,7 +329,7 @@ async function importLegacy(input:Row,ctx:RequestContext){
   const linkedProposalId=oldId.startsWith("proposal:")?importedProposals.get(oldId.slice("proposal:".length)):undefined;
   const gradeId=gradeIdByCode.get(salaryCode.toLowerCase())??null;
   const source=linkedProposalId||oldId.startsWith("proposal:")?"Approved Proposal":"Initial Assignment";
-  await insertRow("employee_compensation",{employee_id:employee.id,salary_grade_id:gradeId,salary_code:salaryCode,position:String(row.position??employee.position??""),basic_salary:salary,daily_rate:legacyMoney(row.dailyRate??roundMoney(salary/MONTHLY_WORK_DAYS),"dailyRate"),effective_date:legacyDate(row.effectiveDate),source,proposal_id:linkedProposalId??null,created_by:null,created_at:typeof row.createdAt==="string"&&Number.isFinite(Date.parse(row.createdAt))?row.createdAt:new Date().toISOString(),legacy_id:oldId||null});
+  await insertRow("employee_compensation",{employee_id:employee.id,salary_grade_id:gradeId,salary_code:salaryCode,position:String(row.position??employee.position??""),basic_salary:salary,daily_rate:legacyMoney(row.dailyRate??roundMoney(salary/DEFAULT_MONTHLY_WORK_DAYS),"dailyRate"),effective_date:legacyDate(row.effectiveDate),source,proposal_id:linkedProposalId??null,created_by:null,created_at:typeof row.createdAt==="string"&&Number.isFinite(Date.parse(row.createdAt))?row.createdAt:new Date().toISOString(),legacy_id:oldId||null});
   counts.assignments++;
  }catch{counts.skipped++}
  for(const row of legacyRows(data,"compensation:history"))try{

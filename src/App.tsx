@@ -30,9 +30,8 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/payroll/review" element={<ReviewPayroll/>}/>
   <Route path="/time-attendance" element={<TimeAttendance/>}/>
   <Route path="/deductions" element={<Deductions/>}/>
-  <Route path="/compensation" element={<Navigate to="/compensation/salary-grades" replace/>}/>
-  <Route path="/compensation/salary-grades" element={<Compensation section="salary-grades"/>}/>
-  <Route path="/compensation/employee-compensation" element={<Compensation section="employee-compensation"/>}/>
+  <Route path="/compensation" element={<Navigate to="/compensation/salary-structure" replace/>}/>
+  <Route path="/compensation/salary-structure" element={<Compensation section="salary-structure"/>}/>
   <Route path="/compensation/adjustments" element={<Compensation section="adjustments"/>}/>
   <Route path="/compensation/history" element={<Compensation section="history"/>}/>
   <Route path="/reimbursement" element={<Reimbursement/>}/>
