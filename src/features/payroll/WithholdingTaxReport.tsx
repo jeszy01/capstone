@@ -7,13 +7,13 @@ import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
 import {employeeService} from '../employees/employeeService';
 import {calculatePayroll} from './payrollCalculator';
-import {DEFAULT_RATES} from './payrollRules';
+import {loadRates} from '../settings/payrollSettings';
 import {RUNS_KEY,periodLabel,isThirteenthMonthRun,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {loadWithholdingRules,ruleForDate,validateRuleSet} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
 
-const rates={...DEFAULT_RATES,...read<Partial<PayrollRates>>('payroll:rates',{})};
+const rates=loadRates();
 const nf=(value:number)=>peso(value);
 const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 const LEGACY_SAMPLE_RUN_ID='TEST-ONLY-WHT-2026-10';
@@ -88,7 +88,7 @@ export function WithholdingTaxReport({from,to,query}:{from:string;to:string;quer
   setComputing(true);setNotice('');setValidationErrors([]);setValidationByRow({});
   try{
    if(!periodRuns.length){setValidationErrors(['No payroll run matches the selected payroll period.']);return}
-   const activeRules=loadWithholdingRules();const activeRates={...DEFAULT_RATES,...read<Partial<PayrollRates>>('payroll:rates',{})};const allErrors:string[]=[];const rowErrors:Record<string,string>={};const nextEstimates:Record<string,PayrollResult>={};const updatedRuns=new Map<string,PayrollRun>();
+   const activeRules=loadWithholdingRules();const activeRates=loadRates();const allErrors:string[]=[];const rowErrors:Record<string,string>={};const nextEstimates:Record<string,PayrollResult>={};const updatedRuns=new Map<string,PayrollRun>();
    for(const run of periodRuns){
     const errors=validationForRun(run,employees,!employeeLoading&&!employeeError,activeRules);
     if(run.status==='Approved'&&run.paidAt)errors.push(`Payroll ${periodLabel(run.from,run.to)} is already paid; its actual deductions are locked.`);

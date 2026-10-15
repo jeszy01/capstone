@@ -6,8 +6,8 @@ import {numberValue,peso} from '../../utils/storage';
 import {recordAudit} from '../audit/auditService';
 import {periodLabel} from '../payroll/payrollRuns';
 import {ruleForDate} from '../payroll/withholdingTax';
-import {loadRates} from '../settings/payrollSettings';
-import {allowanceTaxability,linkableCaps,loadAllowanceTypes,saveAllowanceTypes,saveDeMinimisLimits} from './allowanceRules';
+import {cutoffFor,cutoffNumberFor,loadRates} from '../settings/payrollSettings';
+import {allowanceTaxability,linkableCaps,loadAllowanceTypes,saveAllowanceTypes} from './allowanceRules';
 import type {AllowanceType} from './allowanceRules';
 import {compensationService} from './compensationService';
 import {isBonusReward,today} from './compensationState';
@@ -21,9 +21,9 @@ const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.m
 const employeeOptions=(employees:Employee[])=>employees.map(employee=><option key={employee.id} value={employee.id}>{employee.name} · {employee.employeeNo}</option>);
 const yesNo=(value:boolean)=>value?'Yes':'No';
 const blankDraft=(type:BonusIncentive['type']):Draft=>{
- const date=today(),half=Number(date.slice(8,10))<=15;
- const last=new Date(Date.UTC(Number(date.slice(0,4)),Number(date.slice(5,7)),0)).getUTCDate();
- return {employeeId:'',type,amount:0,effectiveDate:date,notes:'',status:type==='Allowance'?'Active':'Pending',allowanceType:'',frequency:'Per Cutoff',taxable:true,cutoffStart:`${date.slice(0,7)}-${half?'01':'16'}`,cutoffEnd:`${date.slice(0,7)}-${half?'15':String(last).padStart(2,'0')}`};
+ const date=today(),cutoff=cutoffFor(date.slice(0,7),cutoffNumberFor(date));
+
+ return {employeeId:'',type,amount:0,effectiveDate:date,notes:'',status:type==='Allowance'?'Active':'Pending',allowanceType:'',frequency:'Per Cutoff',taxable:true,cutoffStart:cutoff.from,cutoffEnd:cutoff.to};
 };
 
 /** Shared add/edit/delete flow: edits and deletes are confirmed and every change is written to the activity log. */
@@ -108,9 +108,9 @@ function AllowanceTypesModal({types,inUse,onClose,onSaved}:{types:AllowanceType[
  const rule=ruleForDate(today());
  const caps=linkableCaps(rule);
  const [rows,setRows]=useState(()=>types.map(type=>({...type})));
- const [limits,setLimits]=useState<Record<string,string>>(()=>Object.fromEntries(caps.map(cap=>[cap.id,String(cap.amount)])));
+
  const [error,setError]=useState(''),[confirming,setConfirming]=useState(false);
- const unitLabel={monthly:'Monthly','semi-annual':'Semi-annual',annual:'Annual'} as Record<string,string>;
+ const unitLabel={monthly:'per month','semi-annual':'per half-year',annual:'per year'} as Record<string,string>;
  const update=(index:number,patch:Partial<AllowanceType>)=>setRows(list=>list.map((row,i)=>i===index?{...row,...patch}:row));
  const removeRow=(index:number)=>{const row=rows[index];if(types.some(type=>type.id===row.id)&&inUse(types.find(type=>type.id===row.id)!.name)){setError(`${row.name} is in use and cannot be removed.`);return}setError('');setRows(list=>list.filter((_,i)=>i!==index))};
  const validate=()=>{
@@ -119,24 +119,24 @@ function AllowanceTypesModal({types,inUse,onClose,onSaved}:{types:AllowanceType[
   if(new Set(names).size!==names.length)return 'Allowance type names must be unique.';
   const renamedInUse=types.find(type=>inUse(type.name)&&!rows.some(row=>row.id===type.id&&row.name.trim().toLowerCase()===type.name.trim().toLowerCase()));
   if(renamedInUse)return `${renamedInUse.name} is in use and cannot be renamed.`;
-  const linked=new Set(rows.map(row=>row.deMinimisCapId).filter(Boolean));
-  if([...linked].some(id=>{const amount=Number(limits[id]);return limits[id]?.trim()===''||!Number.isFinite(amount)||amount<0}))return 'De minimis limits must be 0 or more.';
+
+
   return '';
  };
  const save=()=>{
   const next=rows.map(row=>({...row,name:row.name.trim()}));
-  const changed=Object.fromEntries(caps.filter(cap=>Number(limits[cap.id])!==cap.amount&&next.some(row=>row.deMinimisCapId===cap.id)).map(cap=>[cap.id,Number(limits[cap.id])]));
+
   saveAllowanceTypes(next);
-  if(Object.keys(changed).length)saveDeMinimisLimits(changed);
-  recordAudit({action:'Updated allowance types',module:MODULE,description:`Saved ${next.length} allowance types${Object.keys(changed).length?`; changed de minimis limits: ${caps.filter(cap=>cap.id in changed).map(cap=>`${cap.label} ${peso(cap.amount)} to ${peso(changed[cap.id])}`).join(', ')}`:''}.`});
+
+  recordAudit({action:'Updated allowance types',module:MODULE,description:`Saved allowance types: ${next.map(row=>`${row.name}${row.deMinimisCapId?` (${caps.find(cap=>cap.id===row.deMinimisCapId)?.label??row.deMinimisCapId})`:''}`).join(', ')}.`});
   onSaved(next);
  };
- if(confirming)return <ConfirmDialog title="Save allowance types?" message="Apply the changes to allowance types and de minimis limits?" confirmLabel="Confirm" saving={false} onCancel={()=>setConfirming(false)} onConfirm={save}/>;
+ if(confirming)return <ConfirmDialog title="Save allowance types?" message="Apply the changes to allowance types?" confirmLabel="Confirm" saving={false} onCancel={()=>setConfirming(false)} onConfirm={save}/>;
  return <Modal title="Allowance Types" wide onClose={onClose}><div className="grid gap-3">
   {rows.map((row,index)=>{const cap=caps.find(item=>item.id===row.deMinimisCapId);return <div key={row.id} className="grid items-end gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,0.8fr)_auto]">
    <Field label="Name"><TextInput value={row.name} onChange={event=>update(index,{name:event.target.value})}/></Field>
    <Field label="De Minimis Limit"><select className={input} value={row.deMinimisCapId} onChange={event=>update(index,{deMinimisCapId:event.target.value})}><option value="">None</option>{caps.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
-   <Field label={cap?`Limit (${unitLabel[cap.unit]})`:'Limit'}><TextInput type="number" min="0" step="0.01" disabled={!cap} value={cap?limits[cap.id]??'':''} onChange={event=>cap&&setLimits({...limits,[cap.id]:event.target.value})}/></Field>
+   <Field label="Ceiling"><TextInput value={cap?`${peso(cap.amount)} ${unitLabel[cap.unit]}`:''} readOnly/></Field>
    <button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Remove ${row.name||'allowance type'}`} onClick={()=>removeRow(index)}><Trash2 size={14}/><span className="sm:sr-only">Remove</span></button>
   </div>})}
   <div><button type="button" className={ghost} onClick={()=>setRows(list=>[...list,{id:crypto.randomUUID(),name:'',deMinimisCapId:''}])}><Plus size={14}/>Add Type</button></div>
@@ -196,14 +196,15 @@ export function IncentivesPanel({employees,rewards,loading,loadError,canManage,e
 }
 
 function IncentiveModal({editing,draft,employees,error,saving,onClose,onSave}:{editing:boolean;draft:Draft;employees:Employee[];error:string;saving:boolean;onClose:()=>void;onSave:(draft:Draft)=>void}){
- const [form,setForm]=useState({...draft,amount:draft.amount?String(draft.amount):'',month:draft.cutoffStart.slice(0,7),half:Number(draft.cutoffStart.slice(8,10))<=15?'first':'second'});
- const cutoff=(()=>{const [y,m]=form.month.split('-').map(Number);if(!y||!m)return {cutoffStart:'',cutoffEnd:''};const last=new Date(Date.UTC(y,m,0)).getUTCDate();return {cutoffStart:`${form.month}-${form.half==='first'?'01':'16'}`,cutoffEnd:`${form.month}-${form.half==='first'?'15':String(last).padStart(2,'0')}`}})();
+ const [form,setForm]=useState({...draft,amount:draft.amount?String(draft.amount):'',month:draft.cutoffStart.slice(0,7),half:cutoffNumberFor(draft.cutoffStart)});
+ const rates=loadRates();
+ const cutoff=(()=>{if(!/^\d{4}-\d{2}$/.test(form.month))return {cutoffStart:'',cutoffEnd:''};const range=cutoffFor(form.month,form.half,rates);return {cutoffStart:range.from,cutoffEnd:range.to}})();
  const value:Draft={...draft,employeeId:form.employeeId,type:form.type,amount:numberValue(form.amount),notes:form.notes.trim(),taxable:form.taxable,...cutoff,effectiveDate:cutoff.cutoffEnd};
  const valid=Boolean(value.employeeId&&value.amount>0&&value.cutoffStart&&value.notes);
  return <Modal title={editing?'Edit incentive or bonus':'Add incentive or bonus'} onClose={onClose}><div className="grid gap-4">
   <Field label="Employee"><select className={input} value={form.employeeId} onChange={event=>setForm({...form,employeeId:event.target.value})}><option value="">Select employee</option>{employeeOptions(employees)}</select></Field>
   <div className="grid gap-4 sm:grid-cols-2"><Field label="Type"><select className={input} value={form.type} onChange={event=>setForm({...form,type:event.target.value as Draft['type']})}><option>Incentive</option><option>Bonus</option></select></Field><Field label="Amount"><TextInput type="number" min="0.01" step="0.01" value={form.amount} onChange={event=>setForm({...form,amount:event.target.value})} placeholder="0.00"/></Field></div>
-  <div className="grid gap-4 sm:grid-cols-2"><Field label="Cutoff Month"><TextInput type="month" value={form.month} onChange={event=>setForm({...form,month:event.target.value})}/></Field><Field label="Cutoff"><select className={input} value={form.half} onChange={event=>setForm({...form,half:event.target.value})}><option value="first">1st Cutoff (1 - 15)</option><option value="second">2nd Cutoff (16 - End of Month)</option></select></Field></div>
+  <div className="grid gap-4 sm:grid-cols-2"><Field label="Cutoff Month"><TextInput type="month" value={form.month} onChange={event=>setForm({...form,month:event.target.value})}/></Field>{rates.payPeriodsPerMonth===2&&<Field label="Cutoff"><select className={input} value={form.half} onChange={event=>setForm({...form,half:Number(event.target.value) as 1|2})}><option value={1}>1st Cutoff (1 - {rates.firstCutoffEndDay})</option><option value={2}>2nd Cutoff ({rates.firstCutoffEndDay+1} - End of Month)</option></select></Field>}</div>
   <Field label="Reason"><textarea className={`${input} min-h-20 resize-y`} maxLength={500} value={form.notes} onChange={event=>setForm({...form,notes:event.target.value})} aria-label="Reason"/></Field>
   <Field label="Taxable"><select className={input} value={yesNo(form.taxable)} onChange={event=>setForm({...form,taxable:event.target.value==='Yes'})}><option>Yes</option><option>No</option></select></Field>
  </div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!valid} onClick={()=>onSave(value)}>{saving?'Saving…':'Save'}</Button></div></Modal>;

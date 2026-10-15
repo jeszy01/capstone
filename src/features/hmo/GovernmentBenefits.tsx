@@ -6,7 +6,7 @@ import {activeCompensations} from '../compensation/compensationState';
 import type {EmployeeCompensation} from '../compensation/compensationState';
 import {calculateContributions} from '../contributions/contributionCalculator';
 import type {Agency,Contribution} from '../contributions/contributionCalculator';
-import {DEFAULT_RATES} from '../payroll/payrollRules';
+import {loadRates} from '../settings/payrollSettings';
 import {peso,read} from '../../utils/storage';
 import type {Employee,PayrollRates} from '../../types/domain';
 
@@ -28,7 +28,7 @@ export default function GovernmentBenefits(){
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState('');
  const [view,setView]=useState<{row:Row;agency:Agency}|null>(null);
- const rates:PayrollRates={...DEFAULT_RATES,...read<Partial<PayrollRates>>('payroll:rates',{})};
+ const rates:PayrollRates=loadRates();
  const assignments=read<EmployeeCompensation[]>('compensation:employee-assignments',[]);
 
  useEffect(()=>{

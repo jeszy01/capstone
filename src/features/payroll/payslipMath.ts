@@ -11,6 +11,7 @@ export function buildPayslipBreakdown(input:PayrollInput,result:PayrollResult,hm
  const earnings:PayslipLine[]=[
   {label:'Basic Salary',amount:result.basic},
   {label:'Overtime',amount:result.overtime},
+  {label:'Night Differential',amount:numberValue(input.nightDifferential)},
   {label:'Leave Pay',amount:result.leavePay},
   {label:'Holiday Pay',amount:numberValue(input.holidayPay)},
   {label:'Service Incentive Leave Conversion',amount:numberValue(input.slConversion)},

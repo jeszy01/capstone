@@ -45,7 +45,7 @@ export function Sidebar({onNavigate}:{onNavigate?:()=>void}){
       {overview.map(item=><Link key={item.to} item={item} collapsed={collapsed}/>)}
       {!collapsed&&<div className="mx-2 mb-1.5 mt-3.5 text-[10px] font-semibold tracking-[0.16em] text-[#8e9bbd]">MODULES</div>}
       {modules.map(item=>item.children?<Group key={item.label} item={item} collapsed={collapsed}/>:<Link key={item.to} item={item} collapsed={collapsed}/>)}
-      {getCurrentUser()?.role==='Admin'&&<>
+      {(getCurrentUser()?.role==='Admin'||getCurrentUser()?.role==='HR Staff')&&<>
   <div className="mx-2 my-3 border-t border-white/20"/>
   <Link item={{label:'Payroll Settings',to:'/payroll-settings',icon:SlidersHorizontal}} collapsed={collapsed}/>
 </>}

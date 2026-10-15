@@ -1,5 +1,6 @@
 import type {ReactNode} from 'react';
-import {Button,Empty,LoadingState,Modal,TextInput,ghost} from '../../components/common/ui';
+import {Empty,LoadingState,TextInput} from '../../components/common/ui';
+export {ConfirmDialog} from '../../components/common/ui';
 import {Search} from 'lucide-react';
 
 export const actionCell='sticky right-0 z-10 bg-white px-4 py-3 shadow-[-1px_0_0_#e3e7ef]';
@@ -32,7 +33,4 @@ export function formatDate(value:string){
   return Number.isNaN(parsed.getTime())?value:parsed.toLocaleDateString('en-PH',{day:'numeric',month:'short',year:'numeric'});
 }
 
-export function ConfirmDialog({title,message,confirmLabel,danger=false,blocked=false,saving,onCancel,onConfirm}:{title:string;message:string;confirmLabel:string;danger?:boolean;blocked?:boolean;saving:boolean;onCancel:()=>void;onConfirm:()=>void}){
-  return <Modal title={title} onClose={onCancel}><p role={blocked?'alert':undefined} className={`m-0 text-[13px] leading-relaxed ${blocked?'text-red-700':'text-slate-600'}`}>{message}</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onCancel}>Cancel</button>{danger?<button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving||blocked} onClick={onConfirm}>{saving?'Deleting…':confirmLabel}</button>:<Button disabled={saving||blocked} onClick={onConfirm}>{saving?'Saving…':confirmLabel}</Button>}</div></Modal>;
-}
 

@@ -4,12 +4,13 @@ import {Button,Empty,LoadingState,Modal,ghost} from '../../components/common/ui'
 import type {PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
-import {ATTENDANCE_SCHEDULE,fetchAttendance} from '../attendance/attendanceService';
+import {fetchAttendance} from '../attendance/attendanceService';
+import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
+import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
 import {calculatePayroll} from './payrollCalculator';
-import {DEFAULT_RATES} from './payrollRules';
 import {RUNS_KEY,decideRun,isThirteenthMonthRun,payRun,periodLabel,runLabel,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,PayrollRunType,RunRow,PaymentMethod} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
@@ -25,7 +26,7 @@ type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeduction
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
 const blank:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0,thirteenthMonthAndOtherBenefits:0,taxExemptBenefits:0,priorEmployerTaxableCompensation:0,priorEmployerBenefitsPaid:0,priorEmployerWithheld:0,priorEmployerPayrollPeriods:0};
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Leave Pay','Allowances','Incentives & Bonuses','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','13th-month & other benefits','Tax-exempt benefits','Prior-employer taxable YTD','Prior-employer benefits YTD','Prior-employer tax withheld','Prior-employer payroll periods','Total'];
+const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Night Differential','Holiday Pay','Leave Pay','Allowances','Incentives & Bonuses','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','13th-month & other benefits','Tax-exempt benefits','Prior-employer taxable YTD','Prior-employer benefits YTD','Prior-employer tax withheld','Prior-employer payroll periods','Total'];
 
 export default function ReviewPayroll(){
  const[params]=useSearchParams();const nav=useNavigate();const user=getCurrentUser();
@@ -36,7 +37,9 @@ export default function ReviewPayroll(){
  // A 13th month run is dated on its release date.
  const from=saved?.from??(thirteenth?params.get('date'):params.get('from'))??'',to=saved?.to??(thirteenth?params.get('date'):params.get('to'))??'';
  const title=from&&to?runLabel({runType,from,to}):'';
- const rates=useMemo<PayrollRates>(()=>({...DEFAULT_RATES,...read<Partial<PayrollRates>>('payroll:rates',{})}),[]);
+ // A saved run keeps the settings it was generated with.
+ const rates=useMemo<PayrollRates>(()=>saved?.settings?.rates??loadRates(),[saved]);
+ const payDate=saved?.payDate??(from&&to?(thirteenth?to:payDateFor(from,to,rates)):'');
  const[rows,setRows]=useState<RunRow[]>(saved?.rows??[]);
  const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
  const[error,setError]=useState('');
@@ -79,7 +82,8 @@ const grades=bundle.grades;
 // Allowances and approved incentives & bonuses are maintained in Compensation Planning.
 const rewards=bundle.bonuses;
 const allowanceTypes=loadAllowanceTypes(),withholdingRule=ruleForDate(to,loadWithholdingRules());
-const base=computeDeductions({employees,records,schedule:ATTENDANCE_SCHEDULE,assignments,grades,rates,from,to}).filter(item=>item.salary);
+const time=loadTimeSettings(),holidays=loadHolidays();
+const base=computeDeductions({employees,records,schedule:loadAttendanceSchedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
 const built:RunRow[]=[];
     for(const item of base){
      const employee=item.employee;
@@ -92,7 +96,8 @@ const built:RunRow[]=[];
      const hmo=await hmoService.getPayrollDeduction(employee.id,from,to);
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
      const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
-     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate:(item.salary as number)/rates.daysPerMonth,daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,...loanAmounts};
+     const dailyRate=(item.salary as number)/rates.daysPerMonth;
+     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,...loanAmounts};
      const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
@@ -104,7 +109,7 @@ const built:RunRow[]=[];
 
  const setField=(index:number,key:EditKey,value:string)=>setRows(list=>list.map((row,i)=>i===index?{...row,input:{...row.input,[key]:value}}:row));
  const view=rows.map(row=>({row,c:saved?row.result:calc(row)}));
- const cols=view.map(({row,c})=>[c.basic,c.overtime,c.leavePay,c.allowances??0,numberValue(row.input.otherEarnings)+numberValue(row.input.bonusesNonTaxable),c.gross,c.absences??0,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
+ const cols=view.map(({row,c})=>[c.basic,c.overtime,numberValue(row.input.nightDifferential),numberValue(row.input.holidayPay),c.leavePay,c.allowances??0,numberValue(row.input.otherEarnings)+numberValue(row.input.bonusesNonTaxable),c.gross,c.absences??0,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
  const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
  const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
  const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
@@ -139,7 +144,7 @@ const built:RunRow[]=[];
     :releases.length>=(rules.allowInstallments?rules.installments:1)?`All 13th month releases for ${year} have been submitted.`:'';
    if(blocked){setConfirming(false);setSubmitBusy(false);setError(blocked);return}
   }
-  const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
+  const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,payDate,settings:payrollSettingsSnapshot(to),status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
   write(RUNS_KEY,[...runs,run]);
   recordAudit({action:'Submitted payroll for approval',module:'Payroll',description:`Submitted payroll for ${title} (${rows.length} employees).`});
   nav('/payroll');
@@ -165,12 +170,12 @@ const built:RunRow[]=[];
   {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
   {!loading&&rows.length>0&&<div className="no-print grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Employees</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{rows.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gross compensation</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{peso(totals.gross)}</div></div><div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Net pay</div><div className="mt-1 text-[22px] font-semibold text-blue-800">{peso(totals.net)}</div><div className="mt-1 text-[10px] text-slate-500">Total deductions · {peso(totals.deductions)}</div></div></div>}
   {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_28px_rgba(23,52,91,0.06)]">
-   <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title||'-'}</div>{saved&&<div className="text-[11px]">Status: {saved.status}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
+   <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title||'-'}</div>{payDate&&!thirteenth&&<div className="text-[11px]">Pay Date: {periodLabel(payDate,payDate).split(' - ')[0]}</div>}{saved&&<div className="text-[11px]">Status: {saved.status}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
    {!saved&&<p className="no-print mb-3 text-[10px] leading-relaxed text-slate-600">For new hires with another employer this calendar year, enter that employer’s taxable compensation (after mandatory contributions and eligible exemptions), 13th-month/other-benefits paid, tax withheld, and related payroll-period count in the prior-employer columns. Use verified year-to-date amounts; leave at zero when not applicable. These figures are used only for cumulative/annualized withholding, not added to this payroll’s gross pay. HR-approved employee loans and cash advances are loaded from the database into the four loan deduction columns; those amounts are locked so they cannot be double-entered.</p>}
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>{thirteenth?'No eligible employees with 13th month pay due.':'No employees with an assigned salary for this cutoff.'}</Empty>:<>
     <div className="overflow-x-auto rounded-xl border border-slate-200"><table>
      <thead>
-      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={6}>Earnings</th><th colSpan={19}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
+      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={8}>Earnings</th><th colSpan={19}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
       <tr>{heads.map(label=><th key={label}>{label}</th>)}</tr>
      </thead>
      <tbody>

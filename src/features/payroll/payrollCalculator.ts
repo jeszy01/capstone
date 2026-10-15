@@ -19,6 +19,7 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const basic=round(earnedBasic+absences);
  const overtime=round(hourly*(R.otMultiplier*numberValue(r.otHours)+R.otRestMultiplier*numberValue(r.otRestHours)));
  const leavePay=round(rate*(numberValue(r.vlDays)+numberValue(r.slDays)));
+ const nightDifferential=round(numberValue(r.nightDifferential));
  // Allowances from Compensation Planning: the de minimis portion is exempt, the excess is regular taxable pay.
  const taxableAllowances=round(numberValue(r.transportation)+numberValue(r.riceSubsidy)+numberValue(r.allowancesTaxable));
  const exemptAllowances=round(numberValue(r.allowancesExempt));
@@ -28,7 +29,7 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const thirteenth=round(numberValue(r.thirteenthMonthAndOtherBenefits)+nonTaxableBonuses);
  const taxExemptInput=round(numberValue(r.taxExemptBenefits));
  const taxExempt=round(taxExemptInput+exemptAllowances);
- const earnings=round(overtime+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+allowances+numberValue(r.otherEarnings)+thirteenth+taxExemptInput);
+ const earnings=round(overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+allowances+numberValue(r.otherEarnings)+thirteenth+taxExemptInput);
  const gross=round(basic+earnings);
  const late=round(hourly/60*numberValue(r.lateMin));
  const undertime=round(hourly/60*numberValue(r.undertimeMin));
@@ -39,7 +40,7 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const periodStart=taxContext.periodStart??new Date().toISOString().slice(0,10),periodEnd=taxContext.periodEnd??periodStart;
  const period=taxContext.period??(taxContext.periodStart||taxContext.periodEnd?detectPayrollPeriod(periodStart,periodEnd,R.payPeriodsPerMonth):(R.payPeriodsPerMonth===1?'monthly':'semi-monthly'));
  const regular=Math.max(0,basic-absences-late-undertime)+taxableAllowances;
- const supplementary=overtime+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+numberValue(r.otherEarnings);
+ const supplementary=overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+numberValue(r.otherEarnings);
  const taxBreakdown=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:thirteenth,taxExemptBenefits:taxExempt,mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules});
  const tax=taxBreakdown.withholdingTax;
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance));

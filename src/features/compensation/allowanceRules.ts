@@ -1,5 +1,5 @@
 import {read,write} from '../../utils/storage';
-import {loadWithholdingRules,ruleForDate,saveWithholdingRules} from '../payroll/withholdingTax';
+
 import type {DeMinimisCap,WithholdingTaxRuleSet} from '../payroll/withholdingTax';
 import type {BonusIncentive} from './compensationState';
 
@@ -21,7 +21,6 @@ export const saveAllowanceTypes=(types:AllowanceType[])=>write(ALLOWANCE_TYPES_K
 
 const round=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
 const CAP_MONTHS:Partial<Record<DeMinimisCap['unit'],number>>={monthly:1,'semi-annual':6,annual:12};
-const today=()=>new Date().toISOString().slice(0,10);
 
 /** Ceilings that can be expressed per month and therefore compared with an allowance amount. */
 export const linkableCaps=(rule:WithholdingTaxRuleSet)=>rule.deMinimisCaps.filter(cap=>CAP_MONTHS[cap.unit]!==undefined);
@@ -65,8 +64,3 @@ export function allowancePay(allowances:BonusIncentive[],types:AllowanceType[],r
  return {taxable:round(taxable),exempt:round(exempt)};
 }
 
-/** De minimis ceilings are edited on the withholding rule set in effect today. */
-export function saveDeMinimisLimits(amounts:Record<string,number>){
- const rules=loadWithholdingRules();const current=ruleForDate(today(),rules);
- saveWithholdingRules(rules.map(rule=>rule.id===current.id?{...rule,deMinimisCaps:rule.deMinimisCaps.map(cap=>cap.id in amounts?{...cap,amount:amounts[cap.id]}:cap)}:rule));
-}

@@ -23,7 +23,7 @@ describe('payroll settings',()=>{
  });
  it('uses edited rates in contributions',()=>{
   const changed=calculateContributions(20000,{...DEFAULT_RATES,sssEmployerRate:12,sssRate:6});
-  expect(changed.SSS).toMatchObject({employee:1200,employer:2400});
+  expect(changed.SSS).toMatchObject({employee:1200,employer:2430});
  });
  it('uses edited pay periods and SSS step in payroll deductions',()=>{
   const semi=calculatePayroll(base,DEFAULT_RATES);

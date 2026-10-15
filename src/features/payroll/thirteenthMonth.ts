@@ -2,32 +2,23 @@ import type {Employee} from '../../types/domain';
 import {numberValue,read,write} from '../../utils/storage';
 import {isThirteenthMonthRun} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
-import {loadWithholdingRules,ruleForDate,saveWithholdingRules} from './withholdingTax';
 
 // 13th month pay = basic salary earned in the calendar year ÷ 12, less amounts already released that year.
 export interface ThirteenthMonthRules{excludeAllowances:boolean;excludeOvertime:boolean;excludeHolidayPay:boolean;excludeNightDifferential:boolean;minimumServiceMonths:number;managerialPositions:string[];releaseDeadline:string;allowInstallments:boolean;installments:number}
-export const THIRTEENTH_MONTH_RULES_KEY='compensation:thirteenth-month-rules';
+export const THIRTEENTH_MONTH_RULES_KEY='payroll:thirteenth-month-rules';
+const LEGACY_THIRTEENTH_MONTH_RULES_KEY='compensation:thirteenth-month-rules';
 export const DEFAULT_THIRTEENTH_MONTH_RULES:ThirteenthMonthRules={excludeAllowances:true,excludeOvertime:true,excludeHolidayPay:true,excludeNightDifferential:true,minimumServiceMonths:1,managerialPositions:[],releaseDeadline:'12-24',allowInstallments:false,installments:2};
-export const loadThirteenthMonthRules=():ThirteenthMonthRules=>({...DEFAULT_THIRTEENTH_MONTH_RULES,...read<Partial<ThirteenthMonthRules>>(THIRTEENTH_MONTH_RULES_KEY,{})});
+export const loadThirteenthMonthRules=():ThirteenthMonthRules=>({...DEFAULT_THIRTEENTH_MONTH_RULES,...read<Partial<ThirteenthMonthRules>>(LEGACY_THIRTEENTH_MONTH_RULES_KEY,{}),...read<Partial<ThirteenthMonthRules>>(THIRTEENTH_MONTH_RULES_KEY,{})});
 export const saveThirteenthMonthRules=(rules:ThirteenthMonthRules)=>write(THIRTEENTH_MONTH_RULES_KEY,rules);
 
-const today=()=>new Date().toISOString().slice(0,10);
 const round=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
 
-/** The combined 13th-month and other-benefits exemption lives on the withholding rule set in effect today. */
-export const loadBenefitsCeiling=(date=today())=>ruleForDate(date).annualBenefitsExemption;
-export function saveBenefitsCeiling(amount:number){
- const rules=loadWithholdingRules();const current=ruleForDate(today(),rules);
- saveWithholdingRules(rules.map(rule=>rule.id===current.id?{...rule,annualBenefitsExemption:amount}:rule));
-}
-
-export function validateThirteenthMonthRules(rules:ThirteenthMonthRules,ceiling:number):string[]{
+export function validateThirteenthMonthRules(rules:ThirteenthMonthRules):string[]{
  const errors:string[]=[];
  if(!Number.isInteger(rules.minimumServiceMonths)||rules.minimumServiceMonths<0)errors.push('Minimum service must be a whole number of months, 0 or more.');
  const [month,day]=rules.releaseDeadline.split('-').map(Number);
  if(!/^\d{2}-\d{2}$/.test(rules.releaseDeadline)||month<1||month>12||day<1||day>new Date(Date.UTC(2024,month,0)).getUTCDate())errors.push('Enter a valid release deadline.');
  if(rules.allowInstallments&&(!Number.isInteger(rules.installments)||rules.installments<2||rules.installments>4))errors.push('Installments must be a whole number from 2 to 4.');
- if(!Number.isFinite(ceiling)||ceiling<0)errors.push('Tax-exempt ceiling must be 0 or more.');
  return errors;
 }
 
@@ -58,7 +49,8 @@ export function computeThirteenthMonth({runs,employees,rules,releaseDate}:{runs:
    line.basicEarned+=(result.earnedBasic??result.basic-(result.absences??0))+result.leavePay
     +(rules.excludeAllowances?0:result.allowances??0)
     +(rules.excludeOvertime?0:result.overtime)
-    +(rules.excludeHolidayPay?0:numberValue(row.input.holidayPay));
+    +(rules.excludeHolidayPay?0:numberValue(row.input.holidayPay))
+    +(rules.excludeNightDifferential?0:numberValue(row.input.nightDifferential));
   }
   lines.set(empId,line);
  }

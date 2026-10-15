@@ -1,9 +1,8 @@
-import type {AttendanceRecord,AttendanceSchedule} from '../../types/domain';
+import type {AttendanceRecord} from '../../types/domain';
 
 export type {AttendanceRecord,AttendanceStatus} from '../../types/domain';
 export interface AttendanceQuery{from:string;to:string}
 
-export const ATTENDANCE_SCHEDULE:AttendanceSchedule={start:'08:00',end:'17:00',otMin:5};
 
 /**
  * HR2 integration point. Resolve with every AttendanceRecord dated within

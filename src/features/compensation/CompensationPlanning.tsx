@@ -31,7 +31,6 @@ import {useSearchParams} from 'react-router-dom';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {compensationService} from './compensationService';
 import {AllowancesPanel,IncentivesPanel} from './RewardPanels';
-import {ThirteenthMonthPanel} from './ThirteenthMonthPanel';
 import {ConfirmDialog,InlineError,SearchToolbar,SectionHeading,StatusBadge,TableMessage,actionCell,actionLabel,formatDate,headerClass,matches,rowClass,tableClass,wholePeso} from './compensationUi';
 import {
   activeCompensations,
@@ -55,7 +54,7 @@ import type {
 type Section='salary-structure'|'adjustments'|'history';
 const structureTabs=[{id:'grades',label:'Salary Grades'},{id:'assignments',label:'Salary Assignments'}] as const;
 type StructureTab=(typeof structureTabs)[number]['id'];
-const adjustmentTabs=[{id:'salary',label:'Salary Adjustments'},{id:'allowances',label:'Allowances'},{id:'incentives',label:'Incentives & Bonuses'},{id:'thirteenth-month',label:'13th Month Rules'}] as const;
+const adjustmentTabs=[{id:'salary',label:'Salary Adjustments'},{id:'allowances',label:'Allowances'},{id:'incentives',label:'Incentives & Bonuses'}] as const;
 type AdjustmentsTab=(typeof adjustmentTabs)[number]['id'];
 type Details={title:string;fields:Array<[string,string]>};
 type ModalName='grade'|'employee'|'proposal'|null;
@@ -385,8 +384,7 @@ export default function CompensationPlanning({section}:{section:Section}){
         <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Approval records the decision and an effective-dated salary row. The employee’s active salary remains unchanged until the effective date.</p>
       </div></div>
       :adjustmentsTab==='allowances'?<AllowancesPanel employees={employees} rewards={bonuses} loading={compensationLoading} loadError={loadError} canManage={canManageGrades} employeeLabelFor={employeeLabelFor} onChanged={loadCompensation} onSuccess={setSuccess}/>
-      :adjustmentsTab==='incentives'?<IncentivesPanel employees={employees} rewards={bonuses} loading={compensationLoading} loadError={loadError} canManage={canManageGrades} employeeLabelFor={employeeLabelFor} onChanged={loadCompensation} onSuccess={setSuccess}/>
-      :<ThirteenthMonthPanel positions={gradePositionOptions} canManage={canManageGrades} onSuccess={setSuccess}/>}
+      :<IncentivesPanel employees={employees} rewards={bonuses} loading={compensationLoading} loadError={loadError} canManage={canManageGrades} employeeLabelFor={employeeLabelFor} onChanged={loadCompensation} onSuccess={setSuccess}/>}
     </section>}
     {modal==='grade'&&<SalaryGradeModal positions={gradePositionOptions} rateOf={rateOf} onClose={()=>{if(!saving)setModal(null)}} onSave={saveGrade} error={error} saving={saving}/>}
     {modal==='employee'&&<EmployeeCompensationModal employees={unassignedEmployees} grades={activeGrades} date={date} onClose={()=>{if(!saving)setModal(null)}} onSave={saveAssignment} error={error} saving={saving}/>}
