@@ -26,13 +26,18 @@ export const runLabel=(run:Pick<PayrollRun,'runType'|'from'|'to'>)=>isThirteenth
 /** The cutoff containing today, from the Pay Schedule settings. */
 export const cutoffRange=()=>{const d=new Date(),date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;return cutoffFor(date.slice(0,7),cutoffNumberFor(date))};
 
+/** Rows of the most recently approved run; each is computed for that run's cutoff dates. */
+export function latestApprovedRows(){
+ const latest=read<PayrollRun[]>(RUNS_KEY,[]).filter(run=>run.status==='Approved').sort((a,b)=>(b.decidedAt??b.createdAt).localeCompare(a.decidedAt??a.createdAt))[0];
+ return latest?latest.rows.map(row=>({r:row.input,c:row.result})):[];
+}
+
 export function decideRun(id:string,status:'Approved'|'Rejected',by:string){
  const runs=read<PayrollRun[]>(RUNS_KEY,[]);
  const run=runs.find(item=>item.id===id);
  if(!run||run.status!=='Pending Approval')return undefined;
  const next=runs.map(item=>item.id===id?{...item,status,decidedBy:by,decidedAt:new Date().toISOString()}:item);
  write(RUNS_KEY,next);
- if(status==='Approved'){const stamp=Date.now();write('payroll:records',run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
  recordAudit({action:`${status} payroll`,module:'Payroll',description:`${status} payroll for ${periodLabel(run.from,run.to)}.`});
  return next;
 }
