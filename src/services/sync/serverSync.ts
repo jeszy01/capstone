@@ -3,8 +3,8 @@ import {apiClient} from '../api/apiClient';
 type PendingWrite={raw?:string;deleted?:boolean};
 const PREFIXES=['admin:','audit:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
-// Attendance now comes from HR2, and payroll only comes from dated runs; purge the retired copies.
-const RETIRED_KEYS=['attendance:records','attendance:schedule','payroll:records'];
+// Attendance now comes from HR2; purge the retired manually-entered copies.
+const RETIRED_KEYS=['attendance:records','attendance:schedule'];
 const rawSet=Storage.prototype.setItem;
 const rawRemove=Storage.prototype.removeItem;
 const timers=new Map<string,number>();
