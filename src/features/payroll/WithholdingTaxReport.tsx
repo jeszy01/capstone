@@ -8,7 +8,7 @@ import {recordAudit} from '../audit/auditService';
 import {employeeService} from '../employees/employeeService';
 import {calculatePayroll} from './payrollCalculator';
 import {DEFAULT_RATES} from './payrollRules';
-import {RUNS_KEY,periodLabel} from './payrollRuns';
+import {RUNS_KEY,periodLabel,isThirteenthMonthRun,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {loadWithholdingRules,ruleForDate,validateRuleSet} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
@@ -27,7 +27,7 @@ function reportStatus(entry:Entry){return entry.error?'Validation error':entry.r
 function priorHistory(runs:PayrollRun[],currentRun:PayrollRun,row:RunRow,allRules=loadWithholdingRules(),currentRates:PayrollRates=rates):AnnualTaxHistory{
  const priorRuns=runs.filter(run=>run.id!==currentRun.id&&run.status==='Approved'&&run.from.slice(0,4)===currentRun.from.slice(0,4)&&run.to<currentRun.from);
  const history=priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===row.input.empId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{
-  const breakdown=entry.item.result.taxBreakdown??calculatePayroll(entry.item.input,currentRates,[],{periodStart:entry.run.from,periodEnd:entry.run.to,rules:allRules}).taxBreakdown!;
+  const breakdown=entry.item.result.taxBreakdown??calculatePayroll(entry.item.input,currentRates,[],{periodStart:entry.run.from,periodEnd:entry.run.to,period:runTaxPeriod(entry.run,currentRates.payPeriodsPerMonth),rules:allRules}).taxBreakdown!;
   total.regular+=breakdown.regularCompensation;total.supplementary+=breakdown.supplementaryCompensation;total.benefitPayments+=breakdown.benefitPayments;total.taxExemptBenefits+=breakdown.taxExemptBenefits;total.mandatoryContributions+=breakdown.mandatoryContributions;total.withheld+=entry.item.result.tax;total.payrollPeriods+=1;if(breakdown.status==='Cumulative average')total.cumulativeAverage=true;return total;
  },{regular:0,supplementary:0,benefitPayments:0,taxExemptBenefits:0,mandatoryContributions:0,withheld:0,payrollPeriods:0});
  const previousBenefits=numberValue(row.input.priorEmployerBenefitsPaid),previousTaxable=numberValue(row.input.priorEmployerTaxableCompensation),previousPeriods=numberValue(row.input.priorEmployerPayrollPeriods),cap=ruleForDate(currentRun.to,allRules).annualBenefitsExemption;
@@ -94,7 +94,7 @@ export function WithholdingTaxReport({from,to,query}:{from:string;to:string;quer
     if(run.status==='Approved'&&run.paidAt)errors.push(`Payroll ${periodLabel(run.from,run.to)} is already paid; its actual deductions are locked.`);
     if(errors.length){allErrors.push(...errors);for(const row of run.rows)rowErrors[rowKey(run.id,row.input.empId,run.rows.indexOf(row))]=errors.find(error=>error.toLowerCase().includes(row.input.empId.toLowerCase()))??errors[0];continue}
     const approved=run.status==='Approved';const nextRows=run.rows.map((row,index)=>{
-     const calculated=calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},activeRates,[],{periodStart:run.from,periodEnd:run.to,priorYear:priorHistory(runs,run,row,activeRules,activeRates),finalPeriod:run.to.slice(5,7)==='12'&&Number(run.to.slice(8,10))===new Date(Date.UTC(Number(run.to.slice(0,4)),12,0)).getUTCDate(),rules:activeRules});
+     const calculated=calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},activeRates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,activeRates.payPeriodsPerMonth),priorYear:priorHistory(runs,run,row,activeRules,activeRates),finalPeriod:!isThirteenthMonthRun(run)&&run.to.slice(5,7)==='12'&&Number(run.to.slice(8,10))===new Date(Date.UTC(Number(run.to.slice(0,4)),12,0)).getUTCDate(),rules:activeRules});
      if(approved){const result=withTaxOnly(row.result,calculated);return{...row,result}}
      nextEstimates[rowKey(run.id,row.input.empId,index)]=calculated;return row;
     });

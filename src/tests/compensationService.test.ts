@@ -43,7 +43,26 @@ describe('compensationService',()=>{
   expect(loaded.assignments[0]).toMatchObject({employeeId:'employee-1',fixedSalary:55000,dailyRate:2500});
   expect(loaded.proposals[0]).toMatchObject({newSalary:60000,status:'Approved',reviewedBy:'user-1'});
   expect(loaded.history[0]).toMatchObject({actorName:'HR User',proposalId:'proposal-1'});
-  expect(loaded.bonuses[0]).toMatchObject({employeeId:'employee-1',amount:2500,status:'Approved'});
+  expect(loaded.bonuses[0]).toMatchObject({employeeId:'employee-1',type:'Bonus',amount:2500,status:'Approved',cutoffEnd:'2026-12-15'});
+ });
+ it('maps pre-migration allowance and adjustment rows to active or inactive allowances',async()=>{
+  api.get.mockResolvedValue({data:{...emptyBundle,rewards:[
+   {id:'reward-a',employee_id:'employee-1',reward_type:'Adjustment',amount:'1200',effective_date:'2026-01-01',notes:'',status:'Approved',created_at:'2026-01-01T00:00:00Z'},
+   {id:'reward-b',employee_id:'employee-1',reward_type:'Incentive',amount:'800',effective_date:'2026-01-10',notes:'Target',status:'Planned',created_at:'2026-01-01T00:00:00Z'},
+  ]}});
+  const loaded=await compensationService.load();
+  expect(loaded.bonuses[0]).toMatchObject({type:'Allowance',allowanceType:'Adjustment',status:'Active'});
+  expect(loaded.bonuses[1]).toMatchObject({type:'Incentive',status:'Pending'});
+ });
+ it('sends allowance and bonus payloads with their own fields',async()=>{
+  api.post.mockResolvedValue({data:{}});
+  const base={employeeId:'employee-1',amount:1000,effectiveDate:'2026-10-01',notes:'',status:'Active' as const,allowanceType:'Meal',frequency:'Monthly' as const,taxable:true,cutoffStart:'2026-10-01',cutoffEnd:'2026-10-15'};
+  await compensationService.createReward({...base,type:'Allowance'});
+  expect(api.post).toHaveBeenCalledWith('/compensation',{action:'create_reward',employee_id:'employee-1',reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',amount:1000,effective_date:'2026-10-01',status:'Active',notes:''});
+  await compensationService.updateReward('reward-1',{...base,type:'Bonus',notes:'Target met',taxable:false});
+  expect(api.post).toHaveBeenCalledWith('/compensation',{action:'update_reward',id:'reward-1',employee_id:'employee-1',reward_type:'Bonus',amount:1000,cutoff_start:'2026-10-01',cutoff_end:'2026-10-15',notes:'Target met',taxable:false});
+  await compensationService.reviewReward('reward-1','reject');
+  expect(api.post).toHaveBeenCalledWith('/compensation',{action:'review_reward',id:'reward-1',decision:'reject'});
  });
 
 	it('saves without a client code and displays the generated code after refreshing server data',async()=>{

@@ -8,7 +8,8 @@ export type RunStatus='Pending Approval'|'Approved'|'Rejected';
 export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:'Loan'|'Cash Advance';loanType:string;amount:number;installmentNumber:number;installmentCount:number};
 export type RunRow={position:string;rest:number;hmo:number;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[]};
 // released: department name -> ISO date-time when released to ESS
-export type PayrollRun={id:string;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string};
+export type PayrollRunType='regular'|'thirteenth-month';
+export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string};
 export const RUNS_KEY='payroll:runs';
 
 export type PaymentMethod='Bank Transfer'|'Direct Deposit';
@@ -16,6 +17,10 @@ export type PaymentMethod='Bank Transfer'|'Direct Deposit';
 
 const label=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 export const periodLabel=(from:string,to:string)=>`${label(from)} - ${label(to)}`;
+export const isThirteenthMonthRun=(run:Pick<PayrollRun,'runType'>)=>run.runType==='thirteenth-month';
+// A 13th month run is dated on its release day; tax it with the regular pay-period table.
+export const runTaxPeriod=(run:Pick<PayrollRun,'runType'>,payPeriodsPerMonth:number)=>isThirteenthMonthRun(run)?(payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const):undefined;
+export const runLabel=(run:Pick<PayrollRun,'runType'|'from'|'to'>)=>isThirteenthMonthRun(run)?`13th Month Pay · ${label(run.to)}`:periodLabel(run.from,run.to);
 export const cutoffRange=()=>{const d=new Date(),y=d.getFullYear(),m=d.getMonth(),p=(n:number)=>String(n).padStart(2,'0'),last=new Date(y,m+1,0).getDate();return d.getDate()<=15?{from:`${y}-${p(m+1)}-01`,to:`${y}-${p(m+1)}-15`}:{from:`${y}-${p(m+1)}-16`,to:`${y}-${p(m+1)}-${p(last)}`}};
 
 export function decideRun(id:string,status:'Approved'|'Rejected',by:string){

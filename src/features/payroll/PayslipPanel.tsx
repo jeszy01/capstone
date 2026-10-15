@@ -2,7 +2,7 @@ import {useMemo,useState} from 'react';
 import {Button,Card,Empty,Modal,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {peso,read} from '../../utils/storage';
-import {RUNS_KEY,periodLabel,releaseDepartment} from './payrollRuns';
+import {RUNS_KEY,runLabel,releaseDepartment} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {getCurrentUser} from '../auth/authService';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
@@ -28,7 +28,7 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
   const rows=run.rows.filter(r=>deptOf(r)===dept);
   return <section className="mt-6 space-y-4">
    <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setDept('')}>Back</button><Badge on={Boolean(run.released?.[dept])}/></div>
-   <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="m-0 text-[17px] font-semibold text-[#17345b]">{dept}</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{periodLabel(run.from,run.to)} · {rows.length} employees</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">Paid payroll</span></div>
+   <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="m-0 text-[17px] font-semibold text-[#17345b]">{dept}</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{runLabel(run)} · {rows.length} employees</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">Paid payroll</span></div>
     <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Employee','Gross Pay','Deductions','Net Pay','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.input.empId} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{row.input.name}</div><div className="text-[11px] text-slate-400">{row.input.empId}</div></td><td className="px-4 py-3 tabular-nums">{peso(row.result.gross)}</td><td className="px-4 py-3 tabular-nums text-rose-700">{peso(row.result.deductions)}</td><td className="px-4 py-3 tabular-nums font-semibold text-[#17345b]">{peso(row.result.net)}</td><td className="px-4 py-3"><button className={ghost} onClick={()=>setSlip(row)}>View Payslip</button></td></tr>)}</tbody></table></div>
    </Card>
    {slip&&<SlipModal run={run} row={slip} dept={dept} onClose={()=>setSlip(null)}/>}
@@ -40,11 +40,11 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
   const depts=deptsOf(run);
   return <section className="mt-6 space-y-4">
   <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setRunId('')}>Back</button>{depts.some(d=>!run.released?.[d])&&<Button onClick={()=>setConfirm(depts.filter(d=>!run.released?.[d]))}>Release All</Button>}</div>
-   <Card><h2 className="m-0 text-[16px] font-semibold">Select department</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{periodLabel(run.from,run.to)}</p>
+   <Card><h2 className="m-0 text-[16px] font-semibold">Select department</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{runLabel(run)}</p>
     <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release</Button>}</div></td></tr>)}</tbody></table></div>
    </Card>
    {confirm&&<Modal title="Confirm Release" onClose={()=>setConfirm(null)}>
- <p className="text-[13px]">Release payslips of <b>{confirm.join(', ')}</b> for {periodLabel(run.from,run.to)} to ESS?</p>
+ <p className="text-[13px]">Release payslips of <b>{confirm.join(', ')}</b> for {runLabel(run)} to ESS?</p>
  <p className="mt-1 text-[12px] text-slate-500">Employees will be able to view their payslips. This cannot be undone.</p>
  <div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={()=>setConfirm(null)}>Cancel</button><Button onClick={doRelease}>Confirm Release</Button></div>
 </Modal>}
@@ -54,7 +54,7 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
  // Level 1: approved runs
   return <section className="mt-6 space-y-4" aria-label="Payslip records">
   <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll documents</div><h2 className="mb-0 mt-1 text-[18px] font-semibold text-[#17345b]">Payslips</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Generated only from paid, approved payroll runs. Release is managed in ESS by department.</p></div><span className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700">{runs.length} runs</span></div>
-   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Date & Time Generated','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={4}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{const d=deptsOf(r),done=d.filter(x=>r.released?.[x]).length;return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3 font-semibold text-[#17345b]">{periodLabel(r.from,r.to)}</td><td className="px-4 py-3 text-slate-500">{when(r.paidAt)}</td><td className="px-4 py-3"><Badge on={done===d.length&&d.length>0} text={done===d.length&&d.length>0?'Released':done?`Partial (${done}/${d.length})`:'Not released'}/></td><td className="px-4 py-3"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button></td></tr>})}</tbody></table></div>
+   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Date & Time Generated','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={4}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{const d=deptsOf(r),done=d.filter(x=>r.released?.[x]).length;return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3 font-semibold text-[#17345b]">{runLabel(r)}</td><td className="px-4 py-3 text-slate-500">{when(r.paidAt)}</td><td className="px-4 py-3"><Badge on={done===d.length&&d.length>0} text={done===d.length&&d.length>0?'Released':done?`Partial (${done}/${d.length})`:'Not released'}/></td><td className="px-4 py-3"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button></td></tr>})}</tbody></table></div>
   </Card>
  </section>;
 }
@@ -72,7 +72,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
  const breakdown=buildPayslipBreakdownFromRun(row);
  const earnings:[string,string][] = breakdown.earnings.map(line=>[line.label,dash(line.amount)]);
  const deductions:[string,string][] = breakdown.deductions.map(line=>[line.label,dash(line.amount)]);
- const period=periodLabel(run.from,run.to);
+ const period=runLabel(run);
  const info=(l:string,v:string)=><div className="flex gap-2"><span className="text-slate-500">{l}:</span><span className="font-semibold text-slate-800">{v}</span></div>;
  const table=(title:string,rows:[string,string][],totalLabel:string,total:number)=><div className="overflow-hidden rounded-lg border border-slate-200">
   <div className="flex justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{title}</span><span>Amount (PHP)</span></div>

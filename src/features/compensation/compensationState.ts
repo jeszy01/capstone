@@ -4,9 +4,11 @@ import {loadRates} from '../settings/payrollSettings';
 export type SalaryGrade={id:string;code:string;position:string;fixedSalary:number;dailyRate:number;status:'Active'|'Inactive';createdAt:string};
 export type EmployeeCompensation={id:string;employeeId:string;salaryCode:string;position:string;fixedSalary:number;dailyRate:number;effectiveDate:string;employeeName?:string;department?:string};
 export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string;rejectionReason?:string;reviewedBy?:string;salaryCode?:string};
-export type BonusIncentive={id:string;employeeId:string;type:string;amount:number;effectiveDate:string;notes:string;status:'Planned'|'Approved';createdAt:string};
-export const allowanceTypes=['Transportation','Rice Subsidy','Meal','Communication','Clothing','Medical','Housing'];
-export const rewardTypes=['Bonus','Incentive'];
+export type RewardFrequency='Per Cutoff'|'Monthly';
+export type RewardStatus='Pending'|'Approved'|'Rejected'|'Active'|'Inactive';
+// Allowances use allowanceType, frequency, effectiveDate and Active/Inactive. Incentives and bonuses use cutoff, notes (reason), taxable and review status.
+export type BonusIncentive={id:string;employeeId:string;type:'Allowance'|'Bonus'|'Incentive';amount:number;effectiveDate:string;notes:string;status:RewardStatus;createdAt:string;allowanceType:string;frequency:RewardFrequency;taxable:boolean;cutoffStart:string;cutoffEnd:string};
+export const isBonusReward=(reward:Pick<BonusIncentive,'type'>)=>reward.type==='Bonus'||reward.type==='Incentive';
 export type CompensationHistory={id:string;employeeId:string;source:string;type:string;previousSalary:number;newSalary:number;adjustmentAmount?:number;reason?:string;effectiveDate:string;status?:string;recordedAt:string;appliedAt?:string;assignmentId?:string;proposalId?:string;actorName?:string};
 
 export const salaryDefaults:Record<string,number>={

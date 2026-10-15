@@ -15,7 +15,7 @@ export function buildPayslipBreakdown(input:PayrollInput,result:PayrollResult,hm
   {label:'Holiday Pay',amount:numberValue(input.holidayPay)},
   {label:'Service Incentive Leave Conversion',amount:numberValue(input.slConversion)},
   {label:'Allowances',amount:result.allowances},
-  {label:'Bonuses / Other Earnings',amount:numberValue(input.otherEarnings)},
+  {label:'Incentives & Bonuses',amount:round(numberValue(input.otherEarnings)+numberValue(input.bonusesNonTaxable))},
   {label:'13th-Month and Other Benefits',amount:numberValue(input.thirteenthMonthAndOtherBenefits)},
   {label:'Eligible Tax-Exempt Benefits',amount:numberValue(input.taxExemptBenefits)},
  ];

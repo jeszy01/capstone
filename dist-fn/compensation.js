@@ -376,25 +376,67 @@ async function reviewProposal(input, ctx) {
   await audit("compensation.proposal.approved", ctx.userId, "compensation_proposals", id, { effective_date: proposal.effective_date });
   return { id, ...next, assignment };
 }
+var isBonusType = (type) => type === "Bonus" || type === "Incentive";
+function rewardValues(input, type) {
+  const values = { amount: amount(input.amount, "amount") };
+  if (type === "Allowance") {
+    const allowanceType = required(input.allowance_type, "allowance_type").trim();
+    const frequency = String(input.frequency ?? "");
+    if (frequency !== "Per Cutoff" && frequency !== "Monthly") throw new HttpError(400, "INVALID_FREQUENCY", "Frequency must be Per Cutoff or Monthly.");
+    const status = String(input.status ?? "Active");
+    if (status !== "Active" && status !== "Inactive") throw new HttpError(400, "INVALID_ALLOWANCE_STATUS", "Allowance status must be Active or Inactive.");
+    return { ...values, allowance_type: allowanceType, frequency, status, effective_date: isoDate(input.effective_date), notes: String(input.notes ?? "").trim() };
+  }
+  if (!isBonusType(type)) throw new HttpError(400, "INVALID_REWARD_TYPE", "Type must be Allowance, Incentive, or Bonus.");
+  const cutoffStart = isoDate(input.cutoff_start, "cutoff_start"), cutoffEnd = isoDate(input.cutoff_end, "cutoff_end");
+  if (cutoffStart > cutoffEnd) throw new HttpError(400, "INVALID_CUTOFF", "The cutoff start must be on or before its end.");
+  if (typeof input.taxable !== "boolean") throw new HttpError(400, "INVALID_TAXABLE", "Taxable must be true or false.");
+  return { ...values, cutoff_start: cutoffStart, cutoff_end: cutoffEnd, effective_date: cutoffEnd, notes: required(input.notes, "notes").trim(), taxable: input.taxable };
+}
+async function findReward(id) {
+  const reward = (await listRows("compensation_rewards", { id }))[0];
+  if (!reward) throw new HttpError(404, "REWARD_NOT_FOUND", "Allowance, incentive, or bonus was not found.");
+  return reward;
+}
 async function createReward(input, ctx) {
   const employeeId = uuid(input.employee_id, "employee_id");
-  const type = required(input.reward_type, "reward_type");
-  if (!String(type || "").trim()) throw new HttpError(400, "INVALID_REWARD_TYPE", "Reward type is required.");
+  const type = required(input.reward_type, "reward_type").trim();
+  const values = rewardValues(input, type);
   if (!(await listRows("employees", { id: employeeId }))[0]) throw new HttpError(404, "EMPLOYEE_NOT_FOUND", "Employee was not found.");
   const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-  const row = await insertRow("compensation_rewards", { employee_id: employeeId, reward_type: type, amount: amount(input.amount, "amount"), effective_date: isoDate(input.effective_date), notes: String(input.notes ?? "").trim(), status: "Planned", created_by: ctx.userId, created_at: createdAt });
-  await audit("compensation.reward.created", ctx.userId, "compensation_rewards", String(row?.id ?? ""));
+  const row = await insertRow("compensation_rewards", { employee_id: employeeId, reward_type: type, ...values, ...isBonusType(type) ? { status: "Pending" } : {}, created_by: ctx.userId, created_at: createdAt });
+  await audit("compensation.reward.created", ctx.userId, "compensation_rewards", String(row?.id ?? ""), { reward_type: type, amount: values.amount });
   return row;
+}
+async function updateReward(input, ctx) {
+  const id = uuid(input.id, "id");
+  const reward = await findReward(id);
+  const type = required(input.reward_type, "reward_type").trim();
+  if (isBonusType(type) !== isBonusType(reward.reward_type)) throw new HttpError(400, "INVALID_REWARD_TYPE", "An allowance cannot be changed into an incentive or bonus.");
+  const employeeId = uuid(input.employee_id, "employee_id");
+  if (!(await listRows("employees", { id: employeeId }))[0]) throw new HttpError(404, "EMPLOYEE_NOT_FOUND", "Employee was not found.");
+  const next = { employee_id: employeeId, reward_type: type, ...rewardValues(input, type), ...isBonusType(type) ? { status: "Pending", approved_by: null, approved_at: null } : {}, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  await updateRows("compensation_rewards", { id }, next);
+  await audit("compensation.reward.updated", ctx.userId, "compensation_rewards", id, { previous: { reward_type: reward.reward_type, amount: Number(reward.amount), status: reward.status }, next: { reward_type: type, amount: next.amount, status: next.status ?? reward.status } });
+  return { ...reward, ...next };
+}
+async function deleteReward(input, ctx) {
+  const id = uuid(input.id, "id");
+  const reward = await findReward(id);
+  await deleteRows("compensation_rewards", { id });
+  await audit("compensation.reward.deleted", ctx.userId, "compensation_rewards", id, { reward_type: reward.reward_type, amount: Number(reward.amount), status: reward.status });
+  return { id, deleted: true };
 }
 async function reviewReward(input, ctx) {
   const id = uuid(input.id, "id");
-  const rows = await listRows("compensation_rewards", { id });
-  const reward = rows[0];
-  if (!reward) throw new HttpError(404, "REWARD_NOT_FOUND", "Bonus, incentive, allowance, or adjustment was not found.");
-  if (reward.status !== "Planned") throw new HttpError(409, "REWARD_ALREADY_REVIEWED", "Only planned rewards can be approved.");
-  const next = { status: "Approved", approved_by: ctx.userId, approved_at: (/* @__PURE__ */ new Date()).toISOString() };
+  const decision = String(input.decision ?? "approve");
+  if (decision !== "approve" && decision !== "reject") throw new HttpError(400, "INVALID_DECISION", "Decision must be approve or reject.");
+  const reward = await findReward(id);
+  if (!isBonusType(reward.reward_type)) throw new HttpError(400, "REWARD_NOT_REVIEWABLE", "Only incentives and bonuses are approved or rejected.");
+  if (reward.status !== "Pending" && reward.status !== "Planned") throw new HttpError(409, "REWARD_ALREADY_REVIEWED", "Only pending incentives and bonuses can be reviewed.");
+  const next = { status: decision === "approve" ? "Approved" : "Rejected", approved_by: ctx.userId, approved_at: (/* @__PURE__ */ new Date()).toISOString() };
   await updateRows("compensation_rewards", { id }, next);
-  await audit("compensation.reward.approved", ctx.userId, "compensation_rewards", id);
+  await audit(`compensation.reward.${decision === "approve" ? "approved" : "rejected"}`, ctx.userId, "compensation_rewards", id);
   return { id, ...next };
 }
 var legacyRows = (data, key2) => Array.isArray(data[key2]) ? data[key2].filter((value) => Boolean(value) && typeof value === "object") : [];
@@ -523,8 +565,12 @@ async function importLegacy(input, ctx) {
     if (oldId && (await listRows("compensation_rewards", { legacy_id: oldId }))[0]) continue;
     const type = String(row.type ?? "");
     if (!["Bonus", "Incentive", "Allowance", "Adjustment"].includes(type)) throw new Error("invalid reward type");
-    const status = row.status === "Approved" ? "Approved" : "Planned";
-    await insertRow("compensation_rewards", { employee_id: employee.id, reward_type: type, amount: legacyMoney(row.amount, "amount"), effective_date: legacyDate(row.effectiveDate), notes: String(row.notes ?? ""), status, created_by: null, created_at: typeof row.createdAt === "string" && Number.isFinite(Date.parse(row.createdAt)) ? row.createdAt : (/* @__PURE__ */ new Date()).toISOString(), legacy_id: oldId || null });
+    const approved = row.status === "Approved";
+    const effectiveDate = legacyDate(row.effectiveDate);
+    const day = Number(effectiveDate.slice(8, 10)), month = effectiveDate.slice(0, 7);
+    const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+    const details = isBonusType(type) ? { reward_type: type, status: approved ? "Approved" : "Pending", cutoff_start: `${month}-${day <= 15 ? "01" : "16"}`, cutoff_end: `${month}-${day <= 15 ? "15" : String(lastDay).padStart(2, "0")}` } : { reward_type: "Allowance", allowance_type: type, frequency: "Monthly", status: approved ? "Active" : "Inactive" };
+    await insertRow("compensation_rewards", { employee_id: employee.id, ...details, amount: legacyMoney(row.amount, "amount"), effective_date: effectiveDate, notes: String(row.notes ?? ""), created_by: null, created_at: typeof row.createdAt === "string" && Number.isFinite(Date.parse(row.createdAt)) ? row.createdAt : (/* @__PURE__ */ new Date()).toISOString(), legacy_id: oldId || null });
     counts.rewards++;
   } catch {
     counts.skipped++;
@@ -548,7 +594,10 @@ var compensation_default = verifiedEdge(async (ctx) => {
   if (action === "create_proposal") return ok(await createProposal(input, ctx));
   if (action === "review_proposal") return ok(await reviewProposal(input, ctx));
   if (action === "create_reward") return ok(await createReward(input, ctx));
-  if (action === "approve_reward") return ok(await reviewReward(input, ctx));
+  if (action === "update_reward") return ok(await updateReward(input, ctx));
+  if (action === "delete_reward") return ok(await deleteReward(input, ctx));
+  if (action === "review_reward") return ok(await reviewReward(input, ctx));
+  if (action === "approve_reward") return ok(await reviewReward({ ...input, decision: "approve" }, ctx));
   if (action === "import_legacy") return ok(await importLegacy(input, ctx));
   throw new HttpError(400, "UNKNOWN_ACTION", "Unsupported compensation action.");
 });

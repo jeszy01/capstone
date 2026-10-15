@@ -111,16 +111,35 @@ describe('Backend-authoritative compensation workflow',()=>{
   expect(tables.compensation_proposals[0]).toMatchObject({status:'Rejected',rejection_reason:'Budget not approved',reviewed_by:'user-1'});
   expect(tables.compensation_history[0]).toMatchObject({event_type:'Rejected',reason:'Budget not approved',actor_name:'HR Reviewer'});
  });
- it('creates allowance and adjustment reward entries',async()=>{
+ it('creates, edits and deletes allowances',async()=>{
   const {tables}=setup();const authorization=`Bearer ${await session()}`;
-  const allowance=await call({action:'create_reward',employee_id:employeeId,reward_type:'Allowance',amount:3500,effective_date:'2099-01-01',notes:'Meal allowance'},authorization);
-  expect(allowance.status).toBe(200);
-  const adjustment=await call({action:'create_reward',employee_id:employeeId,reward_type:'Adjustment',amount:1200,effective_date:'2099-02-01',notes:'Transport adjustment'},authorization);
-  expect(adjustment.status).toBe(200);
-  expect(tables.compensation_rewards).toEqual(expect.arrayContaining([
-   expect.objectContaining({reward_type:'Allowance',amount:3500}),
-   expect.objectContaining({reward_type:'Adjustment',amount:1200}),
-  ]));
+  const missingFrequency=await call({action:'create_reward',employee_id:employeeId,reward_type:'Allowance',allowance_type:'Meal',amount:3500,effective_date:'2099-01-01'},authorization);
+  expect(missingFrequency.status).toBe(400);
+  const created=await call({action:'create_reward',employee_id:employeeId,reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',amount:3500,effective_date:'2099-01-01'},authorization);
+  expect(created.status).toBe(200);
+  expect(tables.compensation_rewards[0]).toMatchObject({reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',amount:3500,status:'Active'});
+  const id=String(tables.compensation_rewards[0].id);
+  expect((await call({action:'update_reward',id,employee_id:employeeId,reward_type:'Allowance',allowance_type:'Transportation',frequency:'Per Cutoff',amount:1500,effective_date:'2099-01-01',status:'Inactive'},authorization)).status).toBe(200);
+  expect(tables.compensation_rewards[0]).toMatchObject({allowance_type:'Transportation',frequency:'Per Cutoff',amount:1500,status:'Inactive'});
+  expect((await call({action:'review_reward',id,decision:'approve'},authorization)).status).toBe(400);
+  expect((await call({action:'delete_reward',id},authorization)).status).toBe(200);
+  expect(tables.compensation_rewards).toHaveLength(0);
+  expect(tables.audit_logs.map(row=>row.action)).toEqual(expect.arrayContaining(['compensation.reward.created','compensation.reward.updated','compensation.reward.deleted']));
+ });
+ it('reviews incentives and bonuses and requires a new review after an edit',async()=>{
+  const {tables}=setup();const authorization=`Bearer ${await session()}`;
+  const bonus={employee_id:employeeId,reward_type:'Bonus',amount:5000,cutoff_start:'2099-12-01',cutoff_end:'2099-12-15',notes:'Year-end',taxable:false};
+  expect((await call({action:'create_reward',...bonus},authorization)).status).toBe(200);
+  expect(tables.compensation_rewards[0]).toMatchObject({status:'Pending',taxable:false,cutoff_end:'2099-12-15'});
+  const id=String(tables.compensation_rewards[0].id);
+  expect((await call({action:'review_reward',id,decision:'approve'},authorization)).status).toBe(200);
+  expect(tables.compensation_rewards[0].status).toBe('Approved');
+  expect((await call({action:'update_reward',id,...bonus,amount:6000},authorization)).status).toBe(200);
+  expect(tables.compensation_rewards[0]).toMatchObject({amount:6000,status:'Pending'});
+  expect((await call({action:'review_reward',id,decision:'reject'},authorization)).status).toBe(200);
+  expect(tables.compensation_rewards[0].status).toBe('Rejected');
+  expect((await call({action:'review_reward',id,decision:'approve'},authorization)).status).toBe(409);
+  expect(tables.audit_logs.map(row=>row.action)).toEqual(expect.arrayContaining(['compensation.reward.approved','compensation.reward.rejected']));
  });
 	 it('imports existing browser-synced records once without deleting the source data',async()=>{
 	  const {tables}=setup();const authorization=`Bearer ${await session()}`;

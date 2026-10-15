@@ -2,7 +2,7 @@ import {useMemo} from 'react';
 import {Modal,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
-import {periodLabel} from './payrollRuns';
+import {runLabel} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {getCurrentUser} from '../auth/authService';
 
@@ -11,7 +11,7 @@ const COLORS={net:'#0e6b58',stat:'#2f4c8c',att:'#c27a12',co:'#7a5c9e'};
 
 export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:PayrollRun;employees:Employee[];previousRun?:PayrollRun;onClose:()=>void}){
   const user=getCurrentUser();
-  const period=periodLabel(run.from,run.to);
+  const period=runLabel(run);
   const rows=run.rows;
   const data=useMemo(()=>{
     const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
@@ -22,7 +22,7 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
       ['Holiday pay',sum(rows,r=>numberValue(r.input.holidayPay))],
       ['Service incentive leave conversion',sum(rows,r=>numberValue(r.input.slConversion))],
       ['Allowances',sum(rows,r=>r.result.allowances??0)],
-      ['Bonuses / other earnings',sum(rows,r=>numberValue(r.input.otherEarnings))],
+      ['Incentives & bonuses',sum(rows,r=>numberValue(r.input.otherEarnings)+numberValue(r.input.bonusesNonTaxable))],
       ['13th-month and other benefits',sum(rows,r=>numberValue(r.input.thirteenthMonthAndOtherBenefits))],
       ['Eligible tax-exempt benefits',sum(rows,r=>numberValue(r.input.taxExemptBenefits))],
     ];

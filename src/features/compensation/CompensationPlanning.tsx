@@ -7,17 +7,13 @@ import {
   Plus,
   RefreshCw,
   Trash2,
-  Search,
-  WalletCards,
   XCircle,
 } from 'lucide-react';
 import {
   Button,
   Card,
-  Empty,
   ErrorAlert,
   Field,
-  LoadingState,
   Modal,
   PageHeader,
   Tabs,
@@ -34,10 +30,12 @@ import {loadRates} from '../settings/payrollSettings';
 import {useSearchParams} from 'react-router-dom';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {compensationService} from './compensationService';
+import {AllowancesPanel,IncentivesPanel} from './RewardPanels';
+import {ThirteenthMonthPanel} from './ThirteenthMonthPanel';
+import {ConfirmDialog,InlineError,SearchToolbar,SectionHeading,StatusBadge,TableMessage,actionCell,actionLabel,formatDate,headerClass,matches,rowClass,tableClass,wholePeso} from './compensationUi';
 import {
   activeCompensations,
   adjustmentTypes,
-  allowanceTypes,
   compensationEmployeeLabel,
   compensationEntryAction,
   dailyFromSalary,
@@ -57,22 +55,12 @@ import type {
 type Section='salary-structure'|'adjustments'|'history';
 const structureTabs=[{id:'grades',label:'Salary Grades'},{id:'assignments',label:'Salary Assignments'}] as const;
 type StructureTab=(typeof structureTabs)[number]['id'];
+const adjustmentTabs=[{id:'salary',label:'Salary Adjustments'},{id:'allowances',label:'Allowances'},{id:'incentives',label:'Incentives & Bonuses'},{id:'thirteenth-month',label:'13th Month Rules'}] as const;
+type AdjustmentsTab=(typeof adjustmentTabs)[number]['id'];
 type Details={title:string;fields:Array<[string,string]>};
-type ModalName='grade'|'employee'|'proposal'|'bonus'|null;
+type ModalName='grade'|'employee'|'proposal'|null;
 
 const GRADE_IN_USE='This grade is in use and cannot be deleted.';
-const actionCell='sticky right-0 z-10 bg-white px-4 py-3 shadow-[-1px_0_0_#e3e7ef]';
-const wholePeso=(value:number)=>'₱'+Math.round(value).toLocaleString('en-PH');
-const actionLabel='max-sm:sr-only';
-const tableClass='w-full text-left text-[13px]';
-const rowClass='border-b border-[#eef1f6] last:border-0';
-const headerClass='border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]';
-const statusClass=(status:string)=>`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${['Applied','Approved','Effective','Active'].includes(status)?'bg-emerald-50 text-emerald-700':status==='Rejected'||status==='Inactive'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`;
-const matches=(query:string,...values:unknown[])=>{
-  const needle=query.trim().toLowerCase();
-  return !needle||values.some(value=>String(value??'').toLowerCase().includes(needle));
-};
-
 export default function CompensationPlanning({section}:{section:Section}){
   const legacyEmployees=useMemo(()=>read<Employee[]>('employees:records',[]),[]);
   const [employees,setEmployees]=useState<Employee[]>(()=>mergeCompensationEmployees(legacyEmployees,[]));
@@ -96,11 +84,11 @@ export default function CompensationPlanning({section}:{section:Section}){
   const [approvingProposal,setApprovingProposal]=useState<CompensationProposal|null>(null);
   const [rejectingProposal,setRejectingProposal]=useState<CompensationProposal|null>(null);
   const [rejectionReason,setRejectionReason]=useState('');
-  const [approvingBonus,setApprovingBonus]=useState<BonusIncentive|null>(null);
   const [details,setDetails]=useState<Details|null>(null);
-  const [rewardTab,setRewardTab]=useState<'changes'|'rewards'|'allowance'>('changes');
   const [date,setDate]=useState(today);
   const [params,setParams]=useSearchParams();
+  const adjustmentsTab:AdjustmentsTab=adjustmentTabs.find(tab=>tab.id===params.get('tab'))?.id??'salary';
+  const setAdjustmentsTab=(tab:AdjustmentsTab)=>setParams(tab==='salary'?{}:{tab},{replace:true});
   const structureTab:StructureTab=params.get('tab')==='assignments'?'assignments':'grades';
   const setStructureTab=(tab:StructureTab)=>setParams(tab==='grades'?{}:{tab},{replace:true});
   const role=getCurrentUser()?.role;
@@ -170,11 +158,10 @@ export default function CompensationPlanning({section}:{section:Section}){
     setDeletingGrade(null);
     setApprovingProposal(null);
     setRejectingProposal(null);
-    setApprovingBonus(null);
     setDetails(null);
     setError('');
     setSearch('');
-  },[section,structureTab]);
+  },[section,structureTab,adjustmentsTab]);
   useEffect(()=>{
     if(!success)return;
     const timeout=window.setTimeout(()=>setSuccess(''),4000);
@@ -195,11 +182,6 @@ export default function CompensationPlanning({section}:{section:Section}){
     return matches(search,employee?.name,employee?.employeeNo,employee?.department,item.position,item.salaryCode,item.effectiveDate);
   });
   const filteredProposals=proposals.filter(item=>matches(search,employeeLabelFor(item.employeeId),item.type,item.status,item.effectiveDate,item.notes,item.rejectionReason));
-  const filteredBonuses=bonuses.filter(item=>matches(search,employeeLabelFor(item.employeeId),item.type,item.status,item.effectiveDate,item.notes));
-  const filteredIncentives=filteredBonuses.filter(item=>item.type==='Bonus'||item.type==='Incentive');
- const filteredAllowances=filteredBonuses.filter(item=>item.type!=='Bonus'&&item.type!=='Incentive');
-  const visibleRewardRows=rewardTab==='rewards'?filteredIncentives:filteredAllowances;
-const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type==='Bonus'||item.type==='Incentive').length:bonuses.filter(item=>item.type!=='Bonus'&&item.type!=='Incentive').length;
   const filteredHistory=history.filter(item=>matches(search,employeeLabelFor(item.employeeId),item.type,item.source,item.status,item.effectiveDate,item.actorName,item.reason));
   const missingReferences=[...new Set([...assignments,...proposals,...bonuses,...history].map(item=>item.employeeId))]
     .filter(reference=>!findCompensationEmployee(employees,reference));
@@ -304,24 +286,6 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
       setSuccess('Proposal rejected and decision recorded.');
     });
   };
-  const saveBonus=(bonus:BonusIncentive)=>runMutation(async()=>{
-    await compensationService.createReward(bonus);
-    recordAudit({action:'Created bonus plan',module:'Compensation Planning',description:`Created a ${bonus.type} plan for ${employeeLabelFor(bonus.employeeId)}.`});
-    await loadCompensation();
-    setModal(null);
-    setSuccess(`${bonus.type} plan saved.`);
-  });
-  const confirmBonusApproval=()=>{
-    if(!approvingBonus)return;
-    const bonus=approvingBonus;
-    void runMutation(async()=>{
-      await compensationService.approveReward(bonus.id);
-      recordAudit({action:'Approved bonus plan',module:'Compensation Planning',description:`Approved a ${bonus.type} plan for ${employeeLabelFor(bonus.employeeId)}.`});
-      await loadCompensation();
-      setApprovingBonus(null);
-      setSuccess(`${bonus.type} approved.`);
-    });
-  };
   const gradeForPosition=(position:string)=>activeGrades.find(grade=>grade.position.trim().toLowerCase()===position.trim().toLowerCase());
   const showAssignment=(assignment:EmployeeCompensation)=>{
     const employee=findCompensationEmployee(employees,assignment.employeeId);
@@ -409,57 +373,31 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
       </tbody></table></div></Card>
     </section>}
     {section==='adjustments'&&<section id="adjustments-panel" aria-labelledby="adjustments-heading">
-      <SectionHeading id="adjustments-heading" title="Adjustments" description="Review salary changes and monetary rewards. Approval is recorded on the server; future salaries remain scheduled until their effective date."/>
-      <Tabs label="Compensation adjustments" value={rewardTab} onChange={setRewardTab} tabs={[{id:'changes',label:'Salary Changes'},{id:'rewards',label:'Bonuses & Incentive'},{id:'allowance',label:'Allowance'}]}/>
-      <SearchToolbar label={rewardTab==='changes'?'Search salary proposals':rewardTab==='rewards'?'Search bonuses and incentives':'Search allowances and adjustments'} value={search} onChange={setSearch} shown={rewardTab==='changes'?filteredProposals.length:visibleRewardRows.length} total={rewardTab==='changes'?proposals.length:visibleRewardTotal} placeholder={rewardTab==='changes'?'Search employee, type, status or notes':'Search employee, type, status or notes'}/>
-      {rewardTab==='changes'?<div role="tabpanel" aria-label="Salary Changes" className="mt-3">
+      <SectionHeading id="adjustments-heading" title="Adjustments"/>
+      <Tabs label="Adjustments sections" value={adjustmentsTab} onChange={setAdjustmentsTab} tabs={adjustmentTabs}/>
+      {adjustmentsTab==='salary'?<div role="tabpanel" aria-label="Salary Adjustments">
+      <SearchToolbar label="Search salary proposals" value={search} onChange={setSearch} shown={filteredProposals.length} total={proposals.length} placeholder="Search employee, type, status or notes"/>
+      <div className="mt-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-blue-700"><ClipboardCheck size={18}/></span><div><div className="text-[13px] font-semibold text-slate-800">Review queue</div><div className="text-[11px] text-slate-500">{pendingProposals.length} proposal{pendingProposals.length===1?'':'s'} need a decision</div></div></div><Button disabled={proposalBlocked||compensationLoading||saving} onClick={()=>openProposal()}><Plus size={15}/>New proposal</Button></div>
         <Card className="overflow-hidden !p-0"><div className="overflow-x-auto"><table className={`${tableClass} min-w-[1080px]`}><thead><tr className={headerClass}>{['Employee','Change type','Current','Proposed','Effective date','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
           {compensationLoading?<TableMessage colSpan={7} loading>Loading salary proposals…</TableMessage>:loadError?<TableMessage colSpan={7}>Salary proposals could not be loaded.</TableMessage>:!filteredProposals.length?<TableMessage colSpan={7}>{proposals.length?'No proposals match this search.':'No salary proposals yet. Create one after the employee has a current compensation assignment.'}</TableMessage>:filteredProposals.map(proposal=>{const status=proposalStatus(proposal);return <tr key={proposal.id} className={rowClass}><td className="px-4 py-3.5"><div className="font-semibold text-slate-800">{employeeLabelFor(proposal.employeeId)}</div><div className="mt-0.5 text-[11px] text-slate-400">{proposal.employeeId}</div></td><td className="px-4 py-3.5">{proposal.type}</td><td className="px-4 py-3.5">{peso(proposal.previousSalary)}</td><td className="px-4 py-3.5 font-semibold">{peso(proposal.newSalary)}<div className={`mt-0.5 text-[11px] font-medium ${proposal.newSalary>=proposal.previousSalary?'text-emerald-700':'text-red-700'}`}>{proposal.newSalary>=proposal.previousSalary?'+':''}{peso(proposal.newSalary-proposal.previousSalary)}</div></td><td className="px-4 py-3.5">{formatDate(proposal.effectiveDate)}</td><td className="px-4 py-3.5"><StatusBadge status={status}/></td><td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={()=>setDetails({title:'Compensation Proposal',fields:[['Employee',employeeLabelFor(proposal.employeeId)],['Employee reference',proposal.employeeId],['Change type',proposal.type],['Current salary',peso(proposal.previousSalary)],['Proposed salary',peso(proposal.newSalary)],['Change',`${proposal.newSalary>=proposal.previousSalary?'+':''}${peso(proposal.newSalary-proposal.previousSalary)}`],['Effective date',formatDate(proposal.effectiveDate)],['Status',status],['Submitted',formatDate(proposal.createdAt)],['Notes',proposal.notes||'Not recorded'],['Rejection reason',proposal.rejectionReason||'Not applicable'],['Reviewed by',proposal.reviewedBy||'Not recorded']]})}><Eye size={14}/>Details</button>{proposal.status==='Pending HR Review'&&<><Button disabled={!findCompensationEmployee(employees,proposal.employeeId)||employeeLoading||compensationLoading||saving} onClick={()=>setApprovingProposal(proposal)}><CheckCircle2 size={14}/>Approve</Button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} disabled={saving||compensationLoading} onClick={()=>{setError('');setRejectionReason('');setRejectingProposal(proposal)}}><XCircle size={14}/>Reject</button></>}</div></td></tr>})}
         </tbody></table></div></Card>
         <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Approval records the decision and an effective-dated salary row. The employee’s active salary remains unchanged until the effective date.</p>
-      </div>:<div role="tabpanel" aria-label={rewardTab==='rewards'?'Bonuses and Incentive':'Allowance'} className="mt-3">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-emerald-700"><WalletCards size={18}/></span><div><div className="text-[13px] font-semibold text-slate-800">{rewardTab==='rewards'?'Bonuses & Incentive':'Allowance'}</div><div className="text-[11px] text-slate-500">{bonuses.filter(item=>item.status==='Planned'&&(rewardTab==='rewards'?(item.type==='Bonus'||item.type==='Incentive'):(item.type!=='Bonus'&&item.type!=='Incentive'))).length} awaiting approval</div></div></div><Button disabled={!employeeReady||compensationLoading||saving} onClick={()=>{setError('');setModal('bonus')}}><Plus size={15}/>{rewardTab==='rewards'?'Add bonus or incentive':'Add allowance'}</Button></div>
-        <Card className="overflow-hidden !p-0"><div className="overflow-x-auto"><table className={`${tableClass} min-w-[1060px]`}><thead><tr className={headerClass}>{['Employee','Current salary',rewardTab==='rewards'?'Bonus / incentive':'Allowance / adjustment','Type','Effective date','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
-          {compensationLoading?<TableMessage colSpan={7} loading>Loading reward plans…</TableMessage>:loadError?<TableMessage colSpan={7}>Reward plans could not be loaded.</TableMessage>:!visibleRewardRows.length?<TableMessage colSpan={7}>{visibleRewardTotal?'No entries match this search.':rewardTab==='rewards'?'No bonuses or incentives planned yet.':'No allowances or adjustments planned yet.'}</TableMessage>:visibleRewardRows.map(bonus=>{const current=activeAssignments.find(item=>item.employeeId===bonus.employeeId);return <tr key={bonus.id} className={rowClass}><td className="px-4 py-3.5"><div className="font-semibold text-slate-800">{employeeLabelFor(bonus.employeeId)}</div><div className="mt-0.5 text-[11px] text-slate-400">{bonus.employeeId}</div></td><td className="px-4 py-3.5">{current?peso(current.fixedSalary):'Not recorded'}</td><td className="px-4 py-3.5 font-semibold">{peso(bonus.amount)}</td><td className="px-4 py-3.5">{bonus.type}</td><td className="px-4 py-3.5">{formatDate(bonus.effectiveDate)}</td><td className="px-4 py-3.5"><StatusBadge status={bonus.status}/></td><td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={()=>setDetails({title:bonus.type,fields:[['Employee',employeeLabelFor(bonus.employeeId)],['Employee reference',bonus.employeeId],['Current salary',current?peso(current.fixedSalary):'Not recorded'],['Reward amount',peso(bonus.amount)],['Type',bonus.type],['Effective date',formatDate(bonus.effectiveDate)],['Status',bonus.status],['Notes',bonus.notes||'Not recorded']]})}><Eye size={14}/>Details</button>{bonus.status==='Planned'&&<Button disabled={!findCompensationEmployee(employees,bonus.employeeId)||employeeLoading||compensationLoading||saving} onClick={()=>setApprovingBonus(bonus)}><CheckCircle2 size={14}/>Approve</Button>}</div></td></tr>})}
-        </tbody></table></div></Card>
-        <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Approval is recorded in Compensation Planning. Any payroll calculation or payment must still be handled through the payroll workflow.</p>
-      </div>}
+      </div></div>
+      :adjustmentsTab==='allowances'?<AllowancesPanel employees={employees} rewards={bonuses} loading={compensationLoading} loadError={loadError} canManage={canManageGrades} employeeLabelFor={employeeLabelFor} onChanged={loadCompensation} onSuccess={setSuccess}/>
+      :adjustmentsTab==='incentives'?<IncentivesPanel employees={employees} rewards={bonuses} loading={compensationLoading} loadError={loadError} canManage={canManageGrades} employeeLabelFor={employeeLabelFor} onChanged={loadCompensation} onSuccess={setSuccess}/>
+      :<ThirteenthMonthPanel positions={gradePositionOptions} canManage={canManageGrades} onSuccess={setSuccess}/>}
     </section>}
-
     {modal==='grade'&&<SalaryGradeModal positions={gradePositionOptions} rateOf={rateOf} onClose={()=>{if(!saving)setModal(null)}} onSave={saveGrade} error={error} saving={saving}/>}
     {modal==='employee'&&<EmployeeCompensationModal employees={unassignedEmployees} grades={activeGrades} date={date} onClose={()=>{if(!saving)setModal(null)}} onSave={saveAssignment} error={error} saving={saving}/>}
     {modal==='proposal'&&<ProposalModal employees={employees} assignments={activeAssignments} grades={activeGrades} rateOf={rateOf} initialEmployeeId={proposalEmployeeId} onClose={()=>{if(!saving)setModal(null)}} onSave={saveProposal} error={error} saving={saving}/>}
-    {modal==='bonus'&&<BonusModal defaultType={rewardTab==='rewards'?'Bonus':'Allowance'} employees={employees} onClose={()=>{if(!saving)setModal(null)}} onSave={saveBonus} error={error} saving={saving}/>}
     {details&&<Modal title={details.title} wide onClose={()=>setDetails(null)}><dl className="grid gap-3 text-[13px]">{details.fields.map(([label,value])=><div key={label} className="grid gap-1 border-b border-slate-100 pb-2 last:border-0 sm:grid-cols-[160px_1fr]"><dt className="text-slate-500">{label}</dt><dd className="m-0 break-all font-medium text-slate-800">{value}</dd></div>)}</dl></Modal>}
     {editingGrade&&!confirmingEdit&&<SalaryGradeModal key={editingGrade.id} grade={editingGrade} draft={pendingGradeEdit} positions={gradePositionOptions} rateOf={rateOf} onClose={()=>{if(!saving){setEditingGrade(null);setPendingGradeEdit(null)}}} onSave={values=>{setError('');setPendingGradeEdit({grade:editingGrade,position:values.position,fixedSalary:values.fixedSalary});setConfirmingEdit(true)}} error={error} saving={saving}/>}
     {editingGrade&&confirmingEdit&&pendingGradeEdit&&<ConfirmDialog title="Save changes?" message={`Apply the changes to salary grade ${editingGrade.code}?`} confirmLabel="Confirm" saving={saving} onCancel={()=>setConfirmingEdit(false)} onConfirm={confirmGradeEdit}/>}
     {deletingGrade&&<ConfirmDialog title="Delete salary grade?" message={deleteError||`Delete salary grade ${deletingGrade.code} permanently?`} confirmLabel="Delete" danger blocked={Boolean(deleteError)} saving={saving} onCancel={()=>{if(!saving)setDeletingGrade(null)}} onConfirm={confirmGradeDelete}/>}
     {approvingProposal&&<Modal title="Approve salary proposal?" onClose={()=>{if(!saving)setApprovingProposal(null)}}><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><div className="text-[13px] font-semibold text-slate-800">{employeeLabelFor(approvingProposal.employeeId)}</div><div className="mt-2 flex items-center justify-between gap-3 text-[13px]"><span>{peso(approvingProposal.previousSalary)}</span><span aria-hidden="true" className="text-slate-400">→</span><strong>{peso(approvingProposal.newSalary)}</strong></div><div className="mt-2 text-[11px] text-slate-500">Effective {formatDate(approvingProposal.effectiveDate)}</div></div><p className="mt-4 text-[12px] leading-relaxed text-slate-600">This records your approval. If the effective date is in the future, the current salary stays in effect until that date.</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setApprovingProposal(null)}>Cancel</button><Button disabled={saving} onClick={confirmProposalApproval}>{saving?'Saving…':'Confirm approval'}</Button></div></Modal>}
     {rejectingProposal&&<Modal title="Reject salary proposal" onClose={()=>{if(!saving){setRejectingProposal(null);setRejectionReason('')}}}><div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px]"><div className="font-semibold text-slate-800">{employeeLabelFor(rejectingProposal.employeeId)}</div><div className="mt-1 text-slate-600">{peso(rejectingProposal.previousSalary)} <span className="px-1 text-slate-400">→</span> {peso(rejectingProposal.newSalary)} · effective {formatDate(rejectingProposal.effectiveDate)}</div></div><Field label="Reason for rejection"><textarea className={`${input} min-h-24 resize-y`} maxLength={500} value={rejectionReason} onChange={event=>{setRejectionReason(event.target.value);setError('')}} placeholder="Explain why this proposal is being rejected." aria-label="Reason for rejection"/></Field><div className="mt-1 text-right text-[11px] text-slate-400">{rejectionReason.length}/500</div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>{setRejectingProposal(null);setRejectionReason('');setError('')}}>Cancel</button><button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving||!rejectionReason.trim()} onClick={confirmProposalRejection}>{saving?'Saving…':'Confirm rejection'}</button></div></Modal>}
-    {approvingBonus&&<Modal title={`Approve ${approvingBonus.type.toLowerCase()}?`} onClose={()=>{if(!saving)setApprovingBonus(null)}}><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><div className="text-[13px] font-semibold text-slate-800">{employeeLabelFor(approvingBonus.employeeId)}</div><div className="mt-2 text-[20px] font-semibold text-slate-900">{peso(approvingBonus.amount)}</div><div className="mt-1 text-[11px] text-slate-500">{approvingBonus.type} · effective {formatDate(approvingBonus.effectiveDate)}</div></div><p className="mt-4 text-[12px] leading-relaxed text-slate-600">Approval will be recorded in compensation planning. Payroll handling remains in the payroll workflow.</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setApprovingBonus(null)}>Cancel</button><Button disabled={saving} onClick={confirmBonusApproval}>{saving?'Saving…':'Confirm approval'}</Button></div></Modal>}
   </div>;
-}
-
-function SectionHeading({id,title,description,action}:{id:string;title:string;description?:string;action?:React.ReactNode}){
-  return <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><h2 id={id} className="m-0 text-[17px] font-semibold tracking-tight text-slate-900">{title}</h2>{description&&<p className="mb-0 mt-1 max-w-3xl text-[12px] leading-relaxed text-slate-500">{description}</p>}</div>{action}</div>;
-}
-
-function SearchToolbar({label,value,onChange,shown,total,placeholder}:{label:string;value:string;onChange:(value:string)=>void;shown:number;total:number;placeholder:string}){
-  return <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="relative w-full max-w-xl"><Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><TextInput aria-label={label} value={value} onChange={event=>onChange(event.target.value)} placeholder={placeholder} className="pl-9"/></div><span className="text-[11px] font-medium text-slate-500">Showing <b className="text-slate-700">{shown}</b> of {total}</span></div>;
-}
-
-function StatusBadge({status}:{status:string}){return <span className={statusClass(status)}>{status}</span>}
-function TableMessage({colSpan,children,loading=false}:{colSpan:number;children:React.ReactNode;loading?:boolean}){return <tr><td colSpan={colSpan}>{loading?<LoadingState>{children}</LoadingState>:<Empty>{children}</Empty>}</td></tr>}
-function InlineError({error}:{error:string}){return error?<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>:null}
-function formatDate(value:string){
-  if(!value)return 'Not recorded';
-  const parsed=new Date(`${value.slice(0,10)}T00:00:00`);
-  return Number.isNaN(parsed.getTime())?value:parsed.toLocaleDateString('en-PH',{day:'numeric',month:'short',year:'numeric'});
-}
-
-function ConfirmDialog({title,message,confirmLabel,danger=false,blocked=false,saving,onCancel,onConfirm}:{title:string;message:string;confirmLabel:string;danger?:boolean;blocked?:boolean;saving:boolean;onCancel:()=>void;onConfirm:()=>void}){
-  return <Modal title={title} onClose={onCancel}><p role={blocked?'alert':undefined} className={`m-0 text-[13px] leading-relaxed ${blocked?'text-red-700':'text-slate-600'}`}>{message}</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onCancel}>Cancel</button>{danger?<button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving||blocked} onClick={onConfirm}>{saving?'Deleting…':confirmLabel}</button>:<Button disabled={saving||blocked} onClick={onConfirm}>{saving?'Saving…':confirmLabel}</Button>}</div></Modal>;
 }
 
 function SalaryGradeModal({grade,draft,positions,rateOf,onClose,onSave,error,saving}:{grade?:SalaryGrade;draft?:{position:string;fixedSalary:number}|null;positions:string[];rateOf:(salary:number)=>number;onClose:()=>void;onSave:(grade:Pick<SalaryGrade,'position'|'fixedSalary'|'status'>)=>void;error:string;saving:boolean}){
@@ -498,10 +436,3 @@ function ProposalModal({employees,assignments,grades,rateOf,initialEmployeeId,on
   return <Modal title="Create compensation proposal" wide onClose={onClose}><div className="grid gap-4"><p className="-mt-2 rounded-xl bg-blue-50 p-3 text-[12px] leading-relaxed text-blue-900">Submitting creates a review request; it does not change the employee’s active salary.</p><div className="grid gap-4 sm:grid-cols-2"><Field label="Employee"><select className={input} value={form.employeeId} onChange={event=>setForm({...form,employeeId:event.target.value})}><option value="">Select employee</option>{employees.filter(employee=>assignments.some(item=>findCompensationEmployee(employees,item.employeeId)?.id===employee.id)).map(employee=><option key={employee.id} value={employee.id}>{employee.name} · {employee.employeeNo}</option>)}</select></Field><Field label="Change type"><select className={input} value={form.type} onChange={event=>setForm({...form,type:event.target.value as CompensationProposal['type']})}>{adjustmentTypes.map(type=><option key={type}>{type}</option>)}</select></Field></div><Field label="Current monthly salary"><TextInput value={current?`${peso(current.fixedSalary)}${current.salaryCode?` · ${current.salaryCode}`:''}`:'Select an employee'} readOnly/></Field><Field label="Salary grade"><select className={input} value={form.salaryCode} onChange={event=>setForm({...form,salaryCode:event.target.value})}><option value="">Select salary grade</option>{grades.map(item=><option key={item.id} value={item.code}>{item.code} · {item.position||'General'} · {peso(item.fixedSalary)}</option>)}</select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Proposed monthly salary"><TextInput value={grade?peso(newSalary):''} readOnly/></Field><Field label="Proposed daily rate"><TextInput value={grade?wholePeso(rateOf(newSalary)):''} readOnly/></Field></div>{current&&grade&&!unchanged&&<div className={`rounded-xl p-3 text-[12px] ${difference>=0?'bg-emerald-50 text-emerald-800':'bg-amber-50 text-amber-800'}`}><b>Change preview:</b> {difference>=0?'+':''}{peso(difference)} per month ({difference>=0?'+':''}{((difference/current.fixedSalary)*100).toFixed(1)}%)</div>}<Field label="Effective date"><TextInput type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></Field><Field label="Business reason / notes"><textarea className={`${input} min-h-24 resize-y`} maxLength={1000} value={form.notes} onChange={event=>setForm({...form,notes:event.target.value})} placeholder="Add context for the reviewer." aria-label="Business reason or notes"/></Field></div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!current||!grade||unchanged||!form.effectiveDate} onClick={()=>current&&grade&&onSave({id:crypto.randomUUID(),employeeId:current.employeeId,type:form.type,salaryCode:grade.code,previousSalary:current.fixedSalary,newSalary,adjustmentAmount:difference,effectiveDate:form.effectiveDate,notes:form.notes,status:'Pending HR Review',createdAt:new Date().toISOString()})}>{saving?'Submitting…':'Submit for review'}</Button></div></Modal>;
 }
 
-function BonusModal({defaultType,employees,onClose,onSave,error,saving}:{defaultType:'Bonus'|'Allowance';employees:Employee[];onClose:()=>void;onSave:(bonus:BonusIncentive)=>void;error:string;saving:boolean}){
-  const [form,setForm]=useState({employeeId:'',type:defaultType==='Bonus'?'Bonus':'',amount:'',effectiveDate:today(),notes:''});
-  const amount=numberValue(form.amount);
-  return <Modal title={defaultType==='Bonus'?'Add bonus or incentive':'Add allowance'} onClose={onClose}><div className="grid gap-4"><p className="-mt-2 text-[12px] leading-relaxed text-slate-500">{defaultType==='Bonus'?'Create a planned bonus or incentive.':'Create a planned allowance.'} Approval is recorded separately and does not itself issue payment.</p><Field label="Employee"><select className={input} value={form.employeeId} onChange={event=>setForm({...form,employeeId:event.target.value})}><option value="">Select employee</option>{employees.map(employee=><option key={employee.id} value={employee.id}>{employee.name} · {employee.employeeNo}</option>)}</select></Field>{defaultType==='Bonus'
-  ?<Field label="Reward type"><select className={input} value={form.type} onChange={event=>setForm({...form,type:event.target.value})}><option>Bonus</option><option>Incentive</option></select></Field>
-  :<Field label="Allowance type"><TextInput list="allowance-type-options" value={form.type} onChange={event=>setForm({...form,type:event.target.value})} placeholder="Type or select (e.g. Transportation)"/><datalist id="allowance-type-options">{allowanceTypes.map(t=><option key={t} value={t}/>)}</datalist></Field>}<Field label="Amount"><TextInput type="number" min="0.01" step="0.01" value={form.amount} onChange={event=>setForm({...form,amount:event.target.value})} placeholder="0.00"/></Field><Field label="Effective date"><TextInput type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></Field><Field label="Details / notes"><textarea className={`${input} min-h-20 resize-y`} maxLength={500} value={form.notes} onChange={event=>setForm({...form,notes:event.target.value})} placeholder="Optional context" aria-label="Reward details or notes"/></Field></div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!form.employeeId||!form.type.trim()||amount<=0||!form.effectiveDate} onClick={()=>onSave({id:crypto.randomUUID(),employeeId:form.employeeId,type:form.type.trim(),amount,effectiveDate:form.effectiveDate,notes:form.notes,status:'Planned',createdAt:new Date().toISOString()})}>{saving?'Saving…':defaultType==='Bonus'?'Save bonus or incentive':'Save allowance'}</Button></div></Modal>;
-}
