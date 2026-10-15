@@ -20,5 +20,5 @@ export const employeeService={
  getAllFromServer:serverEmployees,
  create:async(e:Employee)=>{try{const r=await apiClient.post<ReturnType<typeof toServer>,Envelope<ServerEmployee>>(employeePath(),toServer(e));const employee=fromServer(r.data);saveLocalEmployees([...localEmployees().filter(item=>item.id!==employee.id),employee]);return employee}catch(cause){if(!isNetworkFailure(cause))throw cause;saveLocalEmployees([...localEmployees().filter(item=>item.id!==e.id),e]);return e}},
  update:async(e:Employee)=>{try{const r=await apiClient.put<ReturnType<typeof toServer>,Envelope<{id:string}>>(`${employeePath()}/${e.id}`,toServer(e));const updated={...e,id:r.data.id};saveLocalEmployees([...localEmployees().filter(item=>item.id!==e.id),updated]);return updated}catch(cause){if(!isNetworkFailure(cause))throw cause;saveLocalEmployees([...localEmployees().filter(item=>item.id!==e.id),e]);return e}},
- remove:async(id:string)=>{try{await apiClient.post(employeePath(),{action:'delete',id})}catch(cause){if(!isNetworkFailure(cause))throw cause}saveLocalEmployees(localEmployees().filter(item=>item.id!==id))}
+ remove:async(id:string)=>{try{await apiClient.delete(`${employeePath()}/${id}`)}catch(cause){if(!isNetworkFailure(cause))throw cause}saveLocalEmployees(localEmployees().filter(item=>item.id!==id))}
 };
