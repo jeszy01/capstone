@@ -42,6 +42,10 @@ function setup(withCurrentAssignment=false){
    const matched=rows.filter(row=>Object.entries(args.pk??{}).every(([key,expected])=>String(row[key])===String(expected)));
    for(const row of matched)Object.assign(row,args.values);
    value={row:{count:matched.length}};
+  }else if(name==='delete_rows'){
+   const before=rows.length;
+   tables[args.table]=rows.filter(row=>!Object.entries(args.pk??{}).every(([key,expected])=>String(row[key])===String(expected)));
+   value={row:{count:before-tables[args.table].length}};
   }else throw new Error(`Unexpected MCP action: ${name}`);
   return new Response(JSON.stringify({result:{content:[{text:JSON.stringify(value)}]}}),{status:200});
  });
@@ -150,7 +154,7 @@ describe('Backend-authoritative compensation workflow',()=>{
   expect((await repeated.json() as {data:{alreadyImported:boolean}}).data.alreadyImported).toBe(true);
 	  expect(tables.employee_compensation).toHaveLength(1);
 	 });
-	 it('allocates the next server code and deactivates the saved grade by stable ID',async()=>{
+	 it('allocates the next server code and edits the saved grade by stable ID',async()=>{
 	  const {fetch,tables}=setup();const authorization=`Bearer ${await session()}`;
 	  tables.salary_grades.push({id:'grade-legacy',grade:'SG-001',position:'HR Officer',monthly_salary:50000,status:'Active'});
 	  tables.compensation_legacy_imports.push({id:'browser-compensation-v1',counts:{grades:2}});
@@ -161,8 +165,29 @@ describe('Backend-authoritative compensation workflow',()=>{
 	  expect(saved).toMatchObject({grade:'SG-002',position:'Project Manager'});
 	  const insertRequest=fetch.mock.calls.map(([,options])=>JSON.parse(String(options.body)) as {params:{name:string;arguments:{table?:string;values?:Record<string,unknown>}}}).find(request=>request.params.name==='insert_row'&&request.params.arguments.table==='salary_grades');
 	  expect(insertRequest?.params.arguments.values).toMatchObject({grade:'',position:'Project Manager'});
-	  const deactivated=await call({action:'deactivate_grade',id:saved.id},authorization);
-	  expect(deactivated.status).toBe(200);
-	  expect(tables.salary_grades.find(row=>row.id===saved.id)?.status).toBe('Inactive');
+	  const edited=await call({action:'update_grade',id:saved.id,position:'Senior Project Manager',basic_salary:77000},authorization);
+	  expect(edited.status).toBe(200);
+	  expect(tables.salary_grades.find(row=>row.id===saved.id)).toMatchObject({grade:'SG-002',position:'Senior Project Manager',monthly_salary:77000,daily_rate:3500,status:'Active'});
+	  expect(tables.audit_logs.some(row=>row.action==='compensation.grade.updated')).toBe(true);
+	 });
+	 it('edits a grade without changing the pay of employees assigned to it',async()=>{
+	  const {tables}=setup(true);const authorization=`Bearer ${await session()}`;
+	  const gradeId='5d1c2b3a-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+	  tables.salary_grades.push({id:gradeId,grade:'SAL-001',position:'Developer',monthly_salary:50000,status:'Active'});
+	  expect((await call({action:'update_grade',id:gradeId,position:'Developer',basic_salary:58000},authorization)).status).toBe(200);
+	  expect(tables.employee_compensation[0]).toMatchObject({basic_salary:50000,daily_rate:2272.73});
+	  expect(tables.employees[0].basic_salary).toBe(50000);
+	 });
+	 it('blocks deleting a grade that is in use and deletes an unused grade permanently',async()=>{
+	  const {tables}=setup(true);const authorization=`Bearer ${await session()}`;
+	  const usedId='5d1c2b3a-4e5f-4a6b-8c7d-9e0f1a2b3c4d',unusedId='6e2d3c4b-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
+	  tables.salary_grades.push({id:usedId,grade:'SAL-001',position:'Developer',monthly_salary:50000,status:'Active'},{id:unusedId,grade:'SG-009',position:'Designer',monthly_salary:40000,status:'Active'});
+	  const blocked=await call({action:'delete_grade',id:usedId},authorization);
+	  expect(blocked.status).toBe(409);
+	  expect(JSON.stringify(await blocked.json())).toContain('This grade is in use and cannot be deleted.');
+	  expect(tables.salary_grades).toHaveLength(2);
+	  expect((await call({action:'delete_grade',id:unusedId},authorization)).status).toBe(200);
+	  expect(tables.salary_grades.map(row=>row.id)).toEqual([usedId]);
+	  expect(tables.audit_logs.some(row=>row.action==='compensation.grade.deleted')).toBe(true);
 	 });
 });

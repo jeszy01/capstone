@@ -56,10 +56,12 @@ describe('compensationService',()=>{
 	 const refreshed=await compensationService.load();
 	 expect(refreshed.grades[0]).toMatchObject({id:'grade-2',code:'SG-002',position:'Project Manager',fixedSalary:72000});
 	});
-	it('sends deactivation using the stable salary-grade ID',async()=>{
-	 api.post.mockResolvedValue({data:{id:'grade-2',status:'Inactive'}});
-	 await compensationService.deactivateGrade('grade-2');
-	 expect(api.post).toHaveBeenCalledWith('/compensation',{action:'deactivate_grade',id:'grade-2'});
+	it('sends grade edits and deletes using the stable salary-grade ID',async()=>{
+	 api.post.mockResolvedValue({data:{id:'grade-2'}});
+	 await compensationService.updateGrade('grade-2',{position:'Project Manager',fixedSalary:75000});
+	 expect(api.post).toHaveBeenCalledWith('/compensation',{action:'update_grade',id:'grade-2',position:'Project Manager',basic_salary:75000});
+	 await compensationService.deleteGrade('grade-2');
+	 expect(api.post).toHaveBeenCalledWith('/compensation',{action:'delete_grade',id:'grade-2'});
 	});
 	it('surfaces normalized codes and skipped legacy rows instead of hiding them',async()=>{
 	 api.get.mockResolvedValue({data:{...emptyBundle,legacy_import_counts:{skipped:2,grade_codes_normalized:1}}});

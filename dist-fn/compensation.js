@@ -140,6 +140,7 @@ var ok = (data, meta = {}) => json({ data, meta });
 var listRows = (table, filter = {}) => mcp("select_rows", { table, filter, limit: 1e3 });
 var insertRow = (table, values) => mcp("insert_row", { table, values });
 var updateRows = (table, pk, values) => mcp("update_rows", { table, pk, values });
+var deleteRows = (table, pk) => mcp("delete_rows", { table, pk });
 
 // Eprovider/lib/audit.ts
 async function audit(action, actorId, entity, entityId, metadata = {}) {
@@ -234,13 +235,31 @@ async function createGrade(input, ctx) {
   await audit("compensation.grade.created", ctx.userId, "salary_grades", String(row.id ?? code));
   return row;
 }
-async function deactivateGrade(input, ctx) {
+async function findGrade(id) {
+  const grade = (await listRows("salary_grades", { id }))[0];
+  if (!grade) throw new HttpError(404, "SALARY_GRADE_NOT_FOUND", "Salary grade was not found.");
+  return grade;
+}
+async function updateGrade(input, ctx) {
   const id = uuid(input.id, "id");
-  const grades = await listRows("salary_grades", { id });
-  if (!grades[0]) throw new HttpError(404, "SALARY_GRADE_NOT_FOUND", "Salary grade was not found.");
-  await updateRows("salary_grades", { id }, { status: "Inactive", updated_at: (/* @__PURE__ */ new Date()).toISOString() });
-  await audit("compensation.grade.deactivated", ctx.userId, "salary_grades", id);
-  return { id, status: "Inactive" };
+  const grade = await findGrade(id);
+  const position = required(input.position, "position").trim();
+  const basicSalary = amount(input.basic_salary, "basic_salary");
+  const next = { position, monthly_salary: basicSalary, daily_rate: roundMoney(basicSalary / await monthlyWorkDays()), updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  await updateRows("salary_grades", { id }, next);
+  await audit("compensation.grade.updated", ctx.userId, "salary_grades", id, { previous: { position: grade.position, monthly_salary: Number(grade.monthly_salary) }, next: { position, monthly_salary: basicSalary } });
+  return { ...grade, ...next };
+}
+async function deleteGrade(input, ctx) {
+  const id = uuid(input.id, "id");
+  const grade = await findGrade(id);
+  const code = gradeCodeKey(String(grade.grade ?? ""));
+  const references = (row) => String(row.salary_grade_id ?? "") === id || code !== "" && gradeCodeKey(String(row.salary_code ?? "")) === code;
+  const [assignments, proposals, employees] = await Promise.all([listRows("employee_compensation"), listRows("compensation_proposals"), listRows("employees", { salary_grade_id: id })]);
+  if (employees.length || assignments.some(references) || proposals.some(references)) throw new HttpError(409, "SALARY_GRADE_IN_USE", "This grade is in use and cannot be deleted.");
+  await deleteRows("salary_grades", { id });
+  await audit("compensation.grade.deleted", ctx.userId, "salary_grades", id, { grade: grade.grade, position: grade.position, monthly_salary: Number(grade.monthly_salary) });
+  return { id, deleted: true };
 }
 async function createInitialAssignment(input, ctx) {
   const employeeId = uuid(input.employee_id, "employee_id");
@@ -523,7 +542,8 @@ var compensation_default = verifiedEdge(async (ctx) => {
   const input = await body(ctx.request);
   const action = required(input.action, "action");
   if (action === "create_grade") return ok(await createGrade(input, ctx));
-  if (action === "deactivate_grade") return ok(await deactivateGrade(input, ctx));
+  if (action === "update_grade") return ok(await updateGrade(input, ctx));
+  if (action === "delete_grade") return ok(await deleteGrade(input, ctx));
   if (action === "create_initial_assignment") return ok(await createInitialAssignment(input, ctx));
   if (action === "create_proposal") return ok(await createProposal(input, ctx));
   if (action === "review_proposal") return ok(await reviewProposal(input, ctx));

@@ -6,6 +6,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Trash2,
   Search,
   WalletCards,
   XCircle,
@@ -29,7 +30,7 @@ import {employeePositionOptions} from '../employees/positionOptions';
 import type {Employee,PayrollInput} from '../../types/domain';
 import {recordAudit} from '../audit/auditService';
 import {getCurrentUser} from '../auth/authService';
-import {loadRates,saveRates} from '../settings/payrollSettings';
+import {loadRates} from '../settings/payrollSettings';
 import {useSearchParams} from 'react-router-dom';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {compensationService} from './compensationService';
@@ -59,7 +60,10 @@ type StructureTab=(typeof structureTabs)[number]['id'];
 type Details={title:string;fields:Array<[string,string]>};
 type ModalName='grade'|'employee'|'proposal'|'bonus'|null;
 
+const GRADE_IN_USE='This grade is in use and cannot be deleted.';
 const actionCell='sticky right-0 z-10 bg-white px-4 py-3 shadow-[-1px_0_0_#e3e7ef]';
+const wholePeso=(value:number)=>'₱'+Math.round(value).toLocaleString('en-PH');
+const actionLabel='max-sm:sr-only';
 const tableClass='w-full text-left text-[13px]';
 const rowClass='border-b border-[#eef1f6] last:border-0';
 const headerClass='border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]';
@@ -89,7 +93,6 @@ export default function CompensationPlanning({section}:{section:Section}){
   const [bonuses,setBonuses]=useState<BonusIncentive[]>([]);
   const [modal,setModal]=useState<ModalName>(null);
   const [proposalEmployeeId,setProposalEmployeeId]=useState('');
-  const [confirmGrade,setConfirmGrade]=useState<SalaryGrade|null>(null);
   const [approvingProposal,setApprovingProposal]=useState<CompensationProposal|null>(null);
   const [rejectingProposal,setRejectingProposal]=useState<CompensationProposal|null>(null);
   const [rejectionReason,setRejectionReason]=useState('');
@@ -100,19 +103,22 @@ export default function CompensationPlanning({section}:{section:Section}){
   const [params,setParams]=useSearchParams();
   const structureTab:StructureTab=params.get('tab')==='assignments'?'assignments':'grades';
   const setStructureTab=(tab:StructureTab)=>setParams(tab==='grades'?{}:{tab},{replace:true});
-  const isAdmin=getCurrentUser()?.role==='Admin';
+  const role=getCurrentUser()?.role;
+  const canManageGrades=role==='Admin'||role==='HR Staff';
+  // Working days per month is managed in Payroll Settings; follow it when it changes.
   const [daysPerMonth,setDaysPerMonth]=useState(()=>loadRates().daysPerMonth);
-  const [daysDraft,setDaysDraft]=useState(()=>String(loadRates().daysPerMonth));
+  useEffect(()=>{
+    const sync=()=>setDaysPerMonth(loadRates().daysPerMonth);
+    window.addEventListener('storage',sync);
+    window.addEventListener('focus',sync);
+    return()=>{window.removeEventListener('storage',sync);window.removeEventListener('focus',sync)};
+  },[]);
   const rateOf=(salary:number)=>dailyFromSalary(salary,daysPerMonth);
-  const daysValue=Number(daysDraft);
-  const daysValid=daysDraft.trim()!==''&&Number.isFinite(daysValue)&&daysValue>=1&&daysValue<=31;
-  const saveDaysPerMonth=()=>{
-    if(!isAdmin||!daysValid||daysValue===daysPerMonth)return;
-    saveRates({...loadRates(),daysPerMonth:daysValue});
-    recordAudit({action:'Updated payroll settings',module:'Compensation Planning',description:`Changed working days per month from ${daysPerMonth} to ${daysValue}.`});
-    setDaysPerMonth(daysValue);
-    setSuccess('Working days per month saved.');
-  };
+  const [editingGrade,setEditingGrade]=useState<SalaryGrade|null>(null);
+  const [pendingGradeEdit,setPendingGradeEdit]=useState<{grade:SalaryGrade;position:string;fixedSalary:number}|null>(null);
+  const [confirmingEdit,setConfirmingEdit]=useState(false);
+  const [deletingGrade,setDeletingGrade]=useState<SalaryGrade|null>(null);
+  const [deleteError,setDeleteError]=useState('');
 
   const loadEmployees=useCallback(async()=>{
     setEmployeeLoading(true);
@@ -158,7 +164,10 @@ export default function CompensationPlanning({section}:{section:Section}){
   },[]);
   useEffect(()=>{
     setModal(null);
-    setConfirmGrade(null);
+    setEditingGrade(null);
+    setPendingGradeEdit(null);
+    setConfirmingEdit(false);
+    setDeletingGrade(null);
     setApprovingProposal(null);
     setRejectingProposal(null);
     setApprovingBonus(null);
@@ -219,15 +228,36 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
     setModal(null);
     setSuccess(`Salary grade ${created.grade} saved.`);
   });
-  const deactivateGrade=()=>{
-    if(!confirmGrade)return;
-    const grade=confirmGrade;
+  const openGradeEdit=(grade:SalaryGrade)=>{setError('');setPendingGradeEdit(null);setConfirmingEdit(false);setEditingGrade(grade)};
+  const confirmGradeEdit=()=>{
+    if(!pendingGradeEdit)return;
+    const {grade,position,fixedSalary}=pendingGradeEdit;
+    setConfirmingEdit(false);
     void runMutation(async()=>{
-      await compensationService.deactivateGrade(grade.id);
-      recordAudit({action:'Deactivated salary grade',module:'Compensation Planning',description:`Deactivated salary grade ${grade.code}.`});
+      await compensationService.updateGrade(grade.id,{position,fixedSalary});
+      recordAudit({action:'Updated salary grade',module:'Compensation Planning',description:`Updated salary grade ${grade.code}: position ${grade.position||'General'} to ${position}, monthly salary ${peso(grade.fixedSalary)} to ${peso(fixedSalary)}.`});
       await loadCompensation();
-      setConfirmGrade(null);
-      setSuccess(`Salary grade ${grade.code} deactivated.`);
+      setEditingGrade(null);
+      setPendingGradeEdit(null);
+      setSuccess(`Salary grade ${grade.code} updated.`);
+    });
+  };
+  const gradeInUse=(grade:SalaryGrade)=>{
+    const code=grade.code.trim().toLowerCase();
+    const uses=(salaryCode?:string)=>code!==''&&(salaryCode??'').trim().toLowerCase()===code;
+    return assignments.some(item=>uses(item.salaryCode))||proposals.some(item=>uses(item.salaryCode));
+  };
+  const openGradeDelete=(grade:SalaryGrade)=>{setDeleteError('');setDeletingGrade(grade)};
+  const confirmGradeDelete=()=>{
+    if(!deletingGrade)return;
+    const grade=deletingGrade;
+    if(gradeInUse(grade)){setDeleteError(GRADE_IN_USE);return}
+    void runMutation(async()=>{
+      try{await compensationService.deleteGrade(grade.id)}catch(cause){setDeleteError(cause instanceof Error?cause.message:'The salary grade could not be deleted.');return}
+      recordAudit({action:'Deleted salary grade',module:'Compensation Planning',description:`Deleted salary grade ${grade.code} (${grade.position||'General'}, ${peso(grade.fixedSalary)}).`});
+      await loadCompensation();
+      setDeletingGrade(null);
+      setSuccess(`Salary grade ${grade.code} deleted.`);
     });
   };
   const saveAssignment=(assignment:EmployeeCompensation)=>runMutation(async()=>{
@@ -307,7 +337,7 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
         ['Department',employee?.department||assignment.department||'Not recorded'],
         ['Grade',grade?.code||assignment.salaryCode||'Not recorded'],
         ['Monthly Salary',peso(salary)],
-        ['Daily Rate',peso(rateOf(salary))],
+        ['Daily Rate',wholePeso(rateOf(salary))],
         ['Effective Date',formatDate(assignment.effectiveDate)],
         ['Status',assignment.effectiveDate>date?'Scheduled':'Effective'],
       ],
@@ -354,11 +384,11 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
     {section==='salary-structure'&&<section id="salary-structure-panel" aria-label="Salary Structure">
       <Tabs label="Salary Structure sections" value={structureTab} onChange={setStructureTab} tabs={structureTabs}/>
       {structureTab==='grades'?<div role="tabpanel" aria-labelledby="salary-grades-heading" className="mt-4">
-        <SectionHeading id="salary-grades-heading" title="Salary Grades" description="Reference rates only. A grade changes employee pay only when an assignment or approved proposal takes effect." action={<div className="flex flex-wrap items-end gap-2 max-sm:w-full"><div className="sm:w-48 max-sm:flex-1"><Field label="Working Days per Month"><TextInput type="number" min="1" max="31" step="any" value={daysDraft} disabled={!isAdmin} onChange={event=>setDaysDraft(event.target.value)}/></Field></div>{isAdmin&&<button type="button" className={ghost} disabled={!daysValid||daysValue===daysPerMonth} onClick={saveDaysPerMonth}>Save</button>}<Button disabled={compensationLoading||saving} onClick={()=>{setError('');setModal('grade')}}><Plus size={15}/>Add Salary Grade</Button></div>}/>
+        <SectionHeading id="salary-grades-heading" title="Salary Grades" action={<Button disabled={compensationLoading||saving} onClick={()=>{setError('');setModal('grade')}}><Plus size={15}/>Add Salary Grade</Button>}/>
         <SearchToolbar label="Search salary grades" value={search} onChange={setSearch} shown={filteredGrades.length} total={grades.length} placeholder="Search code, position or status"/>
         <Card className="mt-3 overflow-hidden !p-0">
-          <div className="overflow-x-auto"><table className={`${tableClass} min-w-[620px]`}><thead><tr className={headerClass}>{['Grade','Monthly Salary','Daily Rate','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
-            {compensationLoading?<TableMessage colSpan={5} loading>Loading salary grades…</TableMessage>:loadError?<TableMessage colSpan={5}>Salary grades could not be loaded.</TableMessage>:!filteredGrades.length?<TableMessage colSpan={5}>{grades.length?'No salary grades match this search.':'No salary grades yet. Add one to use it as a reference when assigning compensation.'}</TableMessage>:filteredGrades.map(grade=><tr key={grade.id} className={rowClass}><td className="px-4 py-3.5"><span className="font-semibold text-slate-800">{grade.code}</span><div className="mt-0.5 text-[11px] text-slate-400">{grade.position||'General'}</div></td><td className="px-4 py-3.5 font-semibold">{peso(grade.fixedSalary)}</td><td className="px-4 py-3.5">{peso(rateOf(grade.fixedSalary))}</td><td className="px-4 py-3.5"><StatusBadge status={grade.status}/></td><td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={()=>setDetails({title:'Salary Grade Details',fields:[['Salary grade',grade.code],['Position',grade.position||'General'],['Monthly salary',peso(grade.fixedSalary)],['Daily rate',peso(rateOf(grade.fixedSalary))],['Status',grade.status],['Created',formatDate(grade.createdAt)]]})}><Eye size={14}/>Details</button>{grade.status==='Active'&&<button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} disabled={saving} onClick={()=>setConfirmGrade(grade)}>Deactivate</button>}</div></td></tr>)}
+          <div className="overflow-x-auto"><table className={`${tableClass} sm:min-w-[620px]`}><thead><tr className={headerClass}>{['Grade','Monthly Salary','Daily Rate','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
+            {compensationLoading?<TableMessage colSpan={5} loading>Loading salary grades…</TableMessage>:loadError?<TableMessage colSpan={5}>Salary grades could not be loaded.</TableMessage>:!filteredGrades.length?<TableMessage colSpan={5}>{grades.length?'No salary grades match this search.':'No salary grades yet.'}</TableMessage>:filteredGrades.map(grade=><tr key={grade.id} className={rowClass}><td className="px-4 py-3.5 font-semibold text-slate-800">{grade.code}</td><td className="px-4 py-3.5 font-semibold">{peso(grade.fixedSalary)}</td><td className="px-4 py-3.5">{wholePeso(rateOf(grade.fixedSalary))}</td><td className="px-4 py-3.5"><StatusBadge status={grade.status}/></td><td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} aria-label={`Details for ${grade.code}`} onClick={()=>setDetails({title:'Salary Grade Details',fields:[['Salary grade',grade.code],['Position',grade.position||'General'],['Monthly salary',peso(grade.fixedSalary)],['Daily rate',wholePeso(rateOf(grade.fixedSalary))],['Status',grade.status],['Created',formatDate(grade.createdAt)]]})}><Eye size={14}/><span className={actionLabel}>Details</span></button>{canManageGrades&&<><button type="button" className={ghost} aria-label={`Edit ${grade.code}`} disabled={saving} onClick={()=>openGradeEdit(grade)}><Pencil size={14}/><span className={actionLabel}>Edit</span></button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Delete ${grade.code}`} disabled={saving} onClick={()=>openGradeDelete(grade)}><Trash2 size={14}/><span className={actionLabel}>Delete</span></button></>}</div></td></tr>)}
           </tbody></table></div>
         </Card>
       </div>:<div role="tabpanel" aria-labelledby="salary-assignments-heading" className="mt-4">
@@ -366,7 +396,7 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
         <SearchToolbar label="Search salary assignments" value={search} onChange={setSearch} shown={filteredAssignments.length} total={visibleAssignments.length} placeholder="Search employee, ID, position or grade"/>
         <Card className="mt-3 overflow-hidden !p-0">
           <div className="overflow-x-auto"><table className={`${tableClass} min-w-[1180px]`}><thead><tr className={headerClass}>{['Employee','Position','Department','Grade','Salary','Daily Rate','Effective Date','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
-            {compensationLoading?<TableMessage colSpan={9} loading>Loading salary assignments…</TableMessage>:loadError?<TableMessage colSpan={9}>Assignments could not be loaded.</TableMessage>:!filteredAssignments.length?<TableMessage colSpan={9}>{visibleAssignments.length?'No assignments match this search.':'No compensation assignments yet. Start with an initial assignment for an unassigned employee.'}</TableMessage>:filteredAssignments.map(assignment=>{const employee=findCompensationEmployee(employees,assignment.employeeId);const scheduled=assignment.effectiveDate>date;return <tr key={assignment.id} className={rowClass}><td className="px-4 py-3.5"><div className="font-semibold text-slate-800">{employeeLabelFor(assignment.employeeId,assignment.employeeName)}</div><div className="mt-0.5 text-[11px] text-slate-400">{employee?.employeeNo||assignment.employeeId}</div></td><td className="px-4 py-3.5">{assignment.position||'Not recorded'}</td><td className="px-4 py-3.5">{employee?.department||assignment.department||'Not recorded'}</td><td className="px-4 py-3.5">{assignment.salaryCode||'Custom'}</td><td className="px-4 py-3.5 font-semibold">{peso(assignment.fixedSalary)}</td><td className="px-4 py-3.5">{peso(rateOf(assignment.fixedSalary))}</td><td className="px-4 py-3.5">{formatDate(assignment.effectiveDate)}</td><td className="px-4 py-3.5"><StatusBadge status={scheduled?'Scheduled':'Effective'}/></td><td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} onClick={()=>showAssignment(assignment)}><Eye size={14}/>Details</button><button type="button" className={ghost} disabled={!employee||employeeLoading||saving} title={!employee?'Restore the linked employee record to propose a change':'Submit a salary change for review'} onClick={()=>openProposal(assignment.employeeId)}><Pencil size={14}/>Propose change</button></div></td></tr>})}
+            {compensationLoading?<TableMessage colSpan={9} loading>Loading salary assignments…</TableMessage>:loadError?<TableMessage colSpan={9}>Assignments could not be loaded.</TableMessage>:!filteredAssignments.length?<TableMessage colSpan={9}>{visibleAssignments.length?'No assignments match this search.':'No compensation assignments yet. Start with an initial assignment for an unassigned employee.'}</TableMessage>:filteredAssignments.map(assignment=>{const employee=findCompensationEmployee(employees,assignment.employeeId);const scheduled=assignment.effectiveDate>date;return <tr key={assignment.id} className={rowClass}><td className="px-4 py-3.5"><div className="font-semibold text-slate-800">{employeeLabelFor(assignment.employeeId,assignment.employeeName)}</div><div className="mt-0.5 text-[11px] text-slate-400">{employee?.employeeNo||assignment.employeeId}</div></td><td className="px-4 py-3.5">{assignment.position||'Not recorded'}</td><td className="px-4 py-3.5">{employee?.department||assignment.department||'Not recorded'}</td><td className="px-4 py-3.5">{assignment.salaryCode||'Custom'}</td><td className="px-4 py-3.5 font-semibold">{peso(assignment.fixedSalary)}</td><td className="px-4 py-3.5">{wholePeso(rateOf(assignment.fixedSalary))}</td><td className="px-4 py-3.5">{formatDate(assignment.effectiveDate)}</td><td className="px-4 py-3.5"><StatusBadge status={scheduled?'Scheduled':'Effective'}/></td><td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} aria-label="Details" onClick={()=>showAssignment(assignment)}><Eye size={14}/><span className={actionLabel}>Details</span></button><button type="button" className={ghost} disabled={!employee||employeeLoading||saving} title={!employee?'Restore the linked employee record to propose a change':'Submit a salary change for review'} aria-label="Propose change" onClick={()=>openProposal(assignment.employeeId)}><Pencil size={14}/><span className={actionLabel}>Propose change</span></button></div></td></tr>})}
           </tbody></table></div>
         </Card>
       </div>}
@@ -397,20 +427,22 @@ const visibleRewardTotal=rewardTab==='rewards'?bonuses.filter(item=>item.type===
       </div>}
     </section>}
 
-    {modal==='grade'&&<SalaryGradeModal positions={gradePositionOptions} onClose={()=>{if(!saving)setModal(null)}} onSave={saveGrade} error={error} saving={saving}/>}
+    {modal==='grade'&&<SalaryGradeModal positions={gradePositionOptions} rateOf={rateOf} onClose={()=>{if(!saving)setModal(null)}} onSave={saveGrade} error={error} saving={saving}/>}
     {modal==='employee'&&<EmployeeCompensationModal employees={unassignedEmployees} grades={activeGrades} date={date} onClose={()=>{if(!saving)setModal(null)}} onSave={saveAssignment} error={error} saving={saving}/>}
     {modal==='proposal'&&<ProposalModal employees={employees} assignments={activeAssignments} grades={activeGrades} rateOf={rateOf} initialEmployeeId={proposalEmployeeId} onClose={()=>{if(!saving)setModal(null)}} onSave={saveProposal} error={error} saving={saving}/>}
     {modal==='bonus'&&<BonusModal defaultType={rewardTab==='rewards'?'Bonus':'Allowance'} employees={employees} onClose={()=>{if(!saving)setModal(null)}} onSave={saveBonus} error={error} saving={saving}/>}
     {details&&<Modal title={details.title} wide onClose={()=>setDetails(null)}><dl className="grid gap-3 text-[13px]">{details.fields.map(([label,value])=><div key={label} className="grid gap-1 border-b border-slate-100 pb-2 last:border-0 sm:grid-cols-[160px_1fr]"><dt className="text-slate-500">{label}</dt><dd className="m-0 break-all font-medium text-slate-800">{value}</dd></div>)}</dl></Modal>}
-    {confirmGrade&&<Modal title="Deactivate salary grade?" onClose={()=>{if(!saving)setConfirmGrade(null)}}><p className="text-[13px] leading-relaxed text-slate-600">This prevents future assignments from selecting <strong className="text-slate-900">{confirmGrade.code}</strong>. Existing employee compensation records are not changed.</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setConfirmGrade(null)}>Cancel</button><Button disabled={saving} onClick={deactivateGrade}>{saving?'Saving…':'Deactivate grade'}</Button></div></Modal>}
+    {editingGrade&&!confirmingEdit&&<SalaryGradeModal key={editingGrade.id} grade={editingGrade} draft={pendingGradeEdit} positions={gradePositionOptions} rateOf={rateOf} onClose={()=>{if(!saving){setEditingGrade(null);setPendingGradeEdit(null)}}} onSave={values=>{setError('');setPendingGradeEdit({grade:editingGrade,position:values.position,fixedSalary:values.fixedSalary});setConfirmingEdit(true)}} error={error} saving={saving}/>}
+    {editingGrade&&confirmingEdit&&pendingGradeEdit&&<ConfirmDialog title="Save changes?" message={`Apply the changes to salary grade ${editingGrade.code}?`} confirmLabel="Confirm" saving={saving} onCancel={()=>setConfirmingEdit(false)} onConfirm={confirmGradeEdit}/>}
+    {deletingGrade&&<ConfirmDialog title="Delete salary grade?" message={deleteError||`Delete salary grade ${deletingGrade.code} permanently?`} confirmLabel="Delete" danger blocked={Boolean(deleteError)} saving={saving} onCancel={()=>{if(!saving)setDeletingGrade(null)}} onConfirm={confirmGradeDelete}/>}
     {approvingProposal&&<Modal title="Approve salary proposal?" onClose={()=>{if(!saving)setApprovingProposal(null)}}><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><div className="text-[13px] font-semibold text-slate-800">{employeeLabelFor(approvingProposal.employeeId)}</div><div className="mt-2 flex items-center justify-between gap-3 text-[13px]"><span>{peso(approvingProposal.previousSalary)}</span><span aria-hidden="true" className="text-slate-400">→</span><strong>{peso(approvingProposal.newSalary)}</strong></div><div className="mt-2 text-[11px] text-slate-500">Effective {formatDate(approvingProposal.effectiveDate)}</div></div><p className="mt-4 text-[12px] leading-relaxed text-slate-600">This records your approval. If the effective date is in the future, the current salary stays in effect until that date.</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setApprovingProposal(null)}>Cancel</button><Button disabled={saving} onClick={confirmProposalApproval}>{saving?'Saving…':'Confirm approval'}</Button></div></Modal>}
     {rejectingProposal&&<Modal title="Reject salary proposal" onClose={()=>{if(!saving){setRejectingProposal(null);setRejectionReason('')}}}><div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[12px]"><div className="font-semibold text-slate-800">{employeeLabelFor(rejectingProposal.employeeId)}</div><div className="mt-1 text-slate-600">{peso(rejectingProposal.previousSalary)} <span className="px-1 text-slate-400">→</span> {peso(rejectingProposal.newSalary)} · effective {formatDate(rejectingProposal.effectiveDate)}</div></div><Field label="Reason for rejection"><textarea className={`${input} min-h-24 resize-y`} maxLength={500} value={rejectionReason} onChange={event=>{setRejectionReason(event.target.value);setError('')}} placeholder="Explain why this proposal is being rejected." aria-label="Reason for rejection"/></Field><div className="mt-1 text-right text-[11px] text-slate-400">{rejectionReason.length}/500</div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>{setRejectingProposal(null);setRejectionReason('');setError('')}}>Cancel</button><button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving||!rejectionReason.trim()} onClick={confirmProposalRejection}>{saving?'Saving…':'Confirm rejection'}</button></div></Modal>}
     {approvingBonus&&<Modal title={`Approve ${approvingBonus.type.toLowerCase()}?`} onClose={()=>{if(!saving)setApprovingBonus(null)}}><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><div className="text-[13px] font-semibold text-slate-800">{employeeLabelFor(approvingBonus.employeeId)}</div><div className="mt-2 text-[20px] font-semibold text-slate-900">{peso(approvingBonus.amount)}</div><div className="mt-1 text-[11px] text-slate-500">{approvingBonus.type} · effective {formatDate(approvingBonus.effectiveDate)}</div></div><p className="mt-4 text-[12px] leading-relaxed text-slate-600">Approval will be recorded in compensation planning. Payroll handling remains in the payroll workflow.</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setApprovingBonus(null)}>Cancel</button><Button disabled={saving} onClick={confirmBonusApproval}>{saving?'Saving…':'Confirm approval'}</Button></div></Modal>}
   </div>;
 }
 
-function SectionHeading({id,title,description,action}:{id:string;title:string;description:string;action?:React.ReactNode}){
-  return <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><h2 id={id} className="m-0 text-[17px] font-semibold tracking-tight text-slate-900">{title}</h2><p className="mb-0 mt-1 max-w-3xl text-[12px] leading-relaxed text-slate-500">{description}</p></div>{action}</div>;
+function SectionHeading({id,title,description,action}:{id:string;title:string;description?:string;action?:React.ReactNode}){
+  return <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><h2 id={id} className="m-0 text-[17px] font-semibold tracking-tight text-slate-900">{title}</h2>{description&&<p className="mb-0 mt-1 max-w-3xl text-[12px] leading-relaxed text-slate-500">{description}</p>}</div>{action}</div>;
 }
 
 function SearchToolbar({label,value,onChange,shown,total,placeholder}:{label:string;value:string;onChange:(value:string)=>void;shown:number;total:number;placeholder:string}){
@@ -426,18 +458,26 @@ function formatDate(value:string){
   return Number.isNaN(parsed.getTime())?value:parsed.toLocaleDateString('en-PH',{day:'numeric',month:'short',year:'numeric'});
 }
 
-function SalaryGradeModal({positions,onClose,onSave,error,saving}:{positions:string[];onClose:()=>void;onSave:(grade:Pick<SalaryGrade,'position'|'fixedSalary'|'status'>)=>void;error:string;saving:boolean}){
-  const [basicSalary,setBasicSalary]=useState('');
-  const [status,setStatus]=useState<SalaryGrade['status']>('Active');
-  const [position,setPosition]=useState('');
+function ConfirmDialog({title,message,confirmLabel,danger=false,blocked=false,saving,onCancel,onConfirm}:{title:string;message:string;confirmLabel:string;danger?:boolean;blocked?:boolean;saving:boolean;onCancel:()=>void;onConfirm:()=>void}){
+  return <Modal title={title} onClose={onCancel}><p role={blocked?'alert':undefined} className={`m-0 text-[13px] leading-relaxed ${blocked?'text-red-700':'text-slate-600'}`}>{message}</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onCancel}>Cancel</button>{danger?<button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving||blocked} onClick={onConfirm}>{saving?'Deleting…':confirmLabel}</button>:<Button disabled={saving||blocked} onClick={onConfirm}>{saving?'Saving…':confirmLabel}</Button>}</div></Modal>;
+}
+
+function SalaryGradeModal({grade,draft,positions,rateOf,onClose,onSave,error,saving}:{grade?:SalaryGrade;draft?:{position:string;fixedSalary:number}|null;positions:string[];rateOf:(salary:number)=>number;onClose:()=>void;onSave:(grade:Pick<SalaryGrade,'position'|'fixedSalary'|'status'>)=>void;error:string;saving:boolean}){
+  const editing=Boolean(grade);
+  const [basicSalary,setBasicSalary]=useState(()=>draft?String(draft.fixedSalary):grade?String(grade.fixedSalary):'');
+  const [status,setStatus]=useState<SalaryGrade['status']>(grade?.status??'Active');
+  const [position,setPosition]=useState(()=>draft?.position??grade?.position??'');
   const salary=numberValue(basicSalary);
-  const validPosition=positions.some(item=>item.toLowerCase()===position.trim().toLowerCase());
+  const samePosition=(value:string)=>value.trim().toLowerCase()===position.trim().toLowerCase();
+  const validPosition=positions.some(samePosition)||Boolean(grade&&grade.position&&samePosition(grade.position));
+  const unchanged=Boolean(grade&&position.trim()===grade.position&&salary===grade.fixedSalary);
   const selectPosition=(value:string)=>{
     setPosition(value);
+    if(editing)return;
     const configuredSalary=salaryDefaultForPosition(value);
     setBasicSalary(configuredSalary===undefined?'':String(configuredSalary));
   };
-  return <Modal title="Add salary grade" onClose={onClose}><div className="grid gap-4"><Field label="Position"><TextInput list="salary-grade-position-options" value={position} onChange={event=>selectPosition(event.target.value)} autoFocus placeholder="Search or select a position"/><datalist id="salary-grade-position-options">{positions.map(item=><option key={item} value={item}/>)}</datalist></Field><Field label="Basic Salary"><TextInput type="number" min="0.01" step="0.01" value={basicSalary} onChange={event=>setBasicSalary(event.target.value)} placeholder="0.00"/></Field><Field label="Status"><select className={input} value={status} onChange={event=>setStatus(event.target.value as SalaryGrade['status'])}><option>Active</option><option>Inactive</option></select></Field></div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!validPosition||salary<=0} onClick={()=>onSave({position:position.trim(),fixedSalary:salary,status})}>{saving?'Saving…':'Save grade'}</Button></div></Modal>;
+  return <Modal title={editing?'Edit salary grade':'Add salary grade'} onClose={onClose}><div className="grid gap-4">{grade&&<Field label="Grade"><TextInput value={grade.code} readOnly/></Field>}<Field label="Position"><TextInput list="salary-grade-position-options" value={position} onChange={event=>selectPosition(event.target.value)} autoFocus placeholder="Search or select a position"/><datalist id="salary-grade-position-options">{positions.map(item=><option key={item} value={item}/>)}</datalist></Field><Field label="Monthly Salary"><TextInput type="number" min="0.01" step="0.01" value={basicSalary} onChange={event=>setBasicSalary(event.target.value)} placeholder="0.00"/></Field><Field label="Daily Rate"><TextInput value={salary>0?wholePeso(rateOf(salary)):''} readOnly/></Field>{!editing&&<Field label="Status"><select className={input} value={status} onChange={event=>setStatus(event.target.value as SalaryGrade['status'])}><option>Active</option><option>Inactive</option></select></Field>}</div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!validPosition||salary<=0||unchanged} onClick={()=>onSave({position:position.trim(),fixedSalary:salary,status})}>{saving?'Saving…':editing?'Save':'Save grade'}</Button></div></Modal>;
 }
 
 function EmployeeCompensationModal({employees,grades,date,onClose,onSave,error,saving}:{employees:Employee[];grades:SalaryGrade[];date:string;onClose:()=>void;onSave:(assignment:EmployeeCompensation)=>void;error:string;saving:boolean}){
@@ -455,7 +495,7 @@ function ProposalModal({employees,assignments,grades,rateOf,initialEmployeeId,on
   const newSalary=grade?.fixedSalary??0;
   const difference=current?newSalary-current.fixedSalary:0;
   const unchanged=Boolean(current&&grade&&newSalary===current.fixedSalary&&grade.code.toLowerCase()===current.salaryCode.toLowerCase());
-  return <Modal title="Create compensation proposal" wide onClose={onClose}><div className="grid gap-4"><p className="-mt-2 rounded-xl bg-blue-50 p-3 text-[12px] leading-relaxed text-blue-900">Submitting creates a review request; it does not change the employee’s active salary.</p><div className="grid gap-4 sm:grid-cols-2"><Field label="Employee"><select className={input} value={form.employeeId} onChange={event=>setForm({...form,employeeId:event.target.value})}><option value="">Select employee</option>{employees.filter(employee=>assignments.some(item=>findCompensationEmployee(employees,item.employeeId)?.id===employee.id)).map(employee=><option key={employee.id} value={employee.id}>{employee.name} · {employee.employeeNo}</option>)}</select></Field><Field label="Change type"><select className={input} value={form.type} onChange={event=>setForm({...form,type:event.target.value as CompensationProposal['type']})}>{adjustmentTypes.map(type=><option key={type}>{type}</option>)}</select></Field></div><Field label="Current monthly salary"><TextInput value={current?`${peso(current.fixedSalary)}${current.salaryCode?` · ${current.salaryCode}`:''}`:'Select an employee'} readOnly/></Field><Field label="Salary grade"><select className={input} value={form.salaryCode} onChange={event=>setForm({...form,salaryCode:event.target.value})}><option value="">Select salary grade</option>{grades.map(item=><option key={item.id} value={item.code}>{item.code} · {item.position||'General'} · {peso(item.fixedSalary)}</option>)}</select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Proposed monthly salary"><TextInput value={grade?peso(newSalary):''} readOnly/></Field><Field label="Proposed daily rate"><TextInput value={grade?peso(rateOf(newSalary)):''} readOnly/></Field></div>{current&&grade&&!unchanged&&<div className={`rounded-xl p-3 text-[12px] ${difference>=0?'bg-emerald-50 text-emerald-800':'bg-amber-50 text-amber-800'}`}><b>Change preview:</b> {difference>=0?'+':''}{peso(difference)} per month ({difference>=0?'+':''}{((difference/current.fixedSalary)*100).toFixed(1)}%)</div>}<Field label="Effective date"><TextInput type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></Field><Field label="Business reason / notes"><textarea className={`${input} min-h-24 resize-y`} maxLength={1000} value={form.notes} onChange={event=>setForm({...form,notes:event.target.value})} placeholder="Add context for the reviewer." aria-label="Business reason or notes"/></Field></div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!current||!grade||unchanged||!form.effectiveDate} onClick={()=>current&&grade&&onSave({id:crypto.randomUUID(),employeeId:current.employeeId,type:form.type,salaryCode:grade.code,previousSalary:current.fixedSalary,newSalary,adjustmentAmount:difference,effectiveDate:form.effectiveDate,notes:form.notes,status:'Pending HR Review',createdAt:new Date().toISOString()})}>{saving?'Submitting…':'Submit for review'}</Button></div></Modal>;
+  return <Modal title="Create compensation proposal" wide onClose={onClose}><div className="grid gap-4"><p className="-mt-2 rounded-xl bg-blue-50 p-3 text-[12px] leading-relaxed text-blue-900">Submitting creates a review request; it does not change the employee’s active salary.</p><div className="grid gap-4 sm:grid-cols-2"><Field label="Employee"><select className={input} value={form.employeeId} onChange={event=>setForm({...form,employeeId:event.target.value})}><option value="">Select employee</option>{employees.filter(employee=>assignments.some(item=>findCompensationEmployee(employees,item.employeeId)?.id===employee.id)).map(employee=><option key={employee.id} value={employee.id}>{employee.name} · {employee.employeeNo}</option>)}</select></Field><Field label="Change type"><select className={input} value={form.type} onChange={event=>setForm({...form,type:event.target.value as CompensationProposal['type']})}>{adjustmentTypes.map(type=><option key={type}>{type}</option>)}</select></Field></div><Field label="Current monthly salary"><TextInput value={current?`${peso(current.fixedSalary)}${current.salaryCode?` · ${current.salaryCode}`:''}`:'Select an employee'} readOnly/></Field><Field label="Salary grade"><select className={input} value={form.salaryCode} onChange={event=>setForm({...form,salaryCode:event.target.value})}><option value="">Select salary grade</option>{grades.map(item=><option key={item.id} value={item.code}>{item.code} · {item.position||'General'} · {peso(item.fixedSalary)}</option>)}</select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Proposed monthly salary"><TextInput value={grade?peso(newSalary):''} readOnly/></Field><Field label="Proposed daily rate"><TextInput value={grade?wholePeso(rateOf(newSalary)):''} readOnly/></Field></div>{current&&grade&&!unchanged&&<div className={`rounded-xl p-3 text-[12px] ${difference>=0?'bg-emerald-50 text-emerald-800':'bg-amber-50 text-amber-800'}`}><b>Change preview:</b> {difference>=0?'+':''}{peso(difference)} per month ({difference>=0?'+':''}{((difference/current.fixedSalary)*100).toFixed(1)}%)</div>}<Field label="Effective date"><TextInput type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></Field><Field label="Business reason / notes"><textarea className={`${input} min-h-24 resize-y`} maxLength={1000} value={form.notes} onChange={event=>setForm({...form,notes:event.target.value})} placeholder="Add context for the reviewer." aria-label="Business reason or notes"/></Field></div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!current||!grade||unchanged||!form.effectiveDate} onClick={()=>current&&grade&&onSave({id:crypto.randomUUID(),employeeId:current.employeeId,type:form.type,salaryCode:grade.code,previousSalary:current.fixedSalary,newSalary,adjustmentAmount:difference,effectiveDate:form.effectiveDate,notes:form.notes,status:'Pending HR Review',createdAt:new Date().toISOString()})}>{saving?'Submitting…':'Submit for review'}</Button></div></Modal>;
 }
 
 function BonusModal({defaultType,employees,onClose,onSave,error,saving}:{defaultType:'Bonus'|'Allowance';employees:Employee[];onClose:()=>void;onSave:(bonus:BonusIncentive)=>void;error:string;saving:boolean}){

@@ -3,7 +3,7 @@ import {requirePbmsRole} from "../../lib/auth";
 import {body,required} from "../../lib/validation";
 import {HttpError} from "../../lib/errors";
 import {ok} from "../../lib/response";
-import {listRows,insertRow,updateRows} from "../../lib/database";
+import {listRows,insertRow,updateRows,deleteRows} from "../../lib/database";
 import {audit} from "../../lib/audit";
 import type {RequestContext} from "../../lib/types";
 
@@ -100,13 +100,34 @@ async function createGrade(input:Row,ctx:RequestContext){
 	return row;
 }
 
-async function deactivateGrade(input:Row,ctx:RequestContext){
+async function findGrade(id:string){
+ const grade=(await listRows<Row>("salary_grades",{id}))[0];
+ if(!grade)throw new HttpError(404,"SALARY_GRADE_NOT_FOUND","Salary grade was not found.");
+ return grade;
+}
+
+// Assignments keep their own salary snapshot, so editing a grade never changes current pay.
+async function updateGrade(input:Row,ctx:RequestContext){
  const id=uuid(input.id,"id");
- const grades=await listRows<Row>("salary_grades",{id});
- if(!grades[0])throw new HttpError(404,"SALARY_GRADE_NOT_FOUND","Salary grade was not found.");
- await updateRows("salary_grades",{id},{status:"Inactive",updated_at:new Date().toISOString()});
- await audit("compensation.grade.deactivated",ctx.userId,"salary_grades",id);
- return {id,status:"Inactive"};
+ const grade=await findGrade(id);
+ const position=required(input.position,"position").trim();
+ const basicSalary=amount(input.basic_salary,"basic_salary");
+ const next={position,monthly_salary:basicSalary,daily_rate:roundMoney(basicSalary/await monthlyWorkDays()),updated_at:new Date().toISOString()};
+ await updateRows("salary_grades",{id},next);
+ await audit("compensation.grade.updated",ctx.userId,"salary_grades",id,{previous:{position:grade.position,monthly_salary:Number(grade.monthly_salary)},next:{position,monthly_salary:basicSalary}});
+ return {...grade,...next};
+}
+
+async function deleteGrade(input:Row,ctx:RequestContext){
+ const id=uuid(input.id,"id");
+ const grade=await findGrade(id);
+ const code=gradeCodeKey(String(grade.grade??""));
+ const references=(row:Row)=>String(row.salary_grade_id??"")===id||(code!==""&&gradeCodeKey(String(row.salary_code??""))===code);
+ const [assignments,proposals,employees]=await Promise.all([listRows<Row>("employee_compensation"),listRows<Row>("compensation_proposals"),listRows<Row>("employees",{salary_grade_id:id})]);
+ if(employees.length||assignments.some(references)||proposals.some(references))throw new HttpError(409,"SALARY_GRADE_IN_USE","This grade is in use and cannot be deleted.");
+ await deleteRows("salary_grades",{id});
+ await audit("compensation.grade.deleted",ctx.userId,"salary_grades",id,{grade:grade.grade,position:grade.position,monthly_salary:Number(grade.monthly_salary)});
+ return {id,deleted:true};
 }
 
 async function createInitialAssignment(input:Row,ctx:RequestContext){
@@ -366,7 +387,8 @@ export default verifiedEdge(async(ctx:RequestContext)=>{
  const input=await body<Row>(ctx.request);
  const action=required(input.action,"action");
  if(action==="create_grade")return ok(await createGrade(input,ctx));
- if(action==="deactivate_grade")return ok(await deactivateGrade(input,ctx));
+ if(action==="update_grade")return ok(await updateGrade(input,ctx));
+ if(action==="delete_grade")return ok(await deleteGrade(input,ctx));
  if(action==="create_initial_assignment")return ok(await createInitialAssignment(input,ctx));
  if(action==="create_proposal")return ok(await createProposal(input,ctx));
  if(action==="review_proposal")return ok(await reviewProposal(input,ctx));

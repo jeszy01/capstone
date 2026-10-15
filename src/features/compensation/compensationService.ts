@@ -44,7 +44,8 @@ export const compensationService={
   return {grades:data.salary_grades.map(gradeFromServer),assignments:data.assignments.map(assignmentFromServer),proposals:data.proposals.map(proposalFromServer),history:data.history.map(historyFromServer),bonuses:data.rewards.map(rewardFromServer),legacyImportWarning:importMessages.join(' ')};
  },
  createGrade:(grade:Pick<SalaryGrade,'position'|'fixedSalary'|'status'>)=>action<ServerGrade>({action:'create_grade',position:grade.position,basic_salary:grade.fixedSalary,status:grade.status}),
- deactivateGrade:(id:string)=>action({action:'deactivate_grade',id}),
+ updateGrade:(id:string,grade:Pick<SalaryGrade,'position'|'fixedSalary'>)=>action<ServerGrade>({action:'update_grade',id,position:grade.position,basic_salary:grade.fixedSalary}),
+ deleteGrade:(id:string)=>action({action:'delete_grade',id}),
  createInitialAssignment:(assignment:Pick<EmployeeCompensation,'employeeId'|'salaryCode'|'fixedSalary'|'effectiveDate'>)=>action({action:'create_initial_assignment',employee_id:assignment.employeeId,salary_code:assignment.salaryCode,basic_salary:assignment.fixedSalary,effective_date:assignment.effectiveDate}),
  createProposal:(proposal:Pick<CompensationProposal,'employeeId'|'type'|'newSalary'|'effectiveDate'|'notes'|'salaryCode'>)=>action({action:'create_proposal',employee_id:proposal.employeeId,proposal_type:proposal.type,salary_code:proposal.salaryCode??'',new_salary:proposal.newSalary,effective_date:proposal.effectiveDate,notes:proposal.notes}),
  reviewProposal:(id:string,decision:'approve'|'reject',rejectionReason?:string)=>action({action:'review_proposal',id,decision,...(decision==='reject'?{rejection_reason:rejectionReason??'Rejected by authorized reviewer'}:{})}),
