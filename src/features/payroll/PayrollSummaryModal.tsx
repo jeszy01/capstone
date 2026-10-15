@@ -3,8 +3,6 @@ import {Modal,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
 import {runLabel} from './payrollRuns';
-import {monthlySalaryOf} from './payslipMath';
-import {loadRates} from '../settings/payrollSettings';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {getCurrentUser} from '../auth/authService';
 
@@ -20,7 +18,6 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
  const earn:[string,number][]=[
       ['Basic pay',sum(rows,r=>r.result.basic)],
       ['Overtime',sum(rows,r=>r.result.overtime)],
-      ['Night differential',sum(rows,r=>numberValue(r.input.nightDifferential))],
       ['Leave pay',sum(rows,r=>r.result.leavePay)],
       ['Holiday pay',sum(rows,r=>numberValue(r.input.holidayPay))],
       ['Service incentive leave conversion',sum(rows,r=>numberValue(r.input.slConversion))],
@@ -58,10 +55,9 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
       return {name,count:group.length,gross:g,deductions:d,net:g-d};
     });
     const previousGross=previousRun?sum(previousRun.rows,r=>r.result.gross):0;
-    const monthlySalary=sum(rows,r=>monthlySalaryOf(r.input,r.result,run.settings?.rates.daysPerMonth??loadRates().daysPerMonth));
-    return {monthlySalary,earn,attendance,att,stat,company,gross,deductions,net,departments,statTotal:stat.reduce((t,r)=>t+r[1],0),companyTotal:company.reduce((t,r)=>t+r[1],0),previousGross,
+    return {earn,attendance,att,stat,company,gross,deductions,net,departments,statTotal:stat.reduce((t,r)=>t+r[1],0),companyTotal:company.reduce((t,r)=>t+r[1],0),previousGross,
       lowNet:rows.filter(r=>r.result.net<=0).length};
-  },[rows,employees,previousRun,run]);
+  },[rows,employees,previousRun]);
 
   const checks:[boolean,string][]=[
     [Math.abs(data.net-(data.gross-data.deductions))<0.01,`Net pay (${peso(data.net)}) equals gross minus deductions.`],
@@ -100,7 +96,6 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
         <div className="flex flex-wrap gap-x-10 gap-y-3">
           <div><div className="text-[12px] text-slate-500">Total gross pay</div><div className="text-[30px] font-bold leading-tight">{peso(data.gross)}</div></div>
           <div><div className="text-[12px] text-slate-500">Net pay to fund</div><div className="text-[30px] font-bold leading-tight" style={{color:COLORS.net}}>{peso(data.net)}</div></div>
-          <div><div className="text-[12px] text-slate-500">Monthly salary</div><div className="text-[30px] font-bold leading-tight">{peso(data.monthlySalary)}</div></div>
           <div><div className="text-[12px] text-slate-500">Employees paid</div><div className="text-[30px] font-bold leading-tight">{rows.length}</div></div>
         </div>
         <div className="mt-4 flex h-7 gap-0.5 overflow-hidden rounded" role="img" aria-label="Gross pay split into net pay and deductions">
