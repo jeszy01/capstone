@@ -5,12 +5,13 @@ import {LogOut,Pencil} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost} from '../components/common/ui';
 import {AccountSettings} from './Admin';
 import {recordAudit} from '../features/audit/auditService';
-import {accountService,passwordProblems} from '../features/auth/accountService';
+import {accountService,passkeyProblems,passwordProblems} from '../features/auth/accountService';
 import type {AccountSecurity,AccountSession} from '../features/auth/accountService';
 
 const TABS=[{id:'account',label:'Account Settings'},{id:'privacy',label:'Privacy'}] as const;
 type TabId=(typeof TABS)[number]['id'];
-type CardId='password'|'otp';
+type CardId='password'|'passkey'|'otp';
+type PasskeyMode='set'|'change'|'reset';
 const MODULE='Settings & Privacy';
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 const when=(iso:string)=>{const date=new Date(iso);return Number.isNaN(date.getTime())?'—':date.toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})};
@@ -27,8 +28,8 @@ function PasswordConfirmDialog({title,message,confirmLabel,danger=false,onCancel
  </Modal>;
 }
 
-function SectionCard({title,editing,canEdit,onEdit,onCancel,onSave,actions,children}:{title:string;editing:boolean;canEdit:boolean;onEdit:()=>void;onCancel:()=>void;onSave:()=>void;actions?:ReactNode;children:ReactNode}){
- return <Card className="min-w-0"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-slate-900">{title}</h2><div className="flex flex-wrap gap-2">{actions}{editing?<><button type="button" className={ghost} onClick={onCancel}>Cancel</button><Button onClick={onSave}>Save</Button></>:canEdit&&<button type="button" className={ghost} onClick={onEdit}><Pencil size={15}/>Edit</button>}</div></div>{children}</Card>;
+function SectionCard({title,editing,canEdit,onEdit,onCancel,onSave,actions,editLabel='Edit',children}:{title:string;editing:boolean;canEdit:boolean;onEdit:()=>void;onCancel:()=>void;onSave:()=>void;actions?:ReactNode;editLabel?:string;children:ReactNode}){
+ return <Card className="min-w-0"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-slate-900">{title}</h2><div className="flex flex-wrap gap-2">{actions}{editing?<><button type="button" className={ghost} onClick={onCancel}>Cancel</button><Button onClick={onSave}>Save</Button></>:canEdit&&<button type="button" className={ghost} onClick={onEdit}><Pencil size={15}/>{editLabel}</button>}</div></div>{children}</Card>;
 }
 
 function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
@@ -36,14 +37,15 @@ function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
  const [editing,setEditing]=useState<CardId|null>(null),[notice,setNotice]=useState('');
  const [passwords,setPasswords]=useState({current:'',next:'',confirm:''}),[passwordErrors,setPasswordErrors]=useState<string[]>([]),[confirmingPassword,setConfirmingPassword]=useState(false),[passwordBusy,setPasswordBusy]=useState(false);
  const [otpDraft,setOtpDraft]=useState(false),[confirmingOtp,setConfirmingOtp]=useState(false);
+ const [passkeyMode,setPasskeyMode]=useState<PasskeyMode>('set'),[passkeys,setPasskeys]=useState({current:'',next:'',confirm:''}),[passkeyErrors,setPasskeyErrors]=useState<string[]>([]),[confirmingPasskey,setConfirmingPasskey]=useState(false),[passkeyBusy,setPasskeyBusy]=useState(false);
  const [signingOut,setSigningOut]=useState<AccountSession|'others'|null>(null);
  const load=useCallback(async()=>{setLoading(true);setLoadError('');try{setSecurity(await accountService.load())}catch(cause){setLoadError(errorText(cause,'Privacy settings could not be loaded.'))}finally{setLoading(false)}},[]);
  useEffect(()=>{void load()},[load]);
  useEffect(()=>{if(!notice)return;const timer=window.setTimeout(()=>setNotice(''),3000);return()=>window.clearTimeout(timer)},[notice]);
- const dirty=editing==='password'?Boolean(passwords.current||passwords.next||passwords.confirm):editing==='otp'?otpDraft!==security?.otpEnabled:false;
+ const dirty=editing==='password'?Boolean(passwords.current||passwords.next||passwords.confirm):editing==='passkey'?Boolean(passkeys.current||passkeys.next||passkeys.confirm):editing==='otp'?otpDraft!==security?.otpEnabled:false;
  useEffect(()=>{onDirty(dirty)},[dirty,onDirty]);
- const startEdit=(card:CardId)=>{setPasswords({current:'',next:'',confirm:''});setPasswordErrors([]);setOtpDraft(security?.otpEnabled??false);setEditing(card)};
- const stopEdit=()=>{setEditing(null);setPasswords({current:'',next:'',confirm:''});setPasswordErrors([])};
+ const startEdit=(card:CardId)=>{setPasswords({current:'',next:'',confirm:''});setPasswordErrors([]);setPasskeys({current:'',next:'',confirm:''});setPasskeyErrors([]);setPasskeyMode(security?.passkeySet?'change':'set');setOtpDraft(security?.otpEnabled??false);setEditing(card)};
+ const stopEdit=()=>{setEditing(null);setPasswords({current:'',next:'',confirm:''});setPasswordErrors([]);setPasskeys({current:'',next:'',confirm:''});setPasskeyErrors([])};
 
  const requestPasswordChange=()=>{
   const errors:string[]=[];
@@ -59,6 +61,28 @@ function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
    recordAudit({action:'Changed password',module:MODULE,description:`Changed account password${signedOut?` and signed out ${signedOut} other device${signedOut===1?'':'s'}`:''}.`});
    setSecurity(next);setConfirmingPassword(false);stopEdit();setNotice('Password changed.');
   }catch(cause){setConfirmingPassword(false);setPasswordErrors([errorText(cause,'The password could not be changed.')])}finally{setPasswordBusy(false)}
+ };
+ const requestPasskeySave=()=>{
+  const errors:string[]=[];
+  if((passkeyMode==='change'&&!passkeys.current)||!passkeys.next||!passkeys.confirm)errors.push('Fill in all passkey fields.');
+  else{errors.push(...passkeyProblems(passkeys.next));if(passkeys.next!==passkeys.confirm)errors.push('New passkeys do not match.');if(passkeyMode==='change'&&passkeys.next===passkeys.current)errors.push('The new passkey must be different from the current passkey.')}
+  setPasskeyErrors(errors);if(!errors.length)setConfirmingPasskey(true);
+ };
+ // The passkey is never written to the activity log; only the action is recorded.
+ const passkeyLabels={set:['Set passkey','Passkey set.'],change:['Changed passkey','Passkey changed.'],reset:['Reset passkey','Passkey reset.']} as const;
+ const applyPasskey=async(password?:string)=>{
+  const [action,message]=passkeyLabels[passkeyMode];
+  const next=passkeyMode==='change'?await accountService.changePasskey(passkeys.current,passkeys.next):passkeyMode==='set'?await accountService.setPasskey(password??'',passkeys.next):await accountService.resetPasskey(password??'',passkeys.next);
+  recordAudit({action,module:MODULE,description:passkeyMode==='reset'?'Reset the passkey after confirming the login password.':`${action}.`});
+  setSecurity(next);setConfirmingPasskey(false);stopEdit();setNotice(message);
+ };
+ const changePasskey=async()=>{
+  setPasskeyBusy(true);
+  try{await applyPasskey()}catch(cause){
+   const message=errorText(cause,'The passkey could not be changed.');
+   if(/passkey is incorrect|locked/i.test(message))recordAudit({action:'Failed passkey attempt',module:MODULE,description:'Wrong current passkey when changing the passkey.'});
+   setConfirmingPasskey(false);setPasskeyErrors([message]);void load();
+  }finally{setPasskeyBusy(false)}
  };
  const saveOtp=async(password:string)=>{
   const next=await accountService.setOtp(password,otpDraft);
@@ -93,6 +117,14 @@ function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
    </div>:<div className="grid gap-4 sm:grid-cols-3"><Field label="Password"><TextInput type="password" value="password" readOnly disabled/></Field></div>}
    {passwordErrors.length>0&&<div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><ul className="m-0 list-disc pl-5">{passwordErrors.map(error=><li key={error}>{error}</li>)}</ul></div>}
   </SectionCard>
+  <SectionCard title="Passkey" editing={editing==='passkey'} canEdit={editing===null} editLabel={security.passkeySet?'Change Passkey':'Set Passkey'} onEdit={()=>startEdit('passkey')} onCancel={stopEdit} onSave={requestPasskeySave} actions={editing==='passkey'&&passkeyMode==='change'&&<button type="button" className={ghost} onClick={()=>{setPasskeyErrors([]);setPasskeys({current:'',next:'',confirm:''});setPasskeyMode('reset')}}>Forgot passkey</button>}>
+   {editing==='passkey'?<div className="grid gap-4 sm:grid-cols-3">
+    {passkeyMode==='change'&&<Field label="Current passkey"><TextInput type="password" autoComplete="off" value={passkeys.current} onChange={event=>setPasskeys({...passkeys,current:event.target.value})}/></Field>}
+    <Field label="New passkey"><TextInput type="password" autoComplete="off" value={passkeys.next} onChange={event=>setPasskeys({...passkeys,next:event.target.value})}/></Field>
+    <Field label="Confirm new passkey"><TextInput type="password" autoComplete="off" value={passkeys.confirm} onChange={event=>setPasskeys({...passkeys,confirm:event.target.value})}/></Field>
+   </div>:<div className="grid gap-4 sm:grid-cols-3"><Field label="Status"><TextInput value={security.passkeySet?(security.passkeyLockedUntil?`Locked until ${new Date(security.passkeyLockedUntil).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit'})}`:'Set'):'Not set'} readOnly/></Field></div>}
+   {passkeyErrors.length>0&&<div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><ul className="m-0 list-disc pl-5">{passkeyErrors.map(error=><li key={error}>{error}</li>)}</ul></div>}
+  </SectionCard>
   <SectionCard title="Two-Factor Authentication (OTP)" editing={editing==='otp'} canEdit={editing===null&&security.otpAvailable} onEdit={()=>startEdit('otp')} onCancel={stopEdit} onSave={()=>{if(otpDraft===security.otpEnabled)stopEdit();else setConfirmingOtp(true)}}>
    <div className="grid gap-4 sm:grid-cols-3">
     <Field label="Status"><TextInput value={security.otpAvailable?(security.otpEnabled?'On':'Off'):'Unavailable'} readOnly/></Field>
@@ -110,6 +142,8 @@ function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
    </tbody></table></div>
   </Card>
   {confirmingPassword&&<ConfirmDialog title="Change password?" message="Apply the new password to your account?" confirmLabel="Confirm" saving={passwordBusy} onCancel={()=>setConfirmingPassword(false)} onConfirm={()=>void changePassword()}/>}
+  {confirmingPasskey&&passkeyMode==='change'&&<ConfirmDialog title="Change passkey?" message="Apply the new passkey to your account?" confirmLabel="Confirm" saving={passkeyBusy} onCancel={()=>setConfirmingPasskey(false)} onConfirm={()=>void changePasskey()}/>}
+  {confirmingPasskey&&passkeyMode!=='change'&&<PasswordConfirmDialog title={passkeyMode==='set'?'Set passkey?':'Reset passkey?'} message={passkeyMode==='set'?'Save this passkey to your account?':'Replace your passkey using your login password?'} confirmLabel="Confirm" onCancel={()=>setConfirmingPasskey(false)} onConfirm={applyPasskey}/>}
   {confirmingOtp&&<PasswordConfirmDialog title={otpDraft?'Turn on two-factor authentication?':'Turn off two-factor authentication?'} message={otpDraft?'A code will be required each time you sign in.':'A code will no longer be required when you sign in.'} confirmLabel="Confirm" danger={!otpDraft} onCancel={()=>setConfirmingOtp(false)} onConfirm={saveOtp}/>}
   {signingOut&&<PasswordConfirmDialog title={signingOut==='others'?'Sign out all other devices?':'Sign out device?'} message={signingOut==='others'?`Sign out ${others.length} other device${others.length===1?'':'s'}?`:`Sign out ${signingOut.device} (${signingOut.browser})?`} confirmLabel="Sign out" danger onCancel={()=>setSigningOut(null)} onConfirm={signOut}/>}
  </div>;

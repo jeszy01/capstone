@@ -196,22 +196,51 @@ function passwordProblems(password) {
 }
 
 // Eprovider/functions/account/index.ts
+var PASSKEY_MAX_ATTEMPTS = 5;
+var PASSKEY_LOCK_MINUTES = 15;
 async function currentUser(ctx) {
   const user = (await listRows("users", { id: ctx.userId }))[0];
   if (!user) throw new HttpError(404, "USER_NOT_FOUND", "Your account was not found.");
   return user;
 }
 async function activeSessions(userId) {
-  return (await listRows("user_sessions", { user_id: userId })).filter((session) => sessionActive(session, userId)).sort((a, b) => String(b.last_active_at).localeCompare(String(a.last_active_at)));
+  try {
+    return (await listRows("user_sessions", { user_id: userId })).filter((session) => sessionActive(session, userId)).sort((a, b) => String(b.last_active_at).localeCompare(String(a.last_active_at)));
+  } catch {
+    return [];
+  }
 }
 async function confirmPassword(user, password) {
   if (typeof password !== "string" || !password || !user.password_hash || !await verifyPassword(password, user.password_hash)) throw new HttpError(400, "INVALID_PASSWORD", "Current password is incorrect.");
 }
 var revoke = (id) => updateRows("user_sessions", { id }, { revoked_at: (/* @__PURE__ */ new Date()).toISOString() });
+var lockedUntil = (user, now = Date.now()) => user.passkey_locked_until && Date.parse(user.passkey_locked_until) > now ? user.passkey_locked_until : null;
+async function newPasskey(user, value) {
+  const passkey = typeof value === "string" ? value : "";
+  if (passkey.length < 6 || passkey.length > 64) throw new HttpError(400, "WEAK_PASSKEY", "Passkey must be 6 to 64 characters.");
+  if (user.password_hash && await verifyPassword(passkey, user.password_hash)) throw new HttpError(400, "PASSKEY_MATCHES_PASSWORD", "Passkey must be different from your login password.");
+  return hashPassword(passkey);
+}
+var savePasskey = (user, hash) => updateRows("users", { id: user.id }, { passkey_hash: hash, passkey_failed_attempts: 0, passkey_locked_until: null, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+async function checkPasskey(user, value, purpose, detail) {
+  if (!user.passkey_hash) return { verified: false, reason: "not_set" };
+  const locked = lockedUntil(user);
+  if (locked) return { verified: false, reason: "locked", locked_until: locked };
+  const previous = user.passkey_locked_until ? 0 : Number(user.passkey_failed_attempts ?? 0);
+  if (typeof value === "string" && value && await verifyPassword(value, user.passkey_hash)) {
+    if (previous || user.passkey_locked_until) await updateRows("users", { id: user.id }, { passkey_failed_attempts: 0, passkey_locked_until: null });
+    return { verified: true };
+  }
+  const attempts = previous + 1;
+  const lock = attempts >= PASSKEY_MAX_ATTEMPTS ? new Date(Date.now() + PASSKEY_LOCK_MINUTES * 6e4).toISOString() : null;
+  await updateRows("users", { id: user.id }, { passkey_failed_attempts: lock ? 0 : attempts, passkey_locked_until: lock });
+  await audit("account.passkey.failed", user.id, "users", user.id, { purpose, detail, attempts, locked: Boolean(lock) });
+  return lock ? { verified: false, reason: "locked", locked_until: lock } : { verified: false, reason: "invalid", attempts_left: PASSKEY_MAX_ATTEMPTS - attempts };
+}
 async function overview(ctx) {
   const user = await currentUser(ctx);
   const sessions = await activeSessions(user.id);
-  return { otp_enabled: user.otp_enabled !== false, otp_available: otpEnabled(), current_session_id: ctx.sessionId ?? null, sessions: sessions.map((session) => ({ id: session.id, device: session.device, browser: session.browser, created_at: session.created_at, last_active_at: session.last_active_at, current: session.id === ctx.sessionId })) };
+  return { otp_enabled: user.otp_enabled !== false, otp_available: otpEnabled(), passkey_set: Boolean(user.passkey_hash), passkey_locked_until: lockedUntil(user), current_session_id: ctx.sessionId ?? null, sessions: sessions.map((session) => ({ id: session.id, device: session.device, browser: session.browser, created_at: session.created_at, last_active_at: session.last_active_at, current: session.id === ctx.sessionId })) };
 }
 var account_default = verifiedEdge(async (ctx) => {
   if (ctx.request.method === "GET") return ok(await overview(ctx));
@@ -220,11 +249,37 @@ var account_default = verifiedEdge(async (ctx) => {
   const action = required(input.action, "action");
   const user = await currentUser(ctx);
   if (action === "sign_out") {
-    if (ctx.sessionId) await revoke(ctx.sessionId);
+    if (ctx.sessionId) await revoke(ctx.sessionId).catch(() => void 0);
     await audit("account.session.signed_out", user.id, "user_sessions", ctx.sessionId);
     return ok({ signed_out: true });
   }
+  if (action === "verify_passkey") {
+    const purpose = input.purpose === "release" ? "release" : input.purpose === "export" ? "export" : null;
+    if (!purpose) throw new HttpError(400, "INVALID_PURPOSE", "Purpose must be export or release.");
+    const detail = String(input.detail ?? "").slice(0, 200);
+    const result = await checkPasskey(user, input.passkey, purpose, detail);
+    if (result.verified) await audit(purpose === "export" ? "account.passkey.export" : "account.passkey.release", user.id, "users", user.id, { detail });
+    return ok(result);
+  }
+  if (action === "change_passkey") {
+    const check = await checkPasskey(user, input.current_passkey, "change", "Change passkey");
+    if (!check.verified) {
+      if (check.reason === "not_set") throw new HttpError(409, "PASSKEY_NOT_SET", "Set a passkey first.");
+      if (check.reason === "locked") throw new HttpError(423, "PASSKEY_LOCKED", `Passkey is locked until ${check.locked_until}.`);
+      throw new HttpError(400, "INVALID_PASSKEY", `Current passkey is incorrect. ${check.attempts_left} attempt${check.attempts_left === 1 ? "" : "s"} left.`);
+    }
+    if (typeof input.new_passkey === "string" && await verifyPassword(input.new_passkey, String(user.passkey_hash))) throw new HttpError(400, "PASSKEY_UNCHANGED", "The new passkey must be different from the current passkey.");
+    await savePasskey(user, await newPasskey(user, input.new_passkey));
+    await audit("account.passkey.changed", user.id, "users", user.id);
+    return ok(await overview(ctx));
+  }
   await confirmPassword(user, input.current_password);
+  if (action === "set_passkey" || action === "reset_passkey") {
+    if (action === "set_passkey" && user.passkey_hash) throw new HttpError(409, "PASSKEY_ALREADY_SET", "A passkey is already set. Use Change Passkey.");
+    await savePasskey(user, await newPasskey(user, input.new_passkey));
+    await audit(action === "set_passkey" ? "account.passkey.set" : "account.passkey.reset", user.id, "users", user.id);
+    return ok(await overview(ctx));
+  }
   if (action === "change_password") {
     const next = typeof input.new_password === "string" ? input.new_password : "";
     if (!next) throw new HttpError(400, "VALIDATION_ERROR", "new_password is required");

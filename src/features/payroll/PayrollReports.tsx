@@ -1,4 +1,6 @@
 import {useState} from 'react';
+import {recordAudit} from '../audit/auditService';
+import {confirmWithPasskey} from '../auth/passkeyGate';
 import {Button,Card,Empty,Modal,ghost} from '../../components/common/ui';
 import {RUNS_KEY,payRun,runLabel} from './payrollRuns';
 import type {PayrollRun,PaymentMethod} from './payrollRuns';
@@ -25,7 +27,7 @@ const[releasing,setReleasing]=useState<PayrollRun|null>(null);
 const[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
 const[releaseBusy,setReleaseBusy]=useState(false),[releaseError,setReleaseError]=useState('');
 const[,refresh]=useState(0);
- const release=async()=>{if(!releasing)return;setReleaseBusy(true);setReleaseError('');try{const result=await payRun(releasing.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');setReleasing(null);refresh(n=>n+1)}catch(cause){setReleaseError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setReleaseBusy(false)}};
+ const release=async()=>{if(!releasing)return;if(!await confirmWithPasskey('release',`Release ${runLabel(releasing)} to Finance`))return;setReleaseBusy(true);setReleaseError('');try{const result=await payRun(releasing.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');recordAudit({action:'Released payroll to Finance',module:'Payroll',description:`Released ${runLabel(releasing)} to Finance (${method}) after passkey confirmation.`});setReleasing(null);refresh(n=>n+1)}catch(cause){setReleaseError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setReleaseBusy(false)}};
 const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
  const sum=(key:'gross'|'deductions'|'net'|'overtime'|'sss'|'phil'|'pagibig')=>computed.reduce((total,item)=>total+item.c[key],0);
  const employee=(r:PayrollInput)=>employees.find(item=>item.id===r.empId||item.employeeNo===r.empId);

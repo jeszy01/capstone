@@ -10,6 +10,7 @@ import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
+import {confirmWithPasskey} from '../auth/passkeyGate';
 import {calculatePayroll} from './payrollCalculator';
 import {RUNS_KEY,decideRun,isThirteenthMonthRun,payRun,periodLabel,runLabel,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,PayrollRunType,RunRow,PaymentMethod} from './payrollRuns';
@@ -46,7 +47,7 @@ export default function ReviewPayroll(){
  const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
  const[paying,setPaying]=useState(false),[paymentBusy,setPaymentBusy]=useState(false),[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
  const[loanError,setLoanError]=useState('');
- const pay=async()=>{if(!saved)return;setPaymentBusy(true);setError('');try{const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');nav('/payroll')}catch(cause){setError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setPaymentBusy(false)}};
+ const pay=async()=>{if(!saved)return;if(!await confirmWithPasskey('release',`Release ${runLabel(saved)} to Finance`))return;setPaymentBusy(true);setError('');try{const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');recordAudit({action:'Released payroll to Finance',module:'Payroll',description:`Released ${runLabel(saved)} to Finance (${method}) after passkey confirmation.`});nav('/payroll')}catch(cause){setError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setPaymentBusy(false)}};
  const priorHistory=(employeeId:string):AnnualTaxHistory=>{
   const year=from.slice(0,4);const priorRuns=read<PayrollRun[]>(RUNS_KEY,[]).filter(run=>run.status==='Approved'&&run.from.slice(0,4)===year&&run.to<from);
   return priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===employeeId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{

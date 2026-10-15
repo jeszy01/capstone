@@ -9,6 +9,7 @@ import {fetchAttendance} from './attendanceService';
 import {loadAttendanceSchedule} from '../settings/payrollSettings';
 import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
+import {confirmWithPasskey} from '../auth/passkeyGate';
 
 const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 const head='border-b border-[#e3e7ef] bg-slate-50/80 text-[10px] uppercase tracking-wide text-[#6b7794]';
@@ -67,7 +68,7 @@ function DailyAttendance({employees}:{employees:Employee[]}){
   {label:'Total Employees',value:employees.length,icon:Users,color:'bg-slate-50 text-slate-600'},
  ];
  const headers=['Employee','Time In','Time Out','Worked Hours','Late (min)','Undertime (min)','OT (min)','Status'];
- const exportRows=()=>exportCsv(`attendance-${date}.csv`,headers,shown.map(record=>{const c=calculateAttendance(record,loadAttendanceSchedule());return [employeeFor(record.empId)?.name||record.name,record.timeIn||'—',record.timeOut||'—',workedHours(record),c.late,c.under,c.ot,attendanceStatus(record)]}));
+ const exportRows=async()=>{if(!await confirmWithPasskey('export',`Daily attendance (${date}) CSV`))return;exportCsv(`attendance-${date}.csv`,headers,shown.map(record=>{const c=calculateAttendance(record,loadAttendanceSchedule());return [employeeFor(record.empId)?.name||record.name,record.timeIn||'—',record.timeOut||'—',workedHours(record),c.late,c.under,c.ot,attendanceStatus(record)]}))};
  return <div>
   <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
    <Card className="!rounded-xl !border-white !bg-white/90 !p-3 !shadow-sm max-sm:w-full"><div className="flex items-center justify-between gap-4"><button aria-label="Previous Date" title="Previous Date" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e3e7ef] text-[#6b7794] transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" onClick={()=>moveDate(-1)}><ChevronLeft size={18}/></button><label className="relative flex min-w-0 cursor-pointer items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600"><CalendarDays size={20}/></span><span className="min-w-0"><span className="block text-[15px] font-semibold text-[#17345b]">{selectedDay.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</span><span className="block text-[11px] text-[#6b7794]">{selectedDay.toLocaleDateString('en-US',{weekday:'long'})}</span></span><input aria-label="Selected attendance date" type="date" value={date} onChange={event=>setDate(event.target.value||today())} className="absolute inset-0 h-full w-full cursor-pointer opacity-0"/></label><button aria-label="Next Date" title="Next Date" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e3e7ef] text-[#6b7794] transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" onClick={()=>moveDate(1)}><ChevronRight size={18}/></button></div></Card>
