@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import {Check} from 'lucide-react';
-import {Button,Card,Empty,ErrorAlert,LoadingState,PageHeader} from '../components/common/ui';
+import {Button,Card,Empty,ErrorAlert,LoadingState} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {employeeName,normalizeClaims,saveClaims,statusClass} from '../features/claims/claimsTypes';
@@ -22,7 +22,7 @@ export default function Reimbursement(){
   const history=claims.filter(item=>item.paymentStatus!=='Unpaid');
   const process=(claim:ExpenseClaim)=>{const next=processReimbursement(claim);if(next){update(claim.id,next);recordAudit({action:'Processed reimbursement',module:'Reimbursement',description:`Processed reimbursement for claim ${claim.claimNumber} (${peso(claim.amount)}).`});setTab('history')}};
   return <div className="space-y-5">
-    <PageHeader title="Reimbursement" description="Pay employees back for approved company and business expense claims."/>
+
     <div className="mt-5 overflow-x-auto rounded-xl border border-blue-100 bg-white px-1.5 py-1.5 shadow-[0_2px_8px_rgba(23,52,91,0.035)]"><div className="flex min-w-max gap-1" role="tablist" aria-label="Reimbursement sections"><button type="button" role="tab" id="reimbursement-tab-forReimbursement" aria-controls="reimbursement-panel" aria-selected={tab==='forReimbursement'} onClick={()=>setTab('forReimbursement')} className={`relative whitespace-nowrap rounded-t-lg px-4 py-3.5 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${tab==='forReimbursement'?'bg-blue-50 text-blue-700 after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-full after:bg-blue-600':'text-slate-500 hover:bg-slate-50 hover:text-[#17345b]'}`}>For Reimbursement</button><button type="button" role="tab" id="reimbursement-tab-history" aria-controls="reimbursement-panel" aria-selected={tab==='history'} onClick={()=>setTab('history')} className={`relative whitespace-nowrap rounded-t-lg px-4 py-3.5 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${tab==='history'?'bg-blue-50 text-blue-700 after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-full after:bg-blue-600':'text-slate-500 hover:bg-slate-50 hover:text-[#17345b]'}`}>Reimbursement History</button></div></div>
     {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}<section id="reimbursement-panel" role="tabpanel" aria-labelledby={`reimbursement-tab-${tab}`} className="min-w-0">{loading?<Card className="border-blue-100"><LoadingState>Loading reimbursements…</LoadingState></Card>:<>{tab==='forReimbursement'&&<ForReimbursement claims={forReimbursement} employees={employees} onProcess={process}/>} {tab==='history'&&<ReimbursementHistory claims={history} employees={employees}/>}</>}</section>
   </div>

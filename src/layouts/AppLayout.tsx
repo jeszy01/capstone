@@ -12,7 +12,7 @@ const endSession=()=>{void accountService.signOut().catch(()=>undefined);logout(
 type NotificationItem={id:string;title:string;description:string;to:string;icon:'payroll'|'claims'};
 const notifications:NotificationItem[]=[
  {id:'payroll-summary-review',title:'Payroll summary is ready for review',description:'Review the current payroll summary and deductions.',to:'/payroll?tab=summary',icon:'payroll'},
- {id:'claims-review',title:'Claims need review',description:'Open claims and reimbursement records.',to:'/claims',icon:'claims'},
+ {id:'claims-review',title:'Claims need review',description:'Open claims and reimbursement records.',to:'/claims-reimbursement',icon:'claims'},
 ];
 export default function AppLayout(){
  const {pathname}=useLocation(),navigate=useNavigate();

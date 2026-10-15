@@ -8,9 +8,8 @@ import {Dashboard,Employees,Payroll,Deductions,Compensation,Benefits} from './pa
 import TimeAttendance from './features/attendance/TimeAttendance';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
-import Claims from './pages/Claims';
+import ClaimsReimbursement from './pages/ClaimsReimbursement';
 import ReviewPayroll from './features/payroll/ReviewPayroll';
-import Reimbursement from './pages/Reimbursement';
 import {LogsAudits} from './pages/Admin';
 import SettingsPrivacy from './pages/SettingsPrivacy';
 import PayrollSettings from './pages/PayrollSettings';
@@ -34,8 +33,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/compensation/salary-structure" element={<Compensation section="salary-structure"/>}/>
   <Route path="/compensation/adjustments" element={<Compensation section="adjustments"/>}/>
   <Route path="/compensation/history" element={<Compensation section="history"/>}/>
-  <Route path="/reimbursement" element={<Reimbursement/>}/>
-  <Route path="/claims" element={<Claims/>}/>
+  <Route path="/claims-reimbursement" element={<ClaimsReimbursement/>}/>
   <Route path="/hmo-benefits" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="/hmo-benefits/hmo" element={<HmoBenefits/>}/>
   {hmoTabs.map(({to})=><Route key={to} path={to} element={<HmoBenefits/>}/>)}

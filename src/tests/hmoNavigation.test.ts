@@ -26,12 +26,9 @@ describe('HMO presentation navigation',()=>{
     expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'}]);
   });
 
-  it('leaves the Claims & Reimbursement navigation unchanged',()=>{
+  it('shows Claims & Reimbursement as a single item',()=>{
     const claims=modules.find(item=>item.label==='Claims & Reimbursement');
-    expect(claims?.to).toBe('/reimbursement');
-    expect(claims?.children).toEqual([
-      {label:'Reimbursement',to:'/reimbursement'},
-      {label:'Claims',to:'/claims'},
-    ]);
+    expect(claims?.to).toBe('/claims-reimbursement');
+    expect(claims?.children).toBeUndefined();
   });
 });

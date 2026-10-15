@@ -14,9 +14,7 @@ export const modules:NavItem[]=[
   {label:'Adjustments',to:'/compensation/adjustments'},
   {label:'History',to:'/compensation/history'},
  ]},
- {label:'Claims & Reimbursement',to:'/reimbursement',icon:FileText,children:[
-  {label:'Reimbursement',to:'/reimbursement'},{label:'Claims',to:'/claims'},
- ]},
+ {label:'Claims & Reimbursement',to:'/claims-reimbursement',icon:FileText},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse,children:[
   {label:'HMO',to:'/hmo-benefits/hmo'},
  ]},
