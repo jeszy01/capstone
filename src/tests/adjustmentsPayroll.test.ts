@@ -4,7 +4,7 @@ import {DEFAULT_WITHHOLDING_RULES} from '../features/payroll/withholdingTax';
 import {DEFAULT_RATES} from '../features/payroll/payrollRules';
 import {calculatePayroll} from '../features/payroll/payrollCalculator';
 import {buildPayslipBreakdown} from '../features/payroll/payslipMath';
-import {activeAllowances,allowancePay,allowanceTaxability,DEFAULT_ALLOWANCE_TYPES} from '../features/compensation/allowanceRules';
+import {activeAllowances,allowancePay} from '../features/compensation/allowanceRules';
 import {computeThirteenthMonth,DEFAULT_THIRTEENTH_MONTH_RULES,monthsOfService} from '../features/payroll/thirteenthMonth';
 import type {BonusIncentive} from '../features/compensation/compensationState';
 import type {PayrollRun} from '../features/payroll/payrollRuns';
@@ -13,20 +13,11 @@ const rule=DEFAULT_WITHHOLDING_RULES;
 const allowance=(overrides:Partial<BonusIncentive>):BonusIncentive=>({id:crypto.randomUUID(),employeeId:'e1',type:'Allowance',amount:0,effectiveDate:'2026-01-01',notes:'',status:'Active',createdAt:'',allowanceType:'Rice Subsidy',frequency:'Monthly',taxable:true,cutoffStart:'',cutoffEnd:'',...overrides});
 const blank:PayrollInput={empId:'EMP-1',name:'Test',dailyRate:1000,daysWorked:11,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0};
 
-describe('allowances and de minimis limits',()=>{
- it('flags allowances above the monthly de minimis limit as taxable',()=>{
-  const within=allowance({amount:1250,frequency:'Per Cutoff'});
-  const transport=allowance({amount:500,allowanceType:'Transportation'});
-  const flags=allowanceTaxability([within,transport],DEFAULT_ALLOWANCE_TYPES,rule,2);
-  expect(flags.get(within.id)).toBe(false);
-  expect(flags.get(transport.id)).toBe(true);
-  const over=allowance({amount:3000});
-  expect(allowanceTaxability([over],DEFAULT_ALLOWANCE_TYPES,rule,2).get(over.id)).toBe(true);
- });
- it('splits cutoff allowance pay into the exempt limit and the taxable excess',()=>{
-  const items=[allowance({amount:3000}),allowance({amount:400,allowanceType:'Transportation',frequency:'Per Cutoff'}),allowance({amount:999,status:'Inactive'}),allowance({amount:999,effectiveDate:'2099-01-01'})];
-  const pay=allowancePay(activeAllowances(items,['e1'],'2026-10-15'),DEFAULT_ALLOWANCE_TYPES,rule,2);
-  expect(pay).toEqual({exempt:1250,taxable:650});
+describe('allowances',()=>{
+ it('splits cutoff allowance pay by each allowance taxable choice',()=>{
+  const items=[allowance({amount:2500,taxable:false}),allowance({amount:400,allowanceType:'Transportation',frequency:'Per Cutoff'}),allowance({amount:999,status:'Inactive'}),allowance({amount:999,effectiveDate:'2099-01-01'})];
+  const pay=allowancePay(activeAllowances(items,['e1'],'2026-10-15'),2);
+  expect(pay).toEqual({exempt:1250,taxable:400});
  });
  it('pays exempt allowances and non-taxable bonuses without taxing them as regular pay',()=>{
   const base=calculatePayroll(blank,DEFAULT_RATES,[],{periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:[rule]});

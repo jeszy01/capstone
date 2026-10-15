@@ -115,12 +115,12 @@ describe('Backend-authoritative compensation workflow',()=>{
   const {tables}=setup();const authorization=`Bearer ${await session()}`;
   const missingFrequency=await call({action:'create_reward',employee_id:employeeId,reward_type:'Allowance',allowance_type:'Meal',amount:3500,effective_date:'2099-01-01'},authorization);
   expect(missingFrequency.status).toBe(400);
-  const created=await call({action:'create_reward',employee_id:employeeId,reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',amount:3500,effective_date:'2099-01-01'},authorization);
+  const created=await call({action:'create_reward',employee_id:employeeId,reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',taxable:false,amount:3500,effective_date:'2099-01-01'},authorization);
   expect(created.status).toBe(200);
-  expect(tables.compensation_rewards[0]).toMatchObject({reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',amount:3500,status:'Active'});
+  expect(tables.compensation_rewards[0]).toMatchObject({reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',taxable:false,amount:3500,status:'Active'});
   const id=String(tables.compensation_rewards[0].id);
-  expect((await call({action:'update_reward',id,employee_id:employeeId,reward_type:'Allowance',allowance_type:'Transportation',frequency:'Per Cutoff',amount:1500,effective_date:'2099-01-01',status:'Inactive'},authorization)).status).toBe(200);
-  expect(tables.compensation_rewards[0]).toMatchObject({allowance_type:'Transportation',frequency:'Per Cutoff',amount:1500,status:'Inactive'});
+  expect((await call({action:'update_reward',id,employee_id:employeeId,reward_type:'Allowance',allowance_type:'Transportation',frequency:'Per Cutoff',taxable:true,amount:1500,effective_date:'2099-01-01',status:'Inactive'},authorization)).status).toBe(200);
+  expect(tables.compensation_rewards[0]).toMatchObject({allowance_type:'Transportation',frequency:'Per Cutoff',taxable:true,amount:1500,status:'Inactive'});
   expect((await call({action:'review_reward',id,decision:'approve'},authorization)).status).toBe(400);
   expect((await call({action:'delete_reward',id},authorization)).status).toBe(200);
   expect(tables.compensation_rewards).toHaveLength(0);

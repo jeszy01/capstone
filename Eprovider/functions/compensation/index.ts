@@ -238,7 +238,8 @@ function rewardValues(input:Row,type:string):Row&{amount:number;status?:string}{
   if(frequency!=="Per Cutoff"&&frequency!=="Monthly")throw new HttpError(400,"INVALID_FREQUENCY","Frequency must be Per Cutoff or Monthly.");
   const status=String(input.status??"Active");
   if(status!=="Active"&&status!=="Inactive")throw new HttpError(400,"INVALID_ALLOWANCE_STATUS","Allowance status must be Active or Inactive.");
-  return {...values,allowance_type:allowanceType,frequency,status,effective_date:isoDate(input.effective_date),notes:String(input.notes??"").trim()};
+  if(typeof input.taxable!=="boolean")throw new HttpError(400,"INVALID_TAXABLE","Taxable must be true or false.");
+  return {...values,allowance_type:allowanceType,frequency,status,taxable:input.taxable,effective_date:isoDate(input.effective_date),notes:String(input.notes??"").trim()};
  }
  if(!isBonusType(type))throw new HttpError(400,"INVALID_REWARD_TYPE","Type must be Allowance, Incentive, or Bonus.");
  const cutoffStart=isoDate(input.cutoff_start,"cutoff_start"),cutoffEnd=isoDate(input.cutoff_end,"cutoff_end");

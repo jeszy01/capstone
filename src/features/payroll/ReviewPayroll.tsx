@@ -14,7 +14,7 @@ import {calculatePayroll} from './payrollCalculator';
 import {RUNS_KEY,decideRun,isThirteenthMonthRun,payRun,periodLabel,runLabel,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,PayrollRunType,RunRow,PaymentMethod} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
-import {activeAllowances,allowancePay,loadAllowanceTypes} from '../compensation/allowanceRules';
+import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
 import {isBonusReward} from '../compensation/compensationState';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {loadWithholdingRules,ruleForDate} from './withholdingTax';
@@ -81,7 +81,7 @@ export default function ReviewPayroll(){
 const grades=bundle.grades;
 // Allowances and approved incentives & bonuses are maintained in Compensation Planning.
 const rewards=bundle.bonuses;
-const allowanceTypes=loadAllowanceTypes(),withholdingRule=ruleForDate(to,loadWithholdingRules());
+
 const time=loadTimeSettings(),holidays=loadHolidays();
 const base=computeDeductions({employees,records,schedule:loadAttendanceSchedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
 const built:RunRow[]=[];
@@ -92,7 +92,7 @@ const built:RunRow[]=[];
      const approvedBonuses=rewards.filter(entry=>isBonusReward(entry)&&entry.status==='Approved'&&employeeIds.includes(entry.employeeId)&&entry.cutoffEnd>=from&&entry.cutoffEnd<=to);
      const taxableBonus=approvedBonuses.filter(entry=>entry.taxable).reduce((total,entry)=>total+entry.amount,0);
      const nonTaxableBonus=approvedBonuses.filter(entry=>!entry.taxable).reduce((total,entry)=>total+entry.amount,0);
-     const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),allowanceTypes,withholdingRule,rates.payPeriodsPerMonth);
+     const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),rates.payPeriodsPerMonth);
      const hmo=await hmoService.getPayrollDeduction(employee.id,from,to);
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
      const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});

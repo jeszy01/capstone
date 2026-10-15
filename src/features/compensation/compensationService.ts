@@ -26,7 +26,7 @@ const rewardFromServer=(row:ServerReward):BonusIncentive=>{
  return {id:row.id,employeeId:row.employee_id,type:bonus?row.reward_type as BonusIncentive['type']:'Allowance',amount:money(row.amount),effectiveDate,notes:row.notes??'',status,createdAt:row.created_at,allowanceType:bonus?'':row.allowance_type||(row.reward_type==='Allowance'?'':row.reward_type),frequency:row.frequency==='Per Cutoff'?'Per Cutoff':'Monthly',taxable:row.taxable??true,cutoffStart:String(row.cutoff_start??effectiveDate).slice(0,10),cutoffEnd:String(row.cutoff_end??effectiveDate).slice(0,10)};
 };
 const rewardPayload=(reward:RewardInput)=>reward.type==='Allowance'
- ?{employee_id:reward.employeeId,reward_type:'Allowance',allowance_type:reward.allowanceType,frequency:reward.frequency,amount:reward.amount,effective_date:reward.effectiveDate,status:reward.status,notes:reward.notes}
+ ?{employee_id:reward.employeeId,reward_type:'Allowance',allowance_type:reward.allowanceType,frequency:reward.frequency,taxable:reward.taxable,amount:reward.amount,effective_date:reward.effectiveDate,status:reward.status,notes:reward.notes}
  :{employee_id:reward.employeeId,reward_type:reward.type,amount:reward.amount,cutoff_start:reward.cutoffStart,cutoff_end:reward.cutoffEnd,notes:reward.notes,taxable:reward.taxable};
 
 async function action<T>(payload:Record<string,unknown>){return apiClient.post<Record<string,unknown>,Envelope<T>>('/compensation',payload).then(response=>response.data)}

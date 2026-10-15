@@ -58,7 +58,7 @@ describe('compensationService',()=>{
   api.post.mockResolvedValue({data:{}});
   const base={employeeId:'employee-1',amount:1000,effectiveDate:'2026-10-01',notes:'',status:'Active' as const,allowanceType:'Meal',frequency:'Monthly' as const,taxable:true,cutoffStart:'2026-10-01',cutoffEnd:'2026-10-15'};
   await compensationService.createReward({...base,type:'Allowance'});
-  expect(api.post).toHaveBeenCalledWith('/compensation',{action:'create_reward',employee_id:'employee-1',reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',amount:1000,effective_date:'2026-10-01',status:'Active',notes:''});
+  expect(api.post).toHaveBeenCalledWith('/compensation',{action:'create_reward',employee_id:'employee-1',reward_type:'Allowance',allowance_type:'Meal',frequency:'Monthly',taxable:true,amount:1000,effective_date:'2026-10-01',status:'Active',notes:''});
   await compensationService.updateReward('reward-1',{...base,type:'Bonus',notes:'Target met',taxable:false});
   expect(api.post).toHaveBeenCalledWith('/compensation',{action:'update_reward',id:'reward-1',employee_id:'employee-1',reward_type:'Bonus',amount:1000,cutoff_start:'2026-10-01',cutoff_end:'2026-10-15',notes:'Target met',taxable:false});
   await compensationService.reviewReward('reward-1','reject');

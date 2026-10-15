@@ -2,30 +2,17 @@ import {read,write} from '../../utils/storage';
 
 export type PayrollPeriod='daily'|'weekly'|'semi-monthly'|'monthly';
 export interface TaxBracket{over:number;base:number;rate:number}
-export interface DeMinimisCap{id:string;label:string;amount:number;unit:'annual'|'monthly'|'semi-annual'|'per day as % of regional minimum wage'|'days per year';}
 export interface WithholdingTaxRuleSet{
  id:string; effectiveFrom:string; effectiveTo?:string; source:string;
  tables:Record<PayrollPeriod,TaxBracket[]>; annualTable:TaxBracket[];
  annualBenefitsExemption:number;
- deMinimisEffectiveFrom:string;deMinimisSource:string;deMinimisCaps:DeMinimisCap[];
 }
 export const WITHHOLDING_RULES_KEY='payroll:withholding-tax-rules';
+const RETIRED_RULE_FIELDS=['deMinimisEffectiveFrom','deMinimisSource','deMinimisCaps'];
 const rrTable=(rows:Array<[number,number,number]>):TaxBracket[]=>rows.map(([over,base,rate])=>({over,base,rate}));
 /** RR 11-2018 Annex E (compensation paid from 2023 onward) and RA 10963 annual rates. */
 export const DEFAULT_WITHHOLDING_RULES:WithholdingTaxRuleSet={
  id:'bir-train-rr29-2025',effectiveFrom:'2023-01-01',source:'RA 10963; RR 11-2018 Annex E (effective 2023 onward); RR 2-98, as amended',annualBenefitsExemption:90000,
- deMinimisEffectiveFrom:'2026-01-06',deMinimisSource:'RR 29-2025 (effective 2026-01-06)',deMinimisCaps:[
-  {id:'unused-vacation-leave',label:'Monetized unused vacation leave (private employees)',amount:12,unit:'days per year'},
-  {id:'medical-cash-dependents',label:'Medical cash allowance for dependents',amount:2000,unit:'semi-annual'},
-  {id:'rice-subsidy',label:'Rice subsidy',amount:2500,unit:'monthly'},
-  {id:'uniform-clothing',label:'Uniform and clothing allowance',amount:8000,unit:'annual'},
-  {id:'actual-medical-assistance',label:'Actual medical assistance',amount:12000,unit:'annual'},
-  {id:'laundry',label:'Laundry allowance',amount:400,unit:'monthly'},
-  {id:'achievement-awards',label:'Achievement awards (established non-discriminatory plan)',amount:12000,unit:'annual'},
-  {id:'gifts',label:'Christmas and major-anniversary gifts',amount:6000,unit:'annual'},
-  {id:'overtime-meal',label:'Daily meal allowance for overtime/night shift',amount:30,unit:'per day as % of regional minimum wage'},
-  {id:'cba-productivity',label:'CBA benefits and productivity incentives (combined)',amount:12000,unit:'annual'},
- ],
  tables:{
   daily:rrTable([[0,0,0],[685,0,15],[1096,61.65,20],[2192,280.85,25],[5479,1102.6,30],[21918,6034.3,35]]),
   weekly:rrTable([[0,0,0],[4808,0,15],[7692,0,20],[15385,432.6,25],[38462,1971.2,30],[153846,7740.45,35]]),
@@ -39,16 +26,18 @@ export function validateRuleSet(rule:WithholdingTaxRuleSet):string[]{
  const errors:string[]=[]; if(!validDate(rule.effectiveFrom))errors.push('Effective-from date must be a valid ISO date.');if(!rule.source.trim())errors.push('A source citation is required for the withholding schedule.');
  if(rule.effectiveTo&&(!validDate(rule.effectiveTo)||rule.effectiveTo<rule.effectiveFrom))errors.push('Effective-to date must be on or after effective-from date.');
  if(!Number.isFinite(rule.annualBenefitsExemption)||rule.annualBenefitsExemption<0)errors.push('Annual 13th-month and other-benefits exemption must be 0 or more.');
- if(!validDate(rule.deMinimisEffectiveFrom))errors.push('De minimis effective-from date must be a valid ISO date.');
- if(!rule.deMinimisSource.trim())errors.push('A source citation is required for de minimis ceilings.');
- const ids=new Set<string>();for(const cap of rule.deMinimisCaps??[]){if(!cap.id||ids.has(cap.id))errors.push('Each de minimis ceiling needs a unique identifier.');ids.add(cap.id);if(!cap.label.trim()||!Number.isFinite(cap.amount)||cap.amount<0)errors.push(`Invalid de minimis ceiling: ${cap.label||cap.id}.`)}
  for(const key of ['daily','weekly','semi-monthly','monthly'] as PayrollPeriod[])errors.push(...validateTable(rule.tables[key],`${key} table`));
  errors.push(...validateTable(rule.annualTable,'annual table')); return errors;
 }
 function validateTable(table:TaxBracket[],name:string){const e:string[]=[];if(!Array.isArray(table)||!table.length)return [`${name} needs at least one bracket.`];for(let i=0;i<table.length;i++){const b=table[i];if(![b.over,b.base,b.rate].every(Number.isFinite)||b.over<0||b.base<0||b.rate<0||b.rate>100)e.push(`${name}: bracket ${i+1} has an invalid amount or rate.`);if(i===0&&b.over!==0)e.push(`${name}: first bracket must start at 0.`);if(i>0&&b.over<=table[i-1].over)e.push(`${name}: bracket thresholds must increase.`)}return e;}
 export function loadWithholdingRules():WithholdingTaxRuleSet[]{
- const saved=read<WithholdingTaxRuleSet[]>(WITHHOLDING_RULES_KEY,[]);
- if(saved.length)return saved.map(rule=>({...DEFAULT_WITHHOLDING_RULES,...rule,tables:{...DEFAULT_WITHHOLDING_RULES.tables,...rule.tables},deMinimisEffectiveFrom:rule.deMinimisEffectiveFrom??DEFAULT_WITHHOLDING_RULES.deMinimisEffectiveFrom,deMinimisSource:rule.deMinimisSource??DEFAULT_WITHHOLDING_RULES.deMinimisSource,deMinimisCaps:rule.deMinimisCaps??structuredClone(DEFAULT_WITHHOLDING_RULES.deMinimisCaps)})).sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
+ let saved=read<WithholdingTaxRuleSet[]>(WITHHOLDING_RULES_KEY,[]);
+ // De minimis ceilings are no longer part of Payroll Settings; remove them from saved rule sets.
+ if(saved.some(rule=>RETIRED_RULE_FIELDS.some(field=>field in rule))){
+  saved=saved.map(rule=>Object.fromEntries(Object.entries(rule).filter(([field])=>!RETIRED_RULE_FIELDS.includes(field))) as unknown as WithholdingTaxRuleSet);
+  write(WITHHOLDING_RULES_KEY,saved);
+ }
+ if(saved.length)return saved.map(rule=>({...DEFAULT_WITHHOLDING_RULES,...rule,tables:{...DEFAULT_WITHHOLDING_RULES.tables,...rule.tables}})).sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
  const legacy=read<TaxBracket[]>('payroll:tax-brackets',[]);
  const initial=structuredClone(DEFAULT_WITHHOLDING_RULES);
  if(legacy.length)initial.tables.monthly=legacy;

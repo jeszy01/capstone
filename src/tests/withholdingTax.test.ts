@@ -1,12 +1,10 @@
-import {describe,expect,it} from 'vitest';
+import {describe,expect,it,vi} from 'vitest';
 import {calculateWithholdingTax,DEFAULT_WITHHOLDING_RULES,detectPayrollPeriod,taxFromTable,validateRuleSet} from '../features/payroll/withholdingTax';
 
 describe('effective-dated Philippine withholding rules',()=>{
  it('validates the shipped BIR TRAIN baseline and resolves a rule by effective date',()=>{
   expect(validateRuleSet(DEFAULT_WITHHOLDING_RULES)).toEqual([]);
   expect(DEFAULT_WITHHOLDING_RULES.effectiveFrom).toBe('2023-01-01');
-  expect(DEFAULT_WITHHOLDING_RULES.deMinimisEffectiveFrom).toBe('2026-01-06');
-  expect(DEFAULT_WITHHOLDING_RULES.deMinimisCaps.find(cap=>cap.id==='rice-subsidy')?.amount).toBe(2500);
  });
  it('uses period-specific Annex E tables',()=>{
   expect(detectPayrollPeriod('2026-03-01','2026-03-01')).toBe('daily');
@@ -40,5 +38,22 @@ describe('effective-dated Philippine withholding rules',()=>{
   expect(result.yearToDateTaxableCompensation).toBe(319000);
   expect(result.annualTaxLiability).toBe(10350);
   expect(result.withholdingTax).toBe(6850);
+ });
+});
+
+describe('retired de minimis ceilings',()=>{
+ it('removes saved ceilings from stored rule sets and allowance types',async()=>{
+  const store=new Map<string,string>();
+  vi.stubGlobal('localStorage',{getItem:(key:string)=>store.get(key)??null,setItem:(key:string,value:string)=>{store.set(key,value)},removeItem:(key:string)=>{store.delete(key)},clear:()=>store.clear()});
+  const {WITHHOLDING_RULES_KEY,loadWithholdingRules}=await import('../features/payroll/withholdingTax');
+  const {ALLOWANCE_TYPES_KEY,loadAllowanceTypes}=await import('../features/compensation/allowanceRules');
+  localStorage.setItem(WITHHOLDING_RULES_KEY,JSON.stringify([{...DEFAULT_WITHHOLDING_RULES,deMinimisEffectiveFrom:'2026-01-06',deMinimisSource:'RR',deMinimisCaps:[{id:'rice',label:'Rice',amount:2500,unit:'monthly'}]}]));
+  localStorage.setItem(ALLOWANCE_TYPES_KEY,JSON.stringify([{id:'rice',name:'Rice Subsidy',deMinimisCapId:'rice'}]));
+  expect(loadWithholdingRules()[0]).not.toHaveProperty('deMinimisCaps');
+  expect(localStorage.getItem(WITHHOLDING_RULES_KEY)).not.toContain('deMinimis');
+  expect(loadWithholdingRules()[0].annualBenefitsExemption).toBe(90000);
+  expect(loadAllowanceTypes()).toEqual([{id:'rice',name:'Rice Subsidy'}]);
+  expect(localStorage.getItem(ALLOWANCE_TYPES_KEY)).not.toContain('deMinimisCapId');
+  vi.unstubAllGlobals();
  });
 });

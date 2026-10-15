@@ -20,7 +20,7 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const overtime=round(hourly*(R.otMultiplier*numberValue(r.otHours)+R.otRestMultiplier*numberValue(r.otRestHours)));
  const leavePay=round(rate*(numberValue(r.vlDays)+numberValue(r.slDays)));
  const nightDifferential=round(numberValue(r.nightDifferential));
- // Allowances from Compensation Planning: the de minimis portion is exempt, the excess is regular taxable pay.
+ // Allowances from Compensation Planning: taxable allowances are regular pay; non-taxable allowances are exempt.
  const taxableAllowances=round(numberValue(r.transportation)+numberValue(r.riceSubsidy)+numberValue(r.allowancesTaxable));
  const exemptAllowances=round(numberValue(r.allowancesExempt));
  const allowances=round(taxableAllowances+exemptAllowances);

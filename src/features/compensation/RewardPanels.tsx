@@ -5,9 +5,8 @@ import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
 import {recordAudit} from '../audit/auditService';
 import {periodLabel} from '../payroll/payrollRuns';
-import {ruleForDate} from '../payroll/withholdingTax';
 import {cutoffFor,cutoffNumberFor,loadRates} from '../settings/payrollSettings';
-import {allowanceTaxability,linkableCaps,loadAllowanceTypes,saveAllowanceTypes} from './allowanceRules';
+import {loadAllowanceTypes,saveAllowanceTypes} from './allowanceRules';
 import type {AllowanceType} from './allowanceRules';
 import {compensationService} from './compensationService';
 import {isBonusReward,today} from './compensationState';
@@ -50,10 +49,7 @@ export function AllowancesPanel({employees,rewards,loading,loadError,canManage,e
  const [deleting,setDeleting]=useState<BonusIncentive|null>(null);
  const [typesOpen,setTypesOpen]=useState(false);
  const allowances=useMemo(()=>rewards.filter(item=>item.type==='Allowance'),[rewards]);
- const rule=ruleForDate(today()),payPeriods=loadRates().payPeriodsPerMonth;
- const taxable=useMemo(()=>allowanceTaxability(allowances,types,rule,payPeriods),[allowances,types,rule,payPeriods]);
  const shown=allowances.filter(item=>matches(search,employeeLabelFor(item.employeeId),item.allowanceType,item.frequency,item.status,item.effectiveDate));
- const draftTaxable=(draft:Draft,id?:string)=>allowanceTaxability([...allowances.filter(item=>item.id!==id),{...draft,id:id??'draft',createdAt:''}],types,rule,payPeriods).get(id??'draft')??true;
  const describe=(draft:Pick<Draft,'employeeId'|'allowanceType'|'amount'|'frequency'>)=>`${draft.allowanceType} allowance of ${peso(draft.amount)} (${draft.frequency}) for ${employeeLabelFor(draft.employeeId)}`;
 
  const persist=async()=>{
@@ -79,18 +75,18 @@ export function AllowancesPanel({employees,rewards,loading,loadError,canManage,e
   <SearchToolbar label="Search allowances" value={search} onChange={setSearch} shown={shown.length} total={allowances.length} placeholder="Search employee, type or status"/>
   <Card className="mt-3 overflow-hidden !p-0"><div className="overflow-x-auto"><table className={`${tableClass} min-w-[1000px]`}><thead><tr className={headerClass}>{['Employee','Allowance Type','Amount','Frequency','Taxable','Effective Date','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
    {loading?<TableMessage colSpan={8} loading>Loading allowances…</TableMessage>:loadError?<TableMessage colSpan={8}>Allowances could not be loaded.</TableMessage>:!shown.length?<TableMessage colSpan={8}>{allowances.length?'No allowances match this search.':'No allowances yet.'}</TableMessage>:shown.map(item=><tr key={item.id} className={rowClass}>
-    <td className="px-4 py-3.5 font-semibold text-slate-800">{employeeLabelFor(item.employeeId)}</td><td className="px-4 py-3.5">{item.allowanceType||'Not recorded'}</td><td className="px-4 py-3.5 font-semibold">{peso(item.amount)}</td><td className="px-4 py-3.5">{item.frequency}</td><td className="px-4 py-3.5">{yesNo(taxable.get(item.id)??true)}</td><td className="px-4 py-3.5">{formatDate(item.effectiveDate)}</td><td className="px-4 py-3.5"><StatusBadge status={item.status}/></td>
+    <td className="px-4 py-3.5 font-semibold text-slate-800">{employeeLabelFor(item.employeeId)}</td><td className="px-4 py-3.5">{item.allowanceType||'Not recorded'}</td><td className="px-4 py-3.5 font-semibold">{peso(item.amount)}</td><td className="px-4 py-3.5">{item.frequency}</td><td className="px-4 py-3.5">{yesNo(item.taxable)}</td><td className="px-4 py-3.5">{formatDate(item.effectiveDate)}</td><td className="px-4 py-3.5"><StatusBadge status={item.status}/></td>
     <td className={actionCell}><RowActions canEdit={canManage} label={`${item.allowanceType} allowance`} saving={saving} onEdit={()=>{setError('');setConfirmingEdit(false);setEditing({id:item.id,draft:{...item}})}} onDelete={()=>{setError('');setDeleting(item)}}/></td>
    </tr>)}
   </tbody></table></div></Card>
-  {editing&&!confirmingEdit&&<AllowanceModal key={editing.id??'new'} editing={Boolean(editing.id)} draft={editing.draft} employees={employees} types={types} taxableFor={draft=>draftTaxable(draft,editing.id)} error={error} saving={saving} onClose={()=>{if(!saving)setEditing(null)}} onSave={draft=>{setError('');setEditing({...editing,draft});if(editing.id)setConfirmingEdit(true);else void (async()=>{const done=await run(async()=>{await compensationService.createReward(draft);recordAudit({action:'Created allowance',module:MODULE,description:`Created ${describe(draft)}.`})},'The allowance could not be saved.');if(done){setEditing(null);onSuccess('Allowance added.')}})()}}/>}
+  {editing&&!confirmingEdit&&<AllowanceModal key={editing.id??'new'} editing={Boolean(editing.id)} draft={editing.draft} employees={employees} types={types} error={error} saving={saving} onClose={()=>{if(!saving)setEditing(null)}} onSave={draft=>{setError('');setEditing({...editing,draft});if(editing.id)setConfirmingEdit(true);else void (async()=>{const done=await run(async()=>{await compensationService.createReward(draft);recordAudit({action:'Created allowance',module:MODULE,description:`Created ${describe(draft)}.`})},'The allowance could not be saved.');if(done){setEditing(null);onSuccess('Allowance added.')}})()}}/>}
   {editing&&confirmingEdit&&<ConfirmDialog title="Save changes?" message={`Apply the changes to this ${editing.draft.allowanceType} allowance?`} confirmLabel="Confirm" saving={saving} onCancel={()=>setConfirmingEdit(false)} onConfirm={()=>void persist()}/>}
   {deleting&&<ConfirmDialog title="Delete allowance?" message={error||`Delete the ${deleting.allowanceType} allowance of ${employeeLabelFor(deleting.employeeId)}?`} confirmLabel="Delete" danger blocked={Boolean(error)} saving={saving} onCancel={()=>{if(!saving){setDeleting(null);setError('')}}} onConfirm={()=>void remove()}/>}
   {typesOpen&&<AllowanceTypesModal types={types} inUse={name=>allowances.some(item=>item.allowanceType.trim().toLowerCase()===name.trim().toLowerCase())} onClose={()=>setTypesOpen(false)} onSaved={next=>{setTypes(next);setTypesOpen(false);onSuccess('Allowance types saved.')}}/>}
  </div>;
 }
 
-function AllowanceModal({editing,draft,employees,types,taxableFor,error,saving,onClose,onSave}:{editing:boolean;draft:Draft;employees:Employee[];types:AllowanceType[];taxableFor:(draft:Draft)=>boolean;error:string;saving:boolean;onClose:()=>void;onSave:(draft:Draft)=>void}){
+function AllowanceModal({editing,draft,employees,types,error,saving,onClose,onSave}:{editing:boolean;draft:Draft;employees:Employee[];types:AllowanceType[];error:string;saving:boolean;onClose:()=>void;onSave:(draft:Draft)=>void}){
  const [form,setForm]=useState({...draft,amount:draft.amount?String(draft.amount):''});
  const value:Draft={...form,amount:numberValue(form.amount),allowanceType:form.allowanceType.trim()};
  const typeOptions=types.some(type=>type.name===draft.allowanceType)||!draft.allowanceType?types.map(type=>type.name):[draft.allowanceType,...types.map(type=>type.name)];
@@ -100,17 +96,14 @@ function AllowanceModal({editing,draft,employees,types,taxableFor,error,saving,o
   <Field label="Allowance Type"><select className={input} value={form.allowanceType} onChange={event=>setForm({...form,allowanceType:event.target.value})}><option value="">Select allowance type</option>{typeOptions.map(name=><option key={name}>{name}</option>)}</select></Field>
   <div className="grid gap-4 sm:grid-cols-2"><Field label="Amount"><TextInput type="number" min="0.01" step="0.01" value={form.amount} onChange={event=>setForm({...form,amount:event.target.value})} placeholder="0.00"/></Field><Field label="Frequency"><select className={input} value={form.frequency} onChange={event=>setForm({...form,frequency:event.target.value as RewardFrequency})}><option>Per Cutoff</option><option>Monthly</option></select></Field></div>
   <div className="grid gap-4 sm:grid-cols-2"><Field label="Effective Date"><TextInput type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></Field><Field label="Status"><select className={input} value={form.status} onChange={event=>setForm({...form,status:event.target.value as Draft['status']})}><option>Active</option><option>Inactive</option></select></Field></div>
-  <Field label="Taxable"><TextInput value={value.allowanceType&&value.amount>0?yesNo(taxableFor(value)):''} readOnly/></Field>
+  <Field label="Taxable"><select className={input} value={yesNo(form.taxable)} onChange={event=>setForm({...form,taxable:event.target.value==='Yes'})}><option>Yes</option><option>No</option></select></Field>
  </div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!valid} onClick={()=>onSave(value)}>{saving?'Saving…':'Save'}</Button></div></Modal>;
 }
 
 function AllowanceTypesModal({types,inUse,onClose,onSaved}:{types:AllowanceType[];inUse:(name:string)=>boolean;onClose:()=>void;onSaved:(types:AllowanceType[])=>void}){
- const rule=ruleForDate(today());
- const caps=linkableCaps(rule);
  const [rows,setRows]=useState(()=>types.map(type=>({...type})));
 
  const [error,setError]=useState(''),[confirming,setConfirming]=useState(false);
- const unitLabel={monthly:'per month','semi-annual':'per half-year',annual:'per year'} as Record<string,string>;
  const update=(index:number,patch:Partial<AllowanceType>)=>setRows(list=>list.map((row,i)=>i===index?{...row,...patch}:row));
  const removeRow=(index:number)=>{const row=rows[index];if(types.some(type=>type.id===row.id)&&inUse(types.find(type=>type.id===row.id)!.name)){setError(`${row.name} is in use and cannot be removed.`);return}setError('');setRows(list=>list.filter((_,i)=>i!==index))};
  const validate=()=>{
@@ -128,18 +121,16 @@ function AllowanceTypesModal({types,inUse,onClose,onSaved}:{types:AllowanceType[
 
   saveAllowanceTypes(next);
 
-  recordAudit({action:'Updated allowance types',module:MODULE,description:`Saved allowance types: ${next.map(row=>`${row.name}${row.deMinimisCapId?` (${caps.find(cap=>cap.id===row.deMinimisCapId)?.label??row.deMinimisCapId})`:''}`).join(', ')}.`});
+  recordAudit({action:'Updated allowance types',module:MODULE,description:`Saved allowance types: ${next.map(row=>row.name).join(', ')}.`});
   onSaved(next);
  };
  if(confirming)return <ConfirmDialog title="Save allowance types?" message="Apply the changes to allowance types?" confirmLabel="Confirm" saving={false} onCancel={()=>setConfirming(false)} onConfirm={save}/>;
  return <Modal title="Allowance Types" wide onClose={onClose}><div className="grid gap-3">
-  {rows.map((row,index)=>{const cap=caps.find(item=>item.id===row.deMinimisCapId);return <div key={row.id} className="grid items-end gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,0.8fr)_auto]">
+  {rows.map((row,index)=><div key={row.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-xl border border-slate-200 p-3">
    <Field label="Name"><TextInput value={row.name} onChange={event=>update(index,{name:event.target.value})}/></Field>
-   <Field label="De Minimis Limit"><select className={input} value={row.deMinimisCapId} onChange={event=>update(index,{deMinimisCapId:event.target.value})}><option value="">None</option>{caps.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
-   <Field label="Ceiling"><TextInput value={cap?`${peso(cap.amount)} ${unitLabel[cap.unit]}`:''} readOnly/></Field>
-   <button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Remove ${row.name||'allowance type'}`} onClick={()=>removeRow(index)}><Trash2 size={14}/><span className="sm:sr-only">Remove</span></button>
-  </div>})}
-  <div><button type="button" className={ghost} onClick={()=>setRows(list=>[...list,{id:crypto.randomUUID(),name:'',deMinimisCapId:''}])}><Plus size={14}/>Add Type</button></div>
+   <button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Remove ${row.name||'allowance type'}`} onClick={()=>removeRow(index)}><Trash2 size={14}/><span className="max-sm:sr-only">Remove</span></button>
+  </div>)}
+  <div><button type="button" className={ghost} onClick={()=>setRows(list=>[...list,{id:crypto.randomUUID(),name:''}])}><Plus size={14}/>Add Type</button></div>
  </div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} onClick={onClose}>Cancel</button><Button onClick={()=>{const problem=validate();setError(problem);if(!problem)setConfirming(true)}}>Save</Button></div></Modal>;
 }
 

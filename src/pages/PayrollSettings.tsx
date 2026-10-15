@@ -7,9 +7,8 @@ import {getCurrentUser} from '../features/auth/authService';
 import {recordAudit} from '../features/audit/auditService';
 import {employeeService} from '../features/employees/employeeService';
 import {employeePositionOptions} from '../features/employees/positionOptions';
-import {loadAllowanceTypes} from '../features/compensation/allowanceRules';
 import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate,saveWithholdingRules,validateRuleSet} from '../features/payroll/withholdingTax';
-import type {DeMinimisCap,PayrollPeriod,TaxBracket,WithholdingTaxRuleSet} from '../features/payroll/withholdingTax';
+import type {PayrollPeriod,TaxBracket,WithholdingTaxRuleSet} from '../features/payroll/withholdingTax';
 import {loadThirteenthMonthRules,saveThirteenthMonthRules,validateThirteenthMonthRules} from '../features/payroll/thirteenthMonth';
 import type {ThirteenthMonthRules} from '../features/payroll/thirteenthMonth';
 import {HOLIDAY_TYPES,OVERTIME_ROUNDING,RATE_FIELDS,loadHolidays,loadRates,loadTimeSettings,saveHolidays,saveRates,saveTimeSettings,validateRates,validateTimeSettings} from '../features/settings/payrollSettings';
@@ -17,10 +16,10 @@ import type {Holiday,HolidayType,RateField,TimeSettings} from '../features/setti
 import type {OvertimeRounding,PayrollRates} from '../types/domain';
 import {peso} from '../utils/storage';
 
-type SectionId='time'|'schedule'|'holiday'|'contributions'|'withholding'|'deminimis'|'thirteenth';
+type SectionId='time'|'schedule'|'holiday'|'contributions'|'withholding'|'thirteenth';
 const SECTIONS:Array<{id:SectionId;label:string}>=[
  {id:'time',label:'Working Time & Overtime'},{id:'schedule',label:'Pay Schedule'},{id:'holiday',label:'Holiday Pay'},{id:'contributions',label:'Government Contributions'},
- {id:'withholding',label:'Withholding Tax'},{id:'deminimis',label:'De Minimis Benefits'},{id:'thirteenth',label:'13th Month Rules'},
+ {id:'withholding',label:'Withholding Tax'},{id:'thirteenth',label:'13th Month Rules'},
 ];
 type SectionProps={editing:boolean;canEdit:boolean;onEdit:()=>void;onDone:(message?:string)=>void;onDirty:(dirty:boolean)=>void};
 type RateDraft=Record<keyof PayrollRates,string>;
@@ -202,40 +201,6 @@ function WithholdingSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps
  </SectionShell>;
 }
 
-const CAP_UNITS:Array<[DeMinimisCap['unit'],string]>=[['monthly','Monthly'],['semi-annual','Semi-annual'],['annual','Annual'],['days per year','Days per year'],['per day as % of regional minimum wage','Per day (% of minimum wage)']];
-type CapDraft=Omit<DeMinimisCap,'amount'>&{amount:string};
-function DeMinimisSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){
- const current=()=>ruleForDate(today());
- const {saved,draft,setDraft}=useDraft(()=>{const rule=current();return {effectiveFrom:rule.deMinimisEffectiveFrom,caps:rule.deMinimisCaps.map(cap=>({...cap,amount:String(cap.amount)}))}},editing,onDirty);
- const save=useSave(()=>{
-  const errors:string[]=[];
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(draft.effectiveFrom)||Number.isNaN(Date.parse(`${draft.effectiveFrom}T00:00:00Z`)))errors.push('Enter a valid effective-from date.');
-  draft.caps.forEach((cap,index)=>{const amount=num(cap.amount);if(!cap.label.trim())errors.push(`Row ${index+1}: enter a benefit.`);if(!Number.isFinite(amount)||amount<0)errors.push(`Row ${index+1}: ceiling must be a number, 0 or more.`);if(cap.unit==='per day as % of regional minimum wage'&&amount>100)errors.push(`Row ${index+1}: percentage cannot be more than 100.`)});
-  const linked=loadAllowanceTypes().filter(type=>type.deMinimisCapId&&!draft.caps.some(cap=>cap.id===type.deMinimisCapId));
-  for(const type of linked)errors.push(`${type.name} allowances use a ceiling that was removed. Change the allowance type first.`);
-  return errors;
- },()=>{
-  const rules=loadWithholdingRules(),rule=current();
-  const caps:DeMinimisCap[]=draft.caps.map(cap=>({...cap,label:cap.label.trim(),amount:num(cap.amount)}));
-  saveWithholdingRules(rules.map(item=>item.id===rule.id?{...item,deMinimisEffectiveFrom:draft.effectiveFrom,deMinimisCaps:caps}:item));
-  const label=(cap:{label:string;amount:string;unit:string})=>`${cap.label} ${cap.amount} ${cap.unit}`;
-  logChanges('De Minimis Benefits',[['Effective from',saved.effectiveFrom,draft.effectiveFrom],['Ceilings',saved.caps.map(label),draft.caps.map(label)]]);
-  onDone('De Minimis Benefits saved.');
- });
- const update=(index:number,patch:Partial<CapDraft>)=>setDraft({...draft,caps:draft.caps.map((cap,i)=>i===index?{...cap,...patch}:cap)});
- return <SectionShell title="De Minimis Benefits" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}>
-  <div className="flex flex-wrap items-end justify-between gap-3"><div className="w-full sm:w-56"><Field label="Effective from"><TextInput type="date" disabled={!editing} value={draft.effectiveFrom} onChange={event=>setDraft({...draft,effectiveFrom:event.target.value})}/></Field></div>{editing&&<button type="button" className={ghost} onClick={()=>setDraft({...draft,caps:[...draft.caps,{id:crypto.randomUUID(),label:'',amount:'',unit:'monthly'}]})}><Plus size={15}/>Add benefit</button>}</div>
-  <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[560px] text-left text-[13px]"><thead><tr className="border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500"><th className="px-4 py-3">Benefit</th><th className="px-4 py-3">Ceiling</th><th className="px-4 py-3">Frequency</th>{editing&&<th className="px-4 py-3 text-right">Actions</th>}</tr></thead><tbody>
-   {!draft.caps.length?<tr><td colSpan={editing?4:3}><Empty>No de minimis benefits yet.</Empty></td></tr>:draft.caps.map((cap,index)=><tr key={cap.id} className="border-b border-[#eef1f6] last:border-0">
-    <td className="px-4 py-2">{editing?<TextInput aria-label={`Benefit ${index+1}`} value={cap.label} onChange={event=>update(index,{label:event.target.value})}/>:cap.label}</td>
-    <td className="px-4 py-2">{editing?<TextInput type="number" min="0" step="any" aria-label={`Ceiling ${index+1}`} value={cap.amount} onChange={event=>update(index,{amount:event.target.value})}/>:cap.unit==='monthly'||cap.unit==='annual'||cap.unit==='semi-annual'?peso(cap.amount):cap.amount}</td>
-    <td className="px-4 py-2">{editing?<select className={input} aria-label={`Frequency ${index+1}`} value={cap.unit} onChange={event=>update(index,{unit:event.target.value as DeMinimisCap['unit']})}>{CAP_UNITS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>:CAP_UNITS.find(([value])=>value===cap.unit)?.[1]??cap.unit}</td>
-    {editing&&<td className="px-4 py-2 text-right"><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Delete ${cap.label||'benefit'}`} onClick={()=>setDraft({...draft,caps:draft.caps.filter((_,i)=>i!==index)})}><Trash2 size={14}/></button></td>}
-   </tr>)}
-  </tbody></table></div>
- </SectionShell>;
-}
-
 type ThirteenthDraft=Omit<ThirteenthMonthRules,'minimumServiceMonths'|'installments'>&{minimumServiceMonths:string;installments:string};
 const EXCLUSIONS:Array<[keyof Pick<ThirteenthMonthRules,'excludeAllowances'|'excludeOvertime'|'excludeHolidayPay'|'excludeNightDifferential'>,string]>=[['excludeAllowances','Allowances'],['excludeOvertime','Overtime'],['excludeHolidayPay','Holiday pay'],['excludeNightDifferential','Night differential']];
 const checkbox='h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-60';
@@ -306,7 +271,6 @@ export default function PayrollSettings(){
     {section==='holiday'&&<HolidaySection {...props('holiday')} calendarLocked={editing!==null&&editing!=='holiday'}/>}
     {section==='contributions'&&<ContributionsSection {...props('contributions')}/>}
     {section==='withholding'&&<WithholdingSection {...props('withholding')}/>}
-    {section==='deminimis'&&<DeMinimisSection {...props('deminimis')}/>}
     {section==='thirteenth'&&<ThirteenthMonthSection {...props('thirteenth')} positions={positions}/>}
    </div>
   </div>
