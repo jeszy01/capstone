@@ -13,12 +13,15 @@ export function computeTax(monthlyTaxable:number,table:Array<{over:number;base:n
 }
 
 export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{over:number;base:number;rate:number}>=[],taxContext:PayrollTaxContext={}):PayrollResult{
- const rate=numberValue(r.dailyRate),hourly=rate/R.hoursPerDay,monthly=rate*R.daysPerMonth;
- const earnedBasic=round(rate*numberValue(r.daysWorked));
- const absences=round(rate*numberValue(r.absentDays));
- const basic=round(earnedBasic+absences);
+ // Monthly Salary is a reference amount; Basic Pay is its share for one cutoff. Absences (including leave without
+ // pay), late and undertime are separate deductions, and paid leave days are covered by Basic Pay.
+ const monthly=numberValue(r.monthlySalary)||numberValue(r.dailyRate)*R.daysPerMonth;
+ const rate=numberValue(r.dailyRate)||monthly/R.daysPerMonth,hourly=rate/R.hoursPerDay;
+ const basic=round(monthly/R.payPeriodsPerMonth);
+ const absences=round(rate*(numberValue(r.absentDays)+numberValue(r.lwopDays)));
+ const earnedBasic=round(Math.max(0,basic-absences));
  const overtime=round(hourly*(R.otMultiplier*numberValue(r.otHours)+R.otRestMultiplier*numberValue(r.otRestHours)));
- const leavePay=round(rate*(numberValue(r.vlDays)+numberValue(r.slDays)));
+ const leavePay=0;
  const nightDifferential=round(numberValue(r.nightDifferential));
  // Allowances from Compensation Planning: taxable allowances are regular pay; non-taxable allowances are exempt.
  const taxableAllowances=round(numberValue(r.transportation)+numberValue(r.riceSubsidy)+numberValue(r.allowancesTaxable));
@@ -46,5 +49,5 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));
  const net=round(gross-deductions);
- return{basic,earnedBasic,absences,overtime,leavePay,allowances,earnings,gross,late,undertime,lateUt:round(late+undertime),sss,phil,pagibig,tax,taxBreakdown,loans,deductions,net,shortfall:net<0?round(-net):0};
+ return{monthlySalary:round(monthly),basic,earnedBasic,absences,overtime,leavePay,allowances,earnings,gross,late,undertime,lateUt:round(late+undertime),sss,phil,pagibig,tax,taxBreakdown,loans,deductions,net,shortfall:net<0?round(-net):0};
 }

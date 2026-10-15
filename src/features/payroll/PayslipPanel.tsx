@@ -69,7 +69,7 @@ const pesoWords=(amount:number)=>{const totalCents=Math.round((Math.abs(amount)+
 
 function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string;onClose:()=>void}){
  const c=row.result;
- const breakdown=buildPayslipBreakdownFromRun(row);
+ const breakdown=buildPayslipBreakdownFromRun(row,run.settings?.rates.daysPerMonth);
  const earnings:[string,string][] = breakdown.earnings.map(line=>[line.label,dash(line.amount)]);
  const deductions:[string,string][] = breakdown.deductions.map(line=>[line.label,dash(line.amount)]);
  const period=runLabel(run);
@@ -87,7 +87,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
     <div className="text-right"><div className="text-[13px] font-semibold">{period}</div><span className="mt-1 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Approved</span></div>
    </div>
    <div className="grid gap-1.5 border-b border-slate-200 py-4 text-[12px] sm:grid-cols-2">
-    <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}</div>
+    <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}{info('Monthly Salary',breakdown.monthlySalary?peso(breakdown.monthlySalary):'—')}</div>
     <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',run.paidAt?new Date(run.paidAt).toLocaleDateString('en-PH',{dateStyle:'medium'}):'—')}</div>
    </div>
    {Math.abs(breakdown.earningsDifference)>0.01||Math.abs(breakdown.deductionsDifference)>0.01||Math.abs(breakdown.netDifference)>0.01?<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-900">This saved payroll does not reconcile. Earnings difference: {nf(breakdown.earningsDifference)}; deductions difference: {nf(breakdown.deductionsDifference)}; net-pay difference: {nf(breakdown.netDifference)}. Have Payroll review the run before relying on this payslip.</div>:<div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] font-medium text-emerald-800">Payslip reconciliation passed: itemized earnings, deductions, and net pay match the payroll calculation.</div>}

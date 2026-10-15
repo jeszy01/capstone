@@ -7,6 +7,7 @@ import {hmoService} from '../hmo/hmoService';
 import {fetchAttendance} from '../attendance/attendanceService';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {holidayPay,nightDifferentialPay} from './premiumPay';
+import {monthlySalaryOf} from './payslipMath';
 import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
@@ -97,7 +98,7 @@ const built:RunRow[]=[];
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
      const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
      const dailyRate=(item.salary as number)/rates.daysPerMonth;
-     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,...loanAmounts};
+     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,monthlySalary:item.salary as number,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,...loanAmounts};
      const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
@@ -110,6 +111,7 @@ const built:RunRow[]=[];
  const setField=(index:number,key:EditKey,value:string)=>setRows(list=>list.map((row,i)=>i===index?{...row,input:{...row.input,[key]:value}}:row));
  const view=rows.map(row=>({row,c:saved?row.result:calc(row)}));
  const cols=view.map(({row,c})=>[c.basic,c.overtime,numberValue(row.input.nightDifferential),numberValue(row.input.holidayPay),c.leavePay,c.allowances??0,numberValue(row.input.otherEarnings)+numberValue(row.input.bonusesNonTaxable),c.gross,c.absences??0,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
+ const monthlySalaries=view.map(({row,c})=>monthlySalaryOf(row.input,c,rates.daysPerMonth));
  const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
  const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
  const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
@@ -175,18 +177,18 @@ const built:RunRow[]=[];
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>{thirteenth?'No eligible employees with 13th month pay due.':'No employees with an assigned salary for this cutoff.'}</Empty>:<>
     <div className="overflow-x-auto rounded-xl border border-slate-200"><table>
      <thead>
-      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={8}>Earnings</th><th colSpan={19}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
+      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th rowSpan={2}>Monthly Salary</th><th colSpan={8}>Earnings</th><th colSpan={19}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
       <tr>{heads.map(label=><th key={label}>{label}</th>)}</tr>
      </thead>
      <tbody>
       {view.map(({row,c},index)=><tr key={row.input.empId}>
        <td><b>{row.input.name}</b><div>{row.input.empId} · {row.position}</div></td>
-       <td className="n">{numberValue(row.input.daysWorked)}</td><td className="n">{numberValue(row.input.absentDays)}</td><td className="n">{numberValue(row.input.vlDays)}</td><td className="n">{row.rest}</td><td className="n">{numberValue(row.input.lateMin)}</td><td className="n">{numberValue(row.input.undertimeMin)}</td><td className="n">{numberValue(row.input.otHours)}</td>
+       <td className="n">{numberValue(row.input.daysWorked)}</td><td className="n">{numberValue(row.input.absentDays)}</td><td className="n">{numberValue(row.input.vlDays)}</td><td className="n">{row.rest}</td><td className="n">{numberValue(row.input.lateMin)}</td><td className="n">{numberValue(row.input.undertimeMin)}</td><td className="n">{numberValue(row.input.otHours)}</td><td className="n">{nf(monthlySalaries[index])}</td>
        {cols[index].map((value,k)=><td key={k} className="n">{nf(value)}</td>)}
       <td className="n">{nf(c.tax)}</td>{editKeys.map(key=><td key={key} className="n">{editCell(index,row,key)}</td>)}
        <td className="n"><b>{nf(c.deductions)}</b></td><td className="n"><b>{nf(c.net)}</b></td>
       </tr>)}
-      <tr><td colSpan={8}><b>TOTAL</b></td>{colSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}{editSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(totals.deductions)}</b></td><td className="n"><b>{nf(totals.net)}</b></td></tr>
+      <tr><td colSpan={8}><b>TOTAL</b></td><td className="n"><b>{nf(monthlySalaries.reduce((total,value)=>total+value,0))}</b></td>{colSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}{editSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(totals.deductions)}</b></td><td className="n"><b>{nf(totals.net)}</b></td></tr>
      </tbody>
     </table></div>
     <div className="mt-10 grid grid-cols-2 gap-16 text-center text-[11px]">
