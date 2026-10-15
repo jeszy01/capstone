@@ -68,7 +68,7 @@ describe('Settings & Privacy account function',()=>{
   const payload=await login.json();
   expect(typeof payload.data.token).toBe('string');
   expect(tables.otp_challenges).toHaveLength(0);
-  expect(tables.user_sessions.at(-1)).toMatchObject({user_id:userId,device:'Windows computer',browser:'Chrome'});
+  expect(tables.user_sessions[tables.user_sessions.length-1]).toMatchObject({user_id:userId,device:'Windows computer',browser:'Chrome'});
  });
  it('signs out another device, refuses this device, and rejects a signed-out session',async()=>{
   const {tables,call}=await setup();

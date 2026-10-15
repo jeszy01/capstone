@@ -1,4 +1,3 @@
-import GovernmentBenefits from './features/hmo/GovernmentBenefits';
 import {BrowserRouter,Navigate,Route,Routes,useNavigate} from 'react-router-dom';
 import {useEffect,useState} from 'react';
 import {hydrateFromServer} from './services/sync/serverSync';
@@ -42,7 +41,6 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   {hmoTabs.map(({to})=><Route key={to} path={to} element={<HmoBenefits/>}/>)}
   <Route path="/hmo-benefits/employee-benefits" element={<Benefits/>}/>
   <Route path="/hmo-benefits/dependents" element={<HmoBenefits section="dependents"/>}/>
-  <Route path="/hmo-benefits/government-benefits" element={<GovernmentBenefits/>}/>
   <Route path="/hmo-benefits/benefits-history" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="/hmo-benefits/plan" element={<Navigate to="/hmo-benefits/hmo/plan" replace/>}/>
   <Route path="/hmo-benefits/employee-enrollment" element={<Navigate to="/hmo-benefits/hmo/employee-enrollment" replace/>}/>

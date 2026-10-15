@@ -19,7 +19,6 @@ export const modules:NavItem[]=[
  ]},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse,children:[
   {label:'HMO',to:'/hmo-benefits/hmo'},
-  {label:'Government Contributions',to:'/hmo-benefits/government-benefits'},
  ]},
 ];
 export const titles={
