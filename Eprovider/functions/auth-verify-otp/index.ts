@@ -1,4 +1,4 @@
-import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider"; import {hashOtp,MAX_OTP_ATTEMPTS,requireOtpEnabled} from "../../lib/otp"; import {createSessionToken} from "../../lib/jwt"; import {HttpError} from "../../lib/errors";
+import {edge} from "../../lib/function"; import {body,required} from "../../lib/validation"; import {ok} from "../../lib/response"; import {mcp} from "../../lib/eprovider"; import {hashOtp,MAX_OTP_ATTEMPTS,requireOtpEnabled} from "../../lib/otp"; import {createSessionToken} from "../../lib/jwt"; import {startSession} from "../../lib/sessions"; import {HttpError} from "../../lib/errors";
 
 type OtpChallenge={id:string;employee_id:string;otp_hash:string;expires_at:string;attempts?:number;consumed_at?:string|null};
 const sqlString=(value:string)=>`'${value.replace(/'/g,"''")}'`;
@@ -27,6 +27,6 @@ export default edge(async ctx=>{
  if(!user)throw new HttpError(401,"INVALID_CREDENTIALS","Invalid credentials");
  const role=String(user.role??"employee");
  const sessionUser={id:String(user.id),employeeId:employee_id,name:String(user.name??user.email??employee_id),role:role.toLowerCase()==="admin"?"Admin":"HR Staff"};
- const token=await createSessionToken(String(user.id),employee_id,role);
+ const token=await createSessionToken(String(user.id),employee_id,role,await startSession(String(user.id),ctx.request));
  return ok({token,user:sessionUser});
 });

@@ -31,6 +31,7 @@ describe('temporary global OTP disable switch',()=>{
   stubEnvironment('false');
   const fetch=vi.fn(async(_url:string,options:RequestInit)=>{
    const request=JSON.parse(String(options.body));
+   if(request.params.name==='insert_row'){expect(request.params.arguments).toMatchObject({table:'user_sessions',values:{user_id:adminId}});return responseFor({row:{id:'33333333-3333-4333-8333-333333333333'}})}
    expect(request.params).toMatchObject({name:'select_rows',arguments:{table:'users',filter:{email:'admin@example.test'},limit:1}});
    return responseFor({rows:[{...admin,password_hash:passwordHash}]});
   });
@@ -40,7 +41,8 @@ describe('temporary global OTP disable switch',()=>{
   expect(response.status).toBe(200);
   expect(typeof payload.data.token).toBe('string');
   expect(payload.data.user).toMatchObject({id:adminId,employeeId:adminEmployeeId,role:'Admin'});
-  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(atob(payload.data.token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sid).toBe('33333333-3333-4333-8333-333333333333');
  });
  it('creates an active account without an onboarding OTP challenge or email',async()=>{
   stubEnvironment('false');

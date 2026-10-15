@@ -64,7 +64,9 @@ describe('OTP verification safeguards',()=>{
   const response=await handler(request('123456'));
   expect(response.status).toBe(200);
   expect((await response.json()).data.user.id).toBe('user-1');
-  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledTimes(3);
+  const session=JSON.parse(String((fetch.mock.calls[2] as unknown as [string,RequestInit])[1].body));
+  expect(session.params).toMatchObject({name:'insert_row',arguments:{table:'user_sessions'}});
   const consume=JSON.parse(String((fetch.mock.calls[0] as unknown as [string,RequestInit])[1].body));
   expect(consume.params.name).toBe('run_sql');
   expect(consume.params.arguments.query).toContain('consumed_at=now()');

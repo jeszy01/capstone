@@ -69,6 +69,12 @@ async function verifyPbmsSession(token, secret, projectId, now = Math.floor(Date
   return claims;
 }
 
+// Eprovider/lib/jwt.ts
+var encoder2 = new TextEncoder();
+
+// Eprovider/lib/sessions.ts
+var sessionActive = (session, userId, now = Date.now()) => Boolean(session && session.user_id === userId && !session.revoked_at && Date.parse(session.expires_at) > now);
+
 // Eprovider/lib/auth.ts
 var enc = new TextEncoder();
 function requireAuth(ctx) {
@@ -109,7 +115,12 @@ async function verifiedContext(request) {
   if (!user || user.employee_id !== claims.employee_id || user.status?.toLowerCase() !== "active") throw new HttpError(401, "INVALID_SESSION", "Your account or session is inactive. Please sign in again.");
   const role = normalizePbmsRole(user.role ?? "");
   if (role !== "admin" && role !== "hr_staff") throw new HttpError(403, "FORBIDDEN", "Insufficient permissions");
-  return { request, role: "authenticated", userId: user.id, pbmsRole: role };
+  if (claims.sid) {
+    const session = (await mcp("select_rows", { table: "user_sessions", filter: { id: claims.sid }, limit: 1 }))[0];
+    if (!sessionActive(session, user.id)) throw new HttpError(401, "SESSION_ENDED", "This device was signed out. Please sign in again.");
+    if (Date.now() - Date.parse(session.last_active_at) > 5 * 6e4) await mcp("update_rows", { table: "user_sessions", pk: { id: session.id }, values: { last_active_at: (/* @__PURE__ */ new Date()).toISOString() } }).catch(() => void 0);
+  }
+  return { request, role: "authenticated", userId: user.id, pbmsRole: role, sessionId: claims.sid };
 }
 function verifiedEdge(handler) {
   return async (request) => {

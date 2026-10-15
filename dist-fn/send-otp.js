@@ -1,4 +1,4 @@
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/errors.ts
+// Eprovider/lib/errors.ts
 var HttpError = class extends Error {
   constructor(status, code, message) {
     super(message);
@@ -15,7 +15,7 @@ function json(body2, status = 200, headers = {}) {
   return new Response(JSON.stringify(body2), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/eprovider.ts
+// Eprovider/lib/eprovider.ts
 var url = () => {
   const v = Deno.env.get("EPROVIDER_API_URL");
   if (!v) throw new HttpError(500, "CONFIGURATION_ERROR", "EPROVIDER_API_URL is not configured");
@@ -36,7 +36,7 @@ async function mcp(name, arguments_) {
   return parsed;
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/session-verification.ts
+// Eprovider/lib/session-verification.ts
 var encoder = new TextEncoder();
 var invalid = () => new HttpError(401, "INVALID_SESSION", "Your session is invalid or expired. Please sign in again.");
 function decode(segment) {
@@ -69,15 +69,22 @@ async function verifyPbmsSession(token, secret, projectId, now = Math.floor(Date
   return claims;
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/auth.ts
+// Eprovider/lib/jwt.ts
+var encoder2 = new TextEncoder();
+
+// Eprovider/lib/sessions.ts
+var sessionActive = (session, userId, now = Date.now()) => Boolean(session && session.user_id === userId && !session.revoked_at && Date.parse(session.expires_at) > now);
+
+// Eprovider/lib/auth.ts
+var enc = new TextEncoder();
 function requireAuth(ctx) {
   if (ctx.role !== "authenticated" && ctx.role !== "service_role") throw new HttpError(401, "UNAUTHENTICATED", "Authentication is required");
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/function.ts
+// Eprovider/lib/function.ts
 var ALLOWED_ORIGINS = ["https://payrollbenefits.eprovider.site", "http://localhost:5173"];
 var ALLOW_HEADERS = "authorization, content-type, apikey, x-client-info";
-var ALLOW_METHODS = "POST, GET, OPTIONS";
+var ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 function corsHeaders(request) {
   const requestOrigin = request.headers.get("origin");
   const origin = requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin) ? requestOrigin : ALLOWED_ORIGINS[0];
@@ -92,7 +99,8 @@ function corsPreflight(request) {
   return new Response(null, { status: 204, headers: corsHeaders(request) });
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/verified-function.ts
+// Eprovider/lib/verified-function.ts
+var normalizePbmsRole = (value) => value.trim().toLowerCase().replace(/[\s-]+/g, "_");
 async function verifiedContext(request) {
   const authorization = request.headers.get("authorization") ?? "";
   const match = /^Bearer ([^\s]+)$/i.exec(authorization);
@@ -101,9 +109,14 @@ async function verifiedContext(request) {
   const users = await mcp("select_rows", { table: "users", filter: { id: claims.sub }, limit: 1 });
   const user = users[0];
   if (!user || user.employee_id !== claims.employee_id || user.status?.toLowerCase() !== "active") throw new HttpError(401, "INVALID_SESSION", "Your account or session is inactive. Please sign in again.");
-  const role = user.role?.toLowerCase();
+  const role = normalizePbmsRole(user.role ?? "");
   if (role !== "admin" && role !== "hr_staff") throw new HttpError(403, "FORBIDDEN", "Insufficient permissions");
-  return { request, role: "authenticated", userId: user.id, pbmsRole: role };
+  if (claims.sid) {
+    const session = (await mcp("select_rows", { table: "user_sessions", filter: { id: claims.sid }, limit: 1 }))[0];
+    if (!sessionActive(session, user.id)) throw new HttpError(401, "SESSION_ENDED", "This device was signed out. Please sign in again.");
+    if (Date.now() - Date.parse(session.last_active_at) > 5 * 6e4) await mcp("update_rows", { table: "user_sessions", pk: { id: session.id }, values: { last_active_at: (/* @__PURE__ */ new Date()).toISOString() } }).catch(() => void 0);
+  }
+  return { request, role: "authenticated", userId: user.id, pbmsRole: role, sessionId: claims.sid };
 }
 function verifiedEdge(handler) {
   return async (request) => {
@@ -116,7 +129,7 @@ function verifiedEdge(handler) {
   };
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/validation.ts
+// Eprovider/lib/validation.ts
 function body(request) {
   return request.json().catch(() => {
     throw new HttpError(400, "INVALID_JSON", "Request body must be valid JSON");
@@ -127,10 +140,10 @@ function required(value, name) {
   return value.trim();
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/response.ts
+// Eprovider/lib/response.ts
 var ok = (data, meta = {}) => json({ data, meta });
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/otp.ts
+// Eprovider/lib/otp.ts
 var apiUrl = () => (Deno.env.get("EPROVIDER_OTP_API_URL") ?? "https://api.eprovider.site/api").replace(/\/$/, "");
 var otpEnabled = () => !["false", "0", "off", "disabled"].includes((Deno.env.get("PBMS_OTP_ENABLED") ?? "true").trim().toLowerCase());
 function requireOtpEnabled() {
@@ -146,7 +159,7 @@ async function sendOtpEmail(email, otp, expiryMinutes = 10) {
   return data;
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/functions/send-otp/index.ts
+// Eprovider/functions/send-otp/index.ts
 var send_otp_default = verifiedEdge(async (ctx) => {
   requireAuth(ctx);
   if (ctx.request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });

@@ -12,7 +12,8 @@ import {hmoTabs} from './features/hmo/hmoNavigation';
 import Claims from './pages/Claims';
 import ReviewPayroll from './features/payroll/ReviewPayroll';
 import Reimbursement from './pages/Reimbursement';
-import {LogsAudits,UserAccountSettings} from './pages/Admin';
+import {LogsAudits} from './pages/Admin';
+import SettingsPrivacy from './pages/SettingsPrivacy';
 import PayrollSettings from './pages/PayrollSettings';
 function AuthRoute(){
 const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[ready,setReady]=useState(false);
@@ -22,7 +23,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
  if(!ready)return null;
  return <Routes><Route element={<AppLayout/>}>
   <Route path="/dashboard" element={<Dashboard/>}/>
-  <Route path="/account-settings" element={<UserAccountSettings/>}/>
+  <Route path="/settings-privacy" element={<SettingsPrivacy/>}/>
   <Route path="/logs-audits" element={<LogsAudits/>}/>
   <Route path="/payroll-settings" element={<PayrollSettings/>}/>
   <Route path="/employees" element={<Employees/>}/>

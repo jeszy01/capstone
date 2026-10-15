@@ -1,6 +1,6 @@
 import {HttpError} from './errors';
 
-export interface PbmsSessionClaims {sub:string;employee_id:string;role:string;iat:number;exp:number;project_id?:string}
+export interface PbmsSessionClaims {sub:string;employee_id:string;role:string;iat:number;exp:number;project_id?:string;sid?:string}
 const encoder=new TextEncoder();
 const invalid=()=>new HttpError(401,'INVALID_SESSION','Your session is invalid or expired. Please sign in again.');
 function decode(segment:string){

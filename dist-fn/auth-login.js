@@ -1,4 +1,4 @@
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/errors.ts
+// Eprovider/lib/errors.ts
 var HttpError = class extends Error {
   constructor(status, code, message) {
     super(message);
@@ -15,20 +15,36 @@ function json(body2, status = 200, headers = {}) {
   return new Response(JSON.stringify(body2), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/auth.ts
-function context(request) {
+// Eprovider/lib/auth.ts
+var enc = new TextEncoder();
+var b64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+async function verifyJwt(token) {
+  const secret = Deno.env.get("PBMS_JWT_SECRET");
+  if (!secret) return null;
+  const [h, p, s] = token.split(".");
+  if (!h || !p || !s) return null;
+  try {
+    const key2 = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+    if (!await crypto.subtle.verify("HMAC", key2, b64(s), enc.encode(`${h}.${p}`))) return null;
+    const claims = JSON.parse(new TextDecoder().decode(b64(p)));
+    if (typeof claims.exp !== "number" || claims.exp < Date.now() / 1e3) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+async function context(request) {
   const auth = request.headers.get("authorization") ?? "";
-  const apiKey = request.headers.get("apikey");
-  const role = auth.startsWith("Bearer ") ? apiKey ? "authenticated" : "authenticated" : apiKey ? "anon" : "anon";
-  const userId = request.headers.get("x-pbms-user-id") ?? void 0;
-  const pbmsRole = request.headers.get("x-pbms-role");
-  return { request, role, userId, pbmsRole };
+  const claims = auth.startsWith("Bearer ") ? await verifyJwt(auth.slice(7)) : null;
+  const role = claims ? "authenticated" : "anon";
+  const pbmsRole = claims ? String(claims.role ?? "").toLowerCase().replace(/\s+/g, "_") : void 0;
+  return { request, role, userId: claims?.sub, pbmsRole };
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/function.ts
+// Eprovider/lib/function.ts
 var ALLOWED_ORIGINS = ["https://payrollbenefits.eprovider.site", "http://localhost:5173"];
 var ALLOW_HEADERS = "authorization, content-type, apikey, x-client-info";
-var ALLOW_METHODS = "POST, GET, OPTIONS";
+var ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 function corsHeaders(request) {
   const requestOrigin = request.headers.get("origin");
   const origin = requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin) ? requestOrigin : ALLOWED_ORIGINS[0];
@@ -46,14 +62,14 @@ function edge(handler) {
   return async (request) => {
     if (request.method === "OPTIONS") return corsPreflight(request);
     try {
-      return corsResponse(request, await handler(context(request)));
+      return corsResponse(request, await handler(await context(request)));
     } catch (error) {
       return corsResponse(request, publicError(error));
     }
   };
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/validation.ts
+// Eprovider/lib/validation.ts
 function body(request) {
   return request.json().catch(() => {
     throw new HttpError(400, "INVALID_JSON", "Request body must be valid JSON");
@@ -64,10 +80,10 @@ function required(value, name) {
   return value.trim();
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/response.ts
+// Eprovider/lib/response.ts
 var ok = (data, meta = {}) => json({ data, meta });
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/eprovider.ts
+// Eprovider/lib/eprovider.ts
 var url = () => {
   const v = Deno.env.get("EPROVIDER_API_URL");
   if (!v) throw new HttpError(500, "CONFIGURATION_ERROR", "EPROVIDER_API_URL is not configured");
@@ -88,7 +104,7 @@ async function mcp(name, arguments_) {
   return parsed;
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/otp.ts
+// Eprovider/lib/otp.ts
 var apiUrl = () => (Deno.env.get("EPROVIDER_OTP_API_URL") ?? "https://api.eprovider.site/api").replace(/\/$/, "");
 var otpEnabled = () => !["false", "0", "off", "disabled"].includes((Deno.env.get("PBMS_OTP_ENABLED") ?? "true").trim().toLowerCase());
 function requireOtpEnabled() {
@@ -115,7 +131,7 @@ async function digest(value) {
 }
 var hashOtp = (otp) => digest(otp);
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/password.ts
+// Eprovider/lib/password.ts
 var ITERATIONS = 21e4;
 var encoder = new TextEncoder();
 function fromBase64Url(value) {
@@ -139,7 +155,7 @@ async function verifyPassword(password, stored) {
   return difference === 0;
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/lib/jwt.ts
+// Eprovider/lib/jwt.ts
 var encoder2 = new TextEncoder();
 function base64Url(value) {
   const bytes = typeof value === "string" ? encoder2.encode(value) : value;
@@ -147,17 +163,36 @@ function base64Url(value) {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-async function createSessionToken(userId, employeeId, role) {
+var SESSION_HOURS = 8;
+async function createSessionToken(userId, employeeId, role, sessionId) {
   const secret = Deno.env.get("PBMS_JWT_SECRET");
   if (!secret) throw new HttpError(500, "CONFIGURATION_ERROR", "PBMS_JWT_SECRET is not configured");
   const header = base64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = base64Url(JSON.stringify({ sub: userId, employee_id: employeeId, role, iat: Math.floor(Date.now() / 1e3), exp: Math.floor(Date.now() / 1e3) + 8 * 60 * 60 }));
+  const payload = base64Url(JSON.stringify({ sub: userId, employee_id: employeeId, role, ...sessionId ? { sid: sessionId } : {}, iat: Math.floor(Date.now() / 1e3), exp: Math.floor(Date.now() / 1e3) + SESSION_HOURS * 60 * 60 }));
   const key2 = await crypto.subtle.importKey("raw", encoder2.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key2, encoder2.encode(`${header}.${payload}`)));
   return `${header}.${payload}.${base64Url(signature)}`;
 }
 
-// ../../../tmp/tmp.pyY6vdISoZ/Eprovider/functions/auth-login/index.ts
+// Eprovider/lib/sessions.ts
+function describeUserAgent(userAgent) {
+  const ua = userAgent || "";
+  const device = /iPhone/i.test(ua) ? "iPhone" : /iPad/i.test(ua) ? "iPad" : /Android/i.test(ua) ? /Mobile/i.test(ua) ? "Android phone" : "Android tablet" : /Windows/i.test(ua) ? "Windows computer" : /Macintosh|Mac OS X/i.test(ua) ? "Mac" : /CrOS/i.test(ua) ? "Chromebook" : /Linux/i.test(ua) ? "Linux computer" : "Unknown device";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Unknown browser";
+  return { device, browser };
+}
+async function startSession(userId, request) {
+  try {
+    const userAgent = request.headers.get("user-agent") ?? "";
+    const now = Date.now();
+    const row = await mcp("insert_row", { table: "user_sessions", values: { user_id: userId, ...describeUserAgent(userAgent), user_agent: userAgent.slice(0, 500), last_active_at: new Date(now).toISOString(), expires_at: new Date(now + SESSION_HOURS * 36e5).toISOString() } });
+    return typeof row?.id === "string" ? row.id : void 0;
+  } catch {
+    return void 0;
+  }
+}
+
+// Eprovider/functions/auth-login/index.ts
 var auth_login_default = edge(async (ctx) => {
   const input = await body(ctx.request);
   const email = required(input.email, "email").toLowerCase();
@@ -169,10 +204,10 @@ var auth_login_default = edge(async (ctx) => {
   const passwordHash = typeof user?.password_hash === "string" ? user.password_hash : "";
   const status = String(user?.status ?? "").toLowerCase();
   if (!user || !employee_id || status !== "active" || !passwordHash || !await verifyPassword(password, passwordHash)) throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid email or password.");
-  if (!otpEnabled()) {
+  if (!otpEnabled() || user.otp_enabled === false) {
     const role = String(user.role ?? "employee");
     const sessionUser = { id: String(user.id), employeeId: employee_id, name: String(user.name ?? user.email ?? employee_id), role: role.toLowerCase() === "admin" ? "Admin" : "HR Staff" };
-    const token = await createSessionToken(String(user.id), employee_id, role);
+    const token = await createSessionToken(String(user.id), employee_id, role, await startSession(String(user.id), ctx.request));
     return ok({ token, user: sessionUser });
   }
   const otp = generateOtp();
