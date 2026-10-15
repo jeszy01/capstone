@@ -8,7 +8,7 @@ import {logout} from '../features/auth/authService';
 
 type NotificationItem={id:string;title:string;description:string;to:string;icon:'payroll'|'claims'};
 const notifications:NotificationItem[]=[
- {id:'payroll-summary-review',title:'Payroll entry is ready for review',description:'Review the current payroll entry and deductions.',to:'/payroll-summary',icon:'payroll'},
+ {id:'payroll-summary-review',title:'Payroll summary is ready for review',description:'Review the current payroll summary and deductions.',to:'/payroll?tab=summary',icon:'payroll'},
  {id:'claims-review',title:'Claims need review',description:'Open claims and reimbursement records.',to:'/claims',icon:'claims'},
 ];
 export default function AppLayout(){

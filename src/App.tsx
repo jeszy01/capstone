@@ -5,7 +5,8 @@ import {hydrateFromServer} from './services/sync/serverSync';
 import AppLayout from './layouts/AppLayout';
 import Login from './features/auth/Login';
 import {getCurrentUser} from './features/auth/authService';
-import {Dashboard,Employees,Attendance,Timesheet,Payroll,Deductions,Compensation,Benefits} from './pages/Modules';
+import {Dashboard,Employees,Payroll,Deductions,Compensation,Benefits} from './pages/Modules';
+import TimeAttendance from './features/attendance/TimeAttendance';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import Claims from './pages/Claims';
@@ -27,11 +28,8 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/employees" element={<Employees/>}/>
   <Route path="/payroll" element={<Payroll/>}/>
   <Route path="/payroll/review" element={<ReviewPayroll/>}/>
-   <Route path="/attendance" element={<Attendance/>}/>
-  <Route path="/timesheet" element={<Timesheet/>}/>
+  <Route path="/time-attendance" element={<TimeAttendance/>}/>
   <Route path="/deductions" element={<Deductions/>}/>
-  <Route path="/payslip" element={<Payroll report="payslip"/>}/>
-  <Route path="/payroll-summary" element={<Payroll report="summary"/>}/>
   <Route path="/compensation" element={<Navigate to="/compensation/salary-grades" replace/>}/>
   <Route path="/compensation/salary-grades" element={<Compensation section="salary-grades"/>}/>
   <Route path="/compensation/employee-compensation" element={<Compensation section="employee-compensation"/>}/>

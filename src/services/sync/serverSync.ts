@@ -3,6 +3,8 @@ import {apiClient} from '../api/apiClient';
 type PendingWrite={raw?:string;deleted?:boolean};
 const PREFIXES=['admin:','audit:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
+// Attendance now comes from HR2; purge the retired manually-entered copies.
+const RETIRED_KEYS=['attendance:records','attendance:schedule'];
 const rawSet=Storage.prototype.setItem;
 const rawRemove=Storage.prototype.removeItem;
 const timers=new Map<string,number>();
@@ -44,6 +46,7 @@ export async function hydrateFromServer(reloadOnChange=false){
   for(const item of items){
    // A local edit is newer than this snapshot; do not overwrite it while it is queued.
    if(pending.has(item.key))continue;
+   if(RETIRED_KEYS.includes(item.key)){if(!item.deleted)schedulePush(item.key,{deleted:true});continue}
    if(item.deleted){
     if(window.localStorage.getItem(item.key)!==null)changed=true;
     rawRemove.call(window.localStorage,item.key);
@@ -53,6 +56,7 @@ export async function hydrateFromServer(reloadOnChange=false){
    if(window.localStorage.getItem(item.key)!==raw)changed=true;
    rawSet.call(window.localStorage,item.key,raw);
   }
+  for(const key of RETIRED_KEYS)rawRemove.call(window.localStorage,key);
   for(let i=0;i<window.localStorage.length;i++){
    const key=window.localStorage.key(i);
    if(key&&synced(key)&&!serverKeys.has(key)&&!pending.has(key)){

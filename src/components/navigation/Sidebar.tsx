@@ -27,7 +27,7 @@ function Group({item,collapsed}:{item:NavItem;collapsed:boolean}){
     </button>
     {open&&<div className={`mb-2 border-l border-white/10 pb-1 pt-1 ${collapsed?'ml-2 pl-2':'ml-4 pl-3'}`}>
       {item.children?.map(child=><NavLink title={collapsed?child.label:undefined} key={child.to} to={child.to} end={child.to==='/employees'} className={({isActive})=>`flex items-center gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-white/5 hover:text-white ${collapsed?'justify-center':''} ${isActive?'bg-[#203f69] text-white':'text-[#aab4d0]'}`}>
-        <i className={`h-[5px] w-[5px] shrink-0 rounded-full ${location.pathname===child.to?'bg-[#4aa3d6]':'bg-[#7d8bb0]'}`}/><span className={collapsed?'sr-only':''}>{child.label}</span>
+        <i className={`h-[5px] w-[5px] shrink-0 rounded-full ${location.pathname===child.to||location.pathname.startsWith(`${child.to}/`)?'bg-[#4aa3d6]':'bg-[#7d8bb0]'}`}/><span className={collapsed?'sr-only':''}>{child.label}</span>
       </NavLink>)}
     </div>}
   </>;

@@ -16,6 +16,7 @@ export type PaymentMethod='Bank Transfer'|'Direct Deposit';
 
 const label=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 export const periodLabel=(from:string,to:string)=>`${label(from)} - ${label(to)}`;
+export const cutoffRange=()=>{const d=new Date(),y=d.getFullYear(),m=d.getMonth(),p=(n:number)=>String(n).padStart(2,'0'),last=new Date(y,m+1,0).getDate();return d.getDate()<=15?{from:`${y}-${p(m+1)}-01`,to:`${y}-${p(m+1)}-15`}:{from:`${y}-${p(m+1)}-16`,to:`${y}-${p(m+1)}-${p(last)}`}};
 
 export function decideRun(id:string,status:'Approved'|'Rejected',by:string){
  const runs=read<PayrollRun[]>(RUNS_KEY,[]);

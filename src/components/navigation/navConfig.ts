@@ -6,9 +6,8 @@ export const overview:NavItem[]=[{label:'Dashboard',to:'/dashboard',icon:LayoutG
 export const modules:NavItem[]=[
  {label:'Employees',to:'/employees',icon:Users},
  {label:'Payroll Management',to:'/payroll',icon:Wallet,children:[
-{label:'Payroll',to:'/payroll'},{label:'Attendance',to:'/attendance'},{label:'Timesheet',to:'/timesheet'},
-  {label:'Deductions',to:'/deductions'},{label:'Payslip',to:'/payslip'},
-  {label:'Payroll Entry',to:'/payroll-summary'},
+  {label:'Payroll Runs',to:'/payroll'},{label:'Time & Attendance',to:'/time-attendance'},
+  {label:'Deductions',to:'/deductions'},
  ]},
  {label:'Compensation Planning',to:'/compensation/salary-grades',icon:BarChart3,children:[
   {label:'Salary Grades',to:'/compensation/salary-grades'},

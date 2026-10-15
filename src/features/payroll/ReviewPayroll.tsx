@@ -4,7 +4,7 @@ import {Button,Empty,LoadingState,Modal,ghost} from '../../components/common/ui'
 import type {PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
-import {attendanceService} from '../attendance/attendanceService';
+import {ATTENDANCE_SCHEDULE,fetchAttendance} from '../attendance/attendanceService';
 import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
@@ -37,7 +37,7 @@ export default function ReviewPayroll(){
  const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
  const[paying,setPaying]=useState(false),[paymentBusy,setPaymentBusy]=useState(false),[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
  const[loanError,setLoanError]=useState('');
- const pay=async()=>{if(!saved)return;setPaymentBusy(true);setError('');try{const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');nav('/payroll?tab=runs')}catch(cause){setError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setPaymentBusy(false)}};
+ const pay=async()=>{if(!saved)return;setPaymentBusy(true);setError('');try{const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');nav('/payroll')}catch(cause){setError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setPaymentBusy(false)}};
  const priorHistory=(employeeId:string):AnnualTaxHistory=>{
   const year=from.slice(0,4);const priorRuns=read<PayrollRun[]>(RUNS_KEY,[]).filter(run=>run.status==='Approved'&&run.from.slice(0,4)===year&&run.to<from);
   return priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===employeeId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{
@@ -56,14 +56,14 @@ export default function ReviewPayroll(){
    try{
  const[employees,records,bundle,scheduledLoans]=await Promise.all([
  employeeService.getAllFromServer(),
- attendanceService.list(),
+ fetchAttendance({from,to}),
  compensationService.load().catch(()=>null),
  loanService.schedule(from,to),
 ]);
  const assignments=bundle?.assignments??read<EmployeeCompensation[]>('compensation:employee-assignments',[]);
 const grades=bundle?.grades??read<{position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]);
 const bonuses=bundle?.bonuses??read<{employeeId:string;amount:number;effectiveDate:string;status:string}[]>('compensation:bonuses-incentives',[]);
-const base=computeDeductions({employees,records,schedule:attendanceService.schedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
+const base=computeDeductions({employees,records,schedule:ATTENDANCE_SCHEDULE,assignments,grades,rates,from,to}).filter(item=>item.salary);
 const built:RunRow[]=[];
     for(const item of base){
      const employee=item.employee;
@@ -113,12 +113,12 @@ const built:RunRow[]=[];
   const run:PayrollRun={id:crypto.randomUUID(),from,to,status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
   write(RUNS_KEY,[...runs,run]);
   recordAudit({action:'Submitted payroll for approval',module:'Payroll',description:`Submitted payroll for ${periodLabel(from,to)} (${rows.length} employees).`});
-  nav('/payroll?tab=runs');
+  nav('/payroll');
  };
  const decide=(status:'Approved'|'Rejected')=>{
   if(!saved||!window.confirm(`${status==='Approved'?'Approve':'Reject'} payroll for ${periodLabel(saved.from,saved.to)}?`))return;
   decideRun(saved.id,status,user?.name??'Admin');
-  nav('/payroll?tab=runs');
+  nav('/payroll');
  };
 
  return <div className="space-y-4">
