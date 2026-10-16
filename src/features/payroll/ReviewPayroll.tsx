@@ -16,7 +16,7 @@ import {RUNS_KEY,decideRun,isThirteenthMonthRun,payRun,periodLabel,runLabel,runT
 import type {PayrollRun,PayrollRunType,RunRow,PaymentMethod} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
-import {isBonusReward} from '../compensation/compensationState';
+import {activeCompensations,isBonusReward} from '../compensation/compensationState';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {loadWithholdingRules,ruleForDate} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
@@ -85,6 +85,8 @@ const rewards=bundle.bonuses;
 
 const time=loadTimeSettings(),holidays=loadHolidays();
 const base=computeDeductions({employees,records,schedule:loadAttendanceSchedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
+const activeAssignments=activeCompensations(assignments,to);
+const gradeCodes=new Set(grades.map(grade=>grade.code.trim().toLowerCase()).filter(Boolean));
 const built:RunRow[]=[];
     for(const item of base){
      const employee=item.employee;
@@ -97,7 +99,9 @@ const built:RunRow[]=[];
      const hmo=await hmoService.getPayrollDeduction(employee.id,from,to);
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
      const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
-     const dailyRate=(item.salary as number)/rates.daysPerMonth;
+     // A graded assignment carries the grade's whole-peso daily rate; a manual salary keeps salary ÷ working days.
+     const graded=activeAssignments.find(assignment=>employeeIds.includes(assignment.employeeId)&&gradeCodes.has(assignment.salaryCode.trim().toLowerCase()));
+     const dailyRate=graded?graded.dailyRate:(item.salary as number)/rates.daysPerMonth;
      const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,...loanAmounts};
      const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);

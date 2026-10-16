@@ -38,6 +38,7 @@ import {
   compensationEmployeeLabel,
   compensationEntryAction,
   dailyFromSalary,
+  employeesOnGrade,
   findCompensationEmployee,
   mergeCompensationEmployees,
   salaryDefaultForPosition,
@@ -217,6 +218,10 @@ export default function CompensationPlanning({section}:{section:Section}){
     void runMutation(async()=>{
       await compensationService.updateGrade(grade.id,{position,fixedSalary});
       recordAudit({action:'Updated salary grade',module:'Compensation Planning',description:`Updated salary grade ${grade.code}: position ${grade.position||'General'} to ${position}, monthly salary ${peso(grade.fixedSalary)} to ${peso(fixedSalary)}.`});
+      if(fixedSalary!==grade.fixedSalary){
+        const affected=employeesOnGrade(assignments,grade.code,date);
+        recordAudit({action:'Updated salary grade amount',module:'Compensation Planning',description:`Salary grade ${grade.code} monthly salary changed from ${peso(grade.fixedSalary)} to ${peso(fixedSalary)}; ${affected} employee${affected===1?'':'s'} affected.`});
+      }
       await loadCompensation();
       setEditingGrade(null);
       setPendingGradeEdit(null);
@@ -319,13 +324,14 @@ export default function CompensationPlanning({section}:{section:Section}){
       if(!assignment)return record;
       const employee=findCompensationEmployee(employees,assignment.employeeId);
       const name=employee?.name||record.name;
-      const dailyRate=dailyFromSalary(assignment.fixedSalary,daysPerMonth);
+      const graded=grades.some(grade=>grade.code.trim().toLowerCase()===assignment.salaryCode.trim().toLowerCase());
+      const dailyRate=graded?assignment.dailyRate:dailyFromSalary(assignment.fixedSalary,daysPerMonth);
       if(Number(record.dailyRate)===dailyRate&&record.name===name)return record;
       changed=true;
       return {...record,dailyRate,name};
     });
     if(changed)write('payroll:records',next);
-  },[activeAssignments,employees,daysPerMonth]);
+  },[activeAssignments,employees,daysPerMonth,grades]);
 
   const employeePanel=!(section==='salary-structure'&&structureTab==='grades');
   return <div className="space-y-5">

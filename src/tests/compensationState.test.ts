@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import type {Employee} from '../types/domain';
-import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,compensationEntryAction,dailyFromSalary,mergeCompensationEmployees,normalizeLegacySalaryGradeCode,salaryDefaultForPosition,saveCompensationAssignment} from '../features/compensation/compensationState';
+import {activeCompensations,applyApprovedProposals,compensationEmployeeLabel,compensationEntryAction,dailyFromSalary,employeesOnGrade,withGradeSalaries,mergeCompensationEmployees,normalizeLegacySalaryGradeCode,salaryDefaultForPosition,saveCompensationAssignment} from '../features/compensation/compensationState';
 import {employeePositionOptions} from '../features/employees/positionOptions';
 import type {CompensationProposal,EmployeeCompensation} from '../features/compensation/compensationState';
 
@@ -101,5 +101,23 @@ describe('Compensation effective dates and preserved rows',()=>{
     const result=applyApprovedProposals([assignment],[proposal],[legacyHistory],'2026-10-10');
     expect(result.history).toHaveLength(2);
     expect(result.history[1].proposalId).toBe(proposal.id);
+  });
+});
+
+describe('Salary grades as the source of truth',()=>{
+  const graded:EmployeeCompensation={...assignment,id:'graded',salaryCode:'SG-002',fixedSalary:30000,dailyRate:1363.64,effectiveDate:'2026-01-01'};
+  const manual:EmployeeCompensation={...assignment,id:'manual',employeeId:'employee-2',salaryCode:'',fixedSalary:41000,dailyRate:1863.64,effectiveDate:'2026-01-01'};
+  it('uses the grade’s current amount and a whole-peso daily rate for graded assignments',()=>{
+    const [next]=withGradeSalaries([graded],[{code:'sg-002',fixedSalary:33000}],22);
+    expect(next).toMatchObject({fixedSalary:33000,dailyRate:1500});
+  });
+  it('keeps manual salaries and assignments whose grade no longer exists unchanged',()=>{
+    expect(withGradeSalaries([manual,{...graded,salaryCode:'SG-999'}],[{code:'SG-002',fixedSalary:33000}],22)).toEqual([manual,{...graded,salaryCode:'SG-999'}]);
+  });
+  it('counts employees whose current assignment uses the grade',()=>{
+    const scheduled={...graded,id:'scheduled',employeeId:'employee-3',effectiveDate:'2027-01-01'};
+    const movedOff={...graded,id:'moved',employeeId:'employee-4'};
+    const later={...movedOff,id:'later',salaryCode:'',effectiveDate:'2026-06-01'};
+    expect(employeesOnGrade([graded,manual,scheduled,movedOff,later],'SG-002','2026-10-16')).toBe(1);
   });
 });

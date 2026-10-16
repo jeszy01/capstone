@@ -48,6 +48,20 @@ export function compensationEmployeeLabel(employees:Employee[],reference:string,
   return findCompensationEmployee(employees,reference)?.name?.trim()||snapshot?.trim()||'Employee record unavailable';
 }
 
+const gradeKey=(code?:string)=>(code??'').trim().toLowerCase();
+/** Salary grades are the source of truth: an assignment with a grade takes the grade's current monthly amount
+ * and a whole-peso daily rate. Assignments without a grade keep their own salary. */
+export function withGradeSalaries(assignments:EmployeeCompensation[],grades:Pick<SalaryGrade,'code'|'fixedSalary'>[],daysPerMonth=loadRates().daysPerMonth):EmployeeCompensation[]{
+  const salaryByCode=new Map(grades.filter(grade=>gradeKey(grade.code)).map(grade=>[gradeKey(grade.code),grade.fixedSalary]));
+  return assignments.map(assignment=>{
+    const salary=salaryByCode.get(gradeKey(assignment.salaryCode));
+    return salary===undefined?assignment:{...assignment,fixedSalary:salary,dailyRate:Math.round(salary/daysPerMonth)};
+  });
+}
+/** Employees whose current assignment uses the grade. */
+export const employeesOnGrade=(assignments:EmployeeCompensation[],code:string,date:string)=>
+  gradeKey(code)?activeCompensations(assignments,date).filter(assignment=>gradeKey(assignment.salaryCode)===gradeKey(code)).length:0;
+
 export function activeCompensations(assignments:EmployeeCompensation[],date:string):EmployeeCompensation[]{
   const current=new Map<string,EmployeeCompensation>();
   for(const assignment of assignments){

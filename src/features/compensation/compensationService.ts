@@ -1,6 +1,6 @@
 import {apiClient} from '../../services/api/apiClient';
 import {read} from '../../utils/storage';
-import {dailyFromSalary} from './compensationState';
+import {dailyFromSalary,withGradeSalaries} from './compensationState';
 import type {BonusIncentive,CompensationHistory,CompensationProposal,EmployeeCompensation,SalaryGrade} from './compensationState';
 
 type Envelope<T>={data:T};
@@ -51,7 +51,8 @@ export const compensationService={
   const importMessages:string[]=[];
   if(normalized)importMessages.push(`${normalized} legacy salary-grade code${normalized===1?'':'s'} ${normalized===1?'was':'were'} normalized (SG-01 to SG-001); the original app-data remains preserved.`);
   if(skipped)importMessages.push(`${skipped} legacy compensation record${skipped===1?'':'s'} could not be imported because required fields or a matching employee record were missing. The original synchronized records remain preserved in app-data.`);
-  return {grades:data.salary_grades.map(gradeFromServer),assignments:data.assignments.map(assignmentFromServer),proposals:data.proposals.map(proposalFromServer),history:data.history.map(historyFromServer),bonuses:data.rewards.map(rewardFromServer),legacyImportWarning:importMessages.join(' ')};
+  const grades=data.salary_grades.map(gradeFromServer);
+  return {grades,assignments:withGradeSalaries(data.assignments.map(assignmentFromServer),grades),proposals:data.proposals.map(proposalFromServer),history:data.history.map(historyFromServer),bonuses:data.rewards.map(rewardFromServer),legacyImportWarning:importMessages.join(' ')};
  },
  createGrade:(grade:Pick<SalaryGrade,'position'|'fixedSalary'|'status'>)=>action<ServerGrade>({action:'create_grade',position:grade.position,basic_salary:grade.fixedSalary,status:grade.status}),
  updateGrade:(id:string,grade:Pick<SalaryGrade,'position'|'fixedSalary'>)=>action<ServerGrade>({action:'update_grade',id,position:grade.position,basic_salary:grade.fixedSalary}),
