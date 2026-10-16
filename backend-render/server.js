@@ -532,6 +532,27 @@ app.post('/account', auth, async (req, res) => {
 });
 
 // ---- /users (admin user management) ----
+// HR Staff and Admin accounts are company-issued, not employees. employee_id holds an account ID
+// (USR-0001, USR-0002, ...) assigned here, so the JWT employee_id claim keeps working.
+async function createAccount(values) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query(`select pg_advisory_xact_lock(hashtext('users.account_id'))`);
+    const { rows: [{ highest }] } = await client.query(
+      `select coalesce(max(substring(employee_id from '^USR-([0-9]+)$')::int), 0) as highest from users`);
+    const now = new Date().toISOString();
+    const { rows: [row] } = await client.query(
+      `insert into users(employee_id,name,email,role,status,password_hash,created_at,updated_at)
+       values($1,$2,$3,$4,'active',$5,$6,$6) returning *`,
+      [`USR-${String(highest + 1).padStart(4, '0')}`, values.name, values.email, values.role, values.password_hash, now]);
+    await client.query('commit');
+    return row;
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+}
 const publicUser = u => ({ id: u.id, employee_id: u.employee_id, name: u.name ?? null, email: u.email, role: u.role, status: u.status });
 
 app.get('/users', auth, role('admin'), async (_req, res) => ok(res, (await listRows('users')).map(publicUser)));
@@ -559,7 +580,6 @@ app.post('/users', auth, role('admin'), async (req, res) => {
     await audit('user.deleted', ctx.userId, 'users', id);
     return ok(res, { deleted: true, id });
   }
-  const employee_id = required(body.employee_id, 'employee_id');
   const name = required(body.name, 'name');
   const email = required(body.email, 'email').toLowerCase();
   const password = required(body.password, 'password');
@@ -567,10 +587,8 @@ app.post('/users', auth, role('admin'), async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'INVALID_EMAIL', 'Enter a valid email address.');
   if (password.length < 8) throw new HttpError(400, 'WEAK_PASSWORD', 'Password must be at least 8 characters.');
   if (newRole !== 'admin' && newRole !== 'hr_staff') throw new HttpError(400, 'INVALID_ROLE', 'Unsupported user role.');
-  if (await first('users', { employee_id })) throw new HttpError(409, 'DUPLICATE_EMPLOYEE_ID', 'A user with this employee ID already exists.');
   if (await first('users', { email })) throw new HttpError(409, 'DUPLICATE_EMAIL', 'A user with this email already exists.');
-  const now = new Date().toISOString();
-  const row = await insertRow('users', { employee_id, name, email, role: newRole, status: 'active', password_hash: hash(password), created_at: now, updated_at: now });
+  const row = await createAccount({ name, email, role: newRole, password_hash: hash(password) });
   await audit('user.created', ctx.userId, 'users', row.id);
   // OTP is disabled on this backup, so no verification email is sent.
   created(res, { user: publicUser(row), otp_sent: false, otp_disabled: true, challenge_id: null, emailId: null });
