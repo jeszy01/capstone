@@ -1694,5 +1694,6 @@ app.use(['/account', '/users', '/compensation', '/hmo', '/loans', '/government-l
   next(err);
 });
 
+app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use((err, _req, res, _next) => { console.error(err); fail(res, 500, 'INTERNAL_ERROR', 'Internal server error'); });
 app.listen(process.env.PORT || 3000);
