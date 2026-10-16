@@ -28,6 +28,7 @@ await pool.query(`
   create table if not exists app_data(
     key text primary key, value jsonb, deleted boolean default false,
     updated_at timestamptz default now(), updated_by uuid);`);
+    await pool.query('alter table app_data alter column value type text using value::text');
 if (!(await pool.query('select 1 from users limit 1')).rowCount && ADMIN_EMAIL && ADMIN_PASSWORD)
   await pool.query('insert into users(employee_id,name,email,password_hash,role) values($1,$2,$3,$4,$5)',
     ['ADMIN-001', 'Administrator', ADMIN_EMAIL.toLowerCase(), hash(ADMIN_PASSWORD), 'admin']);
@@ -69,7 +70,12 @@ const okKey = k => typeof k === 'string' && k.length <= 200 && PREFIXES.some(p =
 
 app.get('/app-data', auth, async (_req, res) => {
   const { rows } = await pool.query('select key,value,deleted from app_data');
-  res.json({ data: rows });
+  // Values are stored as JSON text so key order survives; older rows are plain jsonb.
+  res.json({ data: rows.map(({ key, value, deleted }) => {
+    let v = value;
+    if (typeof v === 'string') { try { v = JSON.parse(v); } catch { /* keep the raw string */ } }
+    return { key, value: v, deleted };
+  }) });
 });
 
 app.post('/app-data', auth, async (req, res) => {
@@ -79,7 +85,7 @@ app.post('/app-data', auth, async (req, res) => {
   await pool.query(
     `insert into app_data(key,value,deleted,updated_by) values($1,$2,$3,$4)
      on conflict(key) do update set value=$2, deleted=$3, updated_at=now(), updated_by=$4`,
-    [key, JSON.stringify(isDel ? {} : value ?? null), isDel, req.user.id]);
+    [key, JSON.stringify(JSON.stringify(isDel ? {} : value ?? null)), isDel, req.user.id]);
   res.json({ data: { key, value: isDel ? null : value, deleted: isDel } });
 });
 
@@ -573,7 +579,8 @@ const DEFAULT_MONTHLY_WORK_DAYS = 22;
 const roundMoney = value => Math.round((value + Number.EPSILON) * 100) / 100;
 async function monthlyWorkDays() {
   const row = await first('app_data', { key: 'payroll:rates' });
-  const days = Number(row && !row.deleted && typeof row.value === 'object' && row.value ? row.value.daysPerMonth : NaN);
+  const value = row && !row.deleted ? parseJson(row.value) : null;
+  const days = Number(value && typeof value === 'object' ? value.daysPerMonth : NaN);
   return Number.isFinite(days) && days >= 1 && days <= 31 ? days : DEFAULT_MONTHLY_WORK_DAYS;
 }
 async function activeGradeByCode(code) {
