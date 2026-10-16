@@ -2,11 +2,12 @@ import {apiClient} from '../../services/api/apiClient';
 
 export interface AccountSession{id:string;device:string;browser:string;createdAt:string;lastActiveAt:string;current:boolean}
 export interface AccountSecurity{otpEnabled:boolean;otpAvailable:boolean;passkeySet:boolean;passkeyLockedUntil:string|null;sessions:AccountSession[]}
-export type PasskeyPurpose='export'|'release';
+export type PasskeyPurpose='export'|'release'|'settings';
 export type PasskeyResult={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';attemptsLeft?:number;lockedUntil?:string|null};
 type ServerSecurity={otp_enabled:boolean;otp_available:boolean;passkey_set?:boolean;passkey_locked_until?:string|null;sessions:Array<{id:string;device:string;browser:string;created_at:string;last_active_at:string;current:boolean}>};
 
 const fromServer=(data:ServerSecurity):AccountSecurity=>({otpEnabled:data.otp_enabled,otpAvailable:data.otp_available,passkeySet:Boolean(data.passkey_set),passkeyLockedUntil:data.passkey_locked_until??null,sessions:data.sessions.map(session=>({id:session.id,device:session.device,browser:session.browser,createdAt:session.created_at,lastActiveAt:session.last_active_at,current:session.current}))});
+const verifyPasskey=(passkey:string,purpose:PasskeyPurpose,detail:string)=>apiClient.post<Record<string,unknown>,{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';attempts_left?:number;locked_until?:string|null}}>('/account',{action:'verify_passkey',passkey,purpose,detail}).then(({data}):PasskeyResult=>data.verified?{verified:true}:{verified:false,reason:data.reason??'invalid',attemptsLeft:data.attempts_left,lockedUntil:data.locked_until});
 const post=(payload:Record<string,unknown>)=>apiClient.post<Record<string,unknown>,{data:ServerSecurity}>('/account',payload).then(response=>fromServer(response.data));
 
 /** Password strength: 8-128 characters with upper case, lower case, a number and a symbol (also enforced by the server). */
@@ -31,7 +32,11 @@ export const accountService={
  setPasskey:(currentPassword:string,newPasskey:string)=>post({action:'set_passkey',current_password:currentPassword,new_passkey:newPasskey}),
  changePasskey:(currentPasskey:string,newPasskey:string)=>post({action:'change_passkey',current_passkey:currentPasskey,new_passkey:newPasskey}),
  resetPasskey:(currentPassword:string,newPasskey:string)=>post({action:'reset_passkey',current_password:currentPassword,new_passkey:newPasskey}),
- verifyPasskey:(passkey:string,purpose:PasskeyPurpose,detail:string)=>apiClient.post<Record<string,unknown>,{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';attempts_left?:number;locked_until?:string|null}}>('/account',{action:'verify_passkey',passkey,purpose,detail}).then(({data}):PasskeyResult=>data.verified?{verified:true}:{verified:false,reason:data.reason??'invalid',attemptsLeft:data.attempts_left,lockedUntil:data.locked_until}),
+ verifyPasskey:(passkey:string,purpose:PasskeyPurpose,detail:string)=>verifyPasskey(passkey,purpose,detail).catch(cause=>{
+  // The eProvider account function only knows export and release; confirm settings changes there as release.
+  if(purpose==='settings'&&cause instanceof Error&&/purpose must be export or release/i.test(cause.message))return verifyPasskey(passkey,'release',detail);
+  throw cause;
+ }),
  revokeOtherSessions:(currentPassword:string)=>post({action:'revoke_other_sessions',current_password:currentPassword}),
  // keepalive lets the request finish while the page navigates to sign-in.
  signOut:()=>apiClient.post<Record<string,unknown>,unknown>('/account',{action:'sign_out'},{keepalive:true}),

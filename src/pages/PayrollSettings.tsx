@@ -5,6 +5,7 @@ import {Pencil,Plus,Trash2} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,Field,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../components/common/ui';
 import {getCurrentUser} from '../features/auth/authService';
 import {recordAudit} from '../features/audit/auditService';
+import {confirmWithPasskey} from '../features/auth/passkeyGate';
 import {employeeService} from '../features/employees/employeeService';
 import {employeePositionOptions} from '../features/employees/positionOptions';
 import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate,saveWithholdingRules,validateRuleSet} from '../features/payroll/withholdingTax';
@@ -46,18 +47,17 @@ function useDraft<T>(load:()=>T,editing:boolean,onDirty:(dirty:boolean)=>void){
  useEffect(()=>{onDirty(dirty)},[dirty]); // eslint-disable-line react-hooks/exhaustive-deps
  return {saved,draft,setDraft};
 }
-/** Save opens a confirmation; confirming applies the change and logs it. */
+/** Save asks for the passkey; only a verified passkey applies the change and logs it. Cancel keeps the section in edit mode. */
 function useSave(validate:()=>string[],apply:()=>void){
- const [errors,setErrors]=useState<string[]>([]),[confirming,setConfirming]=useState(false);
- return {errors,confirming,clearErrors:()=>setErrors([]),request:()=>{const problems=validate();setErrors(problems);if(!problems.length)setConfirming(true)},cancel:()=>setConfirming(false),confirm:()=>{setConfirming(false);apply()}};
+ const [errors,setErrors]=useState<string[]>([]);
+ return {errors,clearErrors:()=>setErrors([]),request:async(detail:string)=>{const problems=validate();setErrors(problems);if(!problems.length&&await confirmWithPasskey('settings',detail))apply()}};
 }
 
 function SectionShell({title,editing,canEdit,onEdit,onCancel,save,actions,children}:{title:string;editing:boolean;canEdit:boolean;onEdit:()=>void;onCancel:()=>void;save:ReturnType<typeof useSave>;actions?:ReactNode;children:ReactNode}){
  return <Card className="min-w-0">
-  <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[17px] font-semibold text-slate-900">{title}</h2><div className="flex flex-wrap gap-2">{actions}{canEdit&&(editing?<><button type="button" className={ghost} onClick={()=>{save.clearErrors();onCancel()}}>Cancel</button><Button onClick={save.request}>Save</Button></>:<button type="button" className={ghost} onClick={onEdit}><Pencil size={15}/>Edit</button>)}</div></div>
+  <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[17px] font-semibold text-slate-900">{title}</h2><div className="flex flex-wrap gap-2">{actions}{canEdit&&(editing?<><button type="button" className={ghost} onClick={()=>{save.clearErrors();onCancel()}}>Cancel</button><Button onClick={()=>void save.request(`Apply the changes to ${title}?`)}>Save</Button></>:<button type="button" className={ghost} onClick={onEdit}><Pencil size={15}/>Edit</button>)}</div></div>
   {children}
   {save.errors.length>0&&<div role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><ul className="m-0 list-disc pl-5">{save.errors.map(error=><li key={error}>{error}</li>)}</ul></div>}
-  {save.confirming&&<ConfirmDialog title="Save changes?" message={`Apply the changes to ${title}?`} confirmLabel="Confirm" saving={false} onCancel={save.cancel} onConfirm={save.confirm}/>}
  </Card>;
 }
 const grid='grid gap-4 sm:grid-cols-2 lg:grid-cols-3';
@@ -112,9 +112,15 @@ function HolidaySection({editing,canEdit,onEdit,onDone,onDirty,calendarLocked}:S
  const [holidays,setHolidays]=useState<Holiday[]>(loadHolidays);
  const [form,setForm]=useState<Holiday|null>(null),[pending,setPending]=useState<{kind:'save'|'delete';holiday:Holiday}|null>(null),[formError,setFormError]=useState('');
  const describe=(holiday:Holiday)=>`${holiday.date} ${holiday.name} (${holiday.type})`;
- const apply=()=>{
-  if(!pending)return;
-  const {kind,holiday}=pending,previous=holidays.find(item=>item.id===holiday.id);
+ // A verified passkey saves the holiday change; Cancel returns to the holiday form with its values.
+ const requestChange=async(change:{kind:'save'|'delete';holiday:Holiday})=>{
+  setPending(change);
+  const {kind,holiday}=change;
+  if(await confirmWithPasskey('settings',kind==='delete'?`Delete ${holiday.name} on ${holiday.date}?`:`Save ${holiday.name} on ${holiday.date}?`))apply(change);
+  else setPending(null);
+ };
+ const apply=({kind,holiday}:{kind:'save'|'delete';holiday:Holiday})=>{
+  const previous=holidays.find(item=>item.id===holiday.id);
   const next=kind==='delete'?holidays.filter(item=>item.id!==holiday.id):[...holidays.filter(item=>item.id!==holiday.id),holiday];
   saveHolidays(next);setHolidays(loadHolidays());
   recordAudit({action:'Updated payroll settings',module:'Payroll Settings',description:kind==='delete'?`Holiday Calendar: deleted ${describe(holiday)}.`:previous?`Holiday Calendar: ${describe(previous)} → ${describe(holiday)}.`:`Holiday Calendar: added ${describe(holiday)}.`});
@@ -125,21 +131,20 @@ function HolidaySection({editing,canEdit,onEdit,onDone,onDirty,calendarLocked}:S
   const date=form.date,name=form.name.trim();
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(`${date}T00:00:00Z`)))return setFormError('Enter a valid date.');
   if(!name)return setFormError('Enter a holiday name.');
-  setFormError('');setPending({kind:'save',holiday:{...form,name}});
+  setFormError('');void requestChange({kind:'save',holiday:{...form,name}});
  };
  const calendarEditable=canEdit&&!calendarLocked;
  return <SectionShell title="Holiday Pay" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}>
   <div className={grid}>{RATE_FIELDS.holiday.map(field=><RateInput key={field.key} field={field} draft={draft} setDraft={setDraft} editing={editing}/>)}</div>
   <div className="mt-8 flex flex-wrap items-center justify-between gap-3"><h3 className="m-0 text-[15px] font-semibold text-slate-800">Holiday Calendar</h3>{calendarEditable&&<button type="button" className={ghost} onClick={()=>{setFormError('');setForm({id:crypto.randomUUID(),date:today(),name:'',type:'Regular Holiday'})}}><Plus size={15}/>Add Holiday</button>}</div>
   <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[520px] text-left text-[13px]"><thead><tr className="border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500">{['Date','Name','Type'].map(label=><th key={label} className="px-4 py-3">{label}</th>)}{calendarEditable&&<th className="px-4 py-3 text-right">Actions</th>}</tr></thead><tbody>
-   {!holidays.length?<tr><td colSpan={calendarEditable?4:3}><Empty>No holidays yet.</Empty></td></tr>:holidays.map(holiday=><tr key={holiday.id} className="border-b border-[#eef1f6] last:border-0"><td className="whitespace-nowrap px-4 py-3">{holiday.date}</td><td className="px-4 py-3 font-medium">{holiday.name}</td><td className="px-4 py-3">{holiday.type}</td>{calendarEditable&&<td className="px-4 py-3"><div className="flex justify-end gap-2"><button type="button" className={ghost} aria-label={`Edit ${holiday.name}`} onClick={()=>{setFormError('');setForm(holiday)}}><Pencil size={14}/><span className="max-sm:sr-only">Edit</span></button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Delete ${holiday.name}`} onClick={()=>setPending({kind:'delete',holiday})}><Trash2 size={14}/><span className="max-sm:sr-only">Delete</span></button></div></td>}</tr>)}
+   {!holidays.length?<tr><td colSpan={calendarEditable?4:3}><Empty>No holidays yet.</Empty></td></tr>:holidays.map(holiday=><tr key={holiday.id} className="border-b border-[#eef1f6] last:border-0"><td className="whitespace-nowrap px-4 py-3">{holiday.date}</td><td className="px-4 py-3 font-medium">{holiday.name}</td><td className="px-4 py-3">{holiday.type}</td>{calendarEditable&&<td className="px-4 py-3"><div className="flex justify-end gap-2"><button type="button" className={ghost} aria-label={`Edit ${holiday.name}`} onClick={()=>{setFormError('');setForm(holiday)}}><Pencil size={14}/><span className="max-sm:sr-only">Edit</span></button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Delete ${holiday.name}`} onClick={()=>void requestChange({kind:'delete',holiday})}><Trash2 size={14}/><span className="max-sm:sr-only">Delete</span></button></div></td>}</tr>)}
   </tbody></table></div>
   {form&&!pending&&<Modal title={holidays.some(item=>item.id===form.id)?'Edit holiday':'Add holiday'} onClose={()=>setForm(null)}><div className="grid gap-4">
    <Field label="Date"><TextInput type="date" value={form.date} onChange={event=>setForm({...form,date:event.target.value})}/></Field>
    <Field label="Name"><TextInput value={form.name} onChange={event=>setForm({...form,name:event.target.value})}/></Field>
    <Field label="Type"><select className={input} value={form.type} onChange={event=>setForm({...form,type:event.target.value as HolidayType})}>{HOLIDAY_TYPES.map(type=><option key={type}>{type}</option>)}</select></Field>
   </div>{formError&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{formError}</p>}<div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} onClick={()=>setForm(null)}>Cancel</button><Button onClick={submitForm}>Save</Button></div></Modal>}
-  {pending&&<ConfirmDialog title={pending.kind==='delete'?'Delete holiday?':'Save holiday?'} message={pending.kind==='delete'?`Delete ${pending.holiday.name} on ${pending.holiday.date}?`:`Save ${pending.holiday.name} on ${pending.holiday.date}?`} confirmLabel={pending.kind==='delete'?'Delete':'Confirm'} danger={pending.kind==='delete'} saving={false} onCancel={()=>setPending(null)} onConfirm={apply}/>}
  </SectionShell>;
 }
 

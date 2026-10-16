@@ -468,11 +468,12 @@ app.post('/account', auth, async (req, res) => {
     return ok(res, { signed_out: true });
   }
   if (action === 'verify_passkey') {
-    const purpose = body.purpose === 'release' ? 'release' : body.purpose === 'export' ? 'export' : null;
-    if (!purpose) throw new HttpError(400, 'INVALID_PURPOSE', 'Purpose must be export or release.');
+    // 'settings' confirms Payroll Settings changes; it is accepted here only (the eProvider function knows export and release).
+    const purpose = ['export', 'release', 'settings'].includes(body.purpose) ? body.purpose : null;
+    if (!purpose) throw new HttpError(400, 'INVALID_PURPOSE', 'Purpose must be export, release or settings.');
     const detail = String(body.detail ?? '').slice(0, 200);
     const result = await checkPasskey(user, body.passkey, purpose, detail);
-    if (result.verified) await audit(purpose === 'export' ? 'account.passkey.export' : 'account.passkey.release', user.id, 'users', user.id, { detail });
+    if (result.verified) await audit(`account.passkey.${purpose}`, user.id, 'users', user.id, { detail });
     return ok(res, result);
   }
   if (action === 'change_passkey') {
