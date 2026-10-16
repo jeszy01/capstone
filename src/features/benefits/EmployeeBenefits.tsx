@@ -6,8 +6,7 @@ import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
-import {peso} from '../../utils/storage';
-import {benefitCategories,benefitTemplates,defaultValueType,hasAmount,eligibilityProblems,eligibleStatusOptions,enrollmentState,hasOpenEnrollment,loadEnrollments,loadPrograms,monthlyCost,programEligibility,programValue,saveEnrollments,savePrograms,valueTypeLabels} from './benefitTypes';
+import {benefitCategories,benefitTemplates,defaultValueType,hasAmount,eligibilityProblems,eligibleStatusOptions,enrollmentState,hasOpenEnrollment,loadEnrollments,loadPrograms,programEligibility,programValue,saveEnrollments,savePrograms,valueTypeLabels} from './benefitTypes';
 import type {BenefitCategory,BenefitEnrollment,BenefitProgram,BenefitValueType} from './benefitTypes';
 
 type View='enrollments'|'programs';
@@ -33,7 +32,6 @@ export default function EmployeeBenefits(){
  const programById=useMemo(()=>new Map(programs.map(program=>[program.id,program])),[programs]);
  const openCount=(programId:string)=>enrollments.filter(item=>item.programId===programId&&item.status==='Active').length;
  const activePrograms=programs.filter(program=>program.status==='Active');
- const covered=new Set(enrollments.filter(item=>enrollmentState(item,today)==='Active').map(item=>item.employeeId)).size;
 
  const changePrograms=(next:BenefitProgram[])=>{savePrograms(next);setPrograms(next)};
  const changeEnrollments=(next:BenefitEnrollment[])=>{saveEnrollments(next);setEnrollments(next)};
@@ -67,11 +65,6 @@ export default function EmployeeBenefits(){
    <Button disabled={!activePrograms.length} title={activePrograms.length?undefined:'Add an active benefit program first.'} onClick={()=>setEnrolling(true)}><UserPlus size={15}/>Enroll Employee</Button>
   </>}/>
   {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}
-  <div className="grid gap-3 sm:grid-cols-3">
-   <Stat label="Active programs" value={String(activePrograms.length)}/>
-   <Stat label="Employees covered" value={String(covered)}/>
-   <Stat label="Monthly benefit cost" value={peso(monthlyCost(programs,enrollments,today))} note="Monthly amounts, plus yearly amounts ÷ 12"/>
-  </div>
   <Card className={flushCard}>
    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-50 px-5 py-4">
     <div className="min-w-0">
@@ -93,7 +86,6 @@ export default function EmployeeBenefits(){
  </div>;
 }
 
-function Stat({label,value,note}:{label:string;value:string;note?:string}){return <Card className="border-blue-100"><div className="text-[12px] font-medium text-slate-500">{label}</div><div className="mt-1 text-[22px] font-semibold tabular-nums text-[#17345b]">{value}</div>{note&&<div className="mt-0.5 text-[11px] text-slate-400">{note}</div>}</Card>}
 
 function EmployeeName({employee,fallback}:{employee?:Employee;fallback:string}){
  const detail=[employee?.employeeNo,employee?.department].filter(Boolean).join(' · ');
