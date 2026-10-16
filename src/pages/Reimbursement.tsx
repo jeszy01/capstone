@@ -1,35 +1,73 @@
 import {useEffect,useState} from 'react';
 import {Check} from 'lucide-react';
-import {Button,Card,Empty,ErrorAlert,LoadingState} from '../components/common/ui';
+import {Button,Card,ConfirmDialog,Empty,ErrorAlert,LoadingState} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
-import {employeeName,normalizeClaims,saveClaims,statusClass} from '../features/claims/claimsTypes';
+import {normalizeClaims,saveClaims} from '../features/claims/claimsTypes';
 import {recordAudit} from '../features/audit/auditService';
 import type {ExpenseClaim} from '../features/claims/claimsTypes';
+import {ClaimStatusBadge,EmployeeCell,ViewToggle,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
 
-const today=()=>new Date().toISOString().slice(0,10);
+type View='forReimbursement'|'history';
+const VIEWS=[{id:'forReimbursement',label:'For Reimbursement'},{id:'history',label:'History'}] as const;
 
 export default function Reimbursement(){
   const[employees,setEmployees]=useState<Employee[]>([]);
   const[claims,setClaims]=useState<ExpenseClaim[]>([]);
-  const[tab,setTab]=useState<'forReimbursement'|'history'>('forReimbursement');
+  const[view,setView]=useState<View>('forReimbursement');
+  const[confirming,setConfirming]=useState<ExpenseClaim|null>(null);
   const[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
   const load=()=>{setLoading(true);setLoadError('');employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))}).catch(cause=>{setClaims(normalizeClaims([]));setLoadError(cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded.')}).finally(()=>setLoading(false))};
   useEffect(()=>{load()},[]);
   const update=(id:string,patch:Partial<ExpenseClaim>)=>setClaims(current=>{const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);return next});
   const forReimbursement=claims.filter(item=>item.approvalStatus==='Approved'&&item.paymentStatus==='Unpaid');
-  const history=claims.filter(item=>item.paymentStatus!=='Unpaid');
-  const process=(claim:ExpenseClaim)=>{const next=processReimbursement(claim);if(next){update(claim.id,next);recordAudit({action:'Processed reimbursement',module:'Reimbursement',description:`Processed reimbursement for claim ${claim.claimNumber} (${peso(claim.amount)}).`});setTab('history')}};
+  const history=claims.filter(item=>item.paymentStatus!=='Unpaid').sort((a,b)=>b.paymentDate.localeCompare(a.paymentDate));
+  const outstanding=forReimbursement.reduce((sum,claim)=>sum+claim.amount,0);
+  const process=(claim:ExpenseClaim)=>{setConfirming(null);if(claim.approvalStatus!=='Approved'||claim.paymentStatus!=='Unpaid')return;update(claim.id,{paymentStatus:'Paid',paymentMethod:'',paymentDate:localToday()});recordAudit({action:'Processed reimbursement',module:'Reimbursement',description:`Processed reimbursement for claim ${claim.claimNumber} (${peso(claim.amount)}).`})};
+  const list=view==='forReimbursement'?forReimbursement:history;
   return <div className="space-y-5">
-
-    <div className="mt-5 overflow-x-auto rounded-xl border border-blue-100 bg-white px-1.5 py-1.5 shadow-[0_2px_8px_rgba(23,52,91,0.035)]"><div className="flex min-w-max gap-1" role="tablist" aria-label="Reimbursement sections"><button type="button" role="tab" id="reimbursement-tab-forReimbursement" aria-controls="reimbursement-panel" aria-selected={tab==='forReimbursement'} onClick={()=>setTab('forReimbursement')} className={`relative whitespace-nowrap rounded-t-lg px-4 py-3.5 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${tab==='forReimbursement'?'bg-blue-50 text-blue-700 after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-full after:bg-blue-600':'text-slate-500 hover:bg-slate-50 hover:text-[#17345b]'}`}>For Reimbursement</button><button type="button" role="tab" id="reimbursement-tab-history" aria-controls="reimbursement-panel" aria-selected={tab==='history'} onClick={()=>setTab('history')} className={`relative whitespace-nowrap rounded-t-lg px-4 py-3.5 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${tab==='history'?'bg-blue-50 text-blue-700 after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-full after:bg-blue-600':'text-slate-500 hover:bg-slate-50 hover:text-[#17345b]'}`}>Reimbursement History</button></div></div>
-    {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}<section id="reimbursement-panel" role="tabpanel" aria-labelledby={`reimbursement-tab-${tab}`} className="min-w-0">{loading?<Card className="border-blue-100"><LoadingState>Loading reimbursements…</LoadingState></Card>:<>{tab==='forReimbursement'&&<ForReimbursement claims={forReimbursement} employees={employees} onProcess={process}/>} {tab==='history'&&<ReimbursementHistory claims={history} employees={employees}/>}</>}</section>
-  </div>
+    {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}
+    <Card className={flushCard}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-50 px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="m-0 flex flex-wrap items-center gap-2 text-[15px] font-semibold text-[#17345b]">{view==='forReimbursement'?'Ready for reimbursement':'Reimbursement history'}<span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{list.length} {list.length===1?'claim':'claims'}</span></h2>
+          <p className="mb-0 mt-1 text-[12px] text-slate-500">{view==='forReimbursement'?<>Approved claims awaiting payment · <span className="font-semibold tabular-nums text-[#17345b]">{peso(outstanding)}</span> outstanding</>:'Claims that have been reimbursed.'}</p>
+        </div>
+        <ViewToggle label="Reimbursement views" value={view} options={VIEWS} onChange={setView}/>
+      </div>
+      <section role="tabpanel" aria-label={view==='forReimbursement'?'Ready for reimbursement':'Reimbursement history'} className="min-w-0">
+        {loading?<LoadingState>Loading reimbursements…</LoadingState>:view==='forReimbursement'?<ForReimbursement claims={forReimbursement} employees={employees} onProcess={setConfirming}/>:<ReimbursementHistory claims={history} employees={employees}/>}
+      </section>
+    </Card>
+    {confirming&&<ConfirmDialog title="Process reimbursement?" message={`Mark claim ${confirming.claimNumber} for ${peso(confirming.amount)} as reimbursed today? This cannot be undone.`} confirmLabel="Process Reimbursement" saving={false} onCancel={()=>setConfirming(null)} onConfirm={()=>process(confirming)}/>}
+  </div>;
 }
 
-function ForReimbursement({claims,employees,onProcess}:{claims:ExpenseClaim[];employees:Employee[];onProcess:(claim:ExpenseClaim)=>void}){return <Card className="min-w-0 overflow-hidden border-blue-100 p-0"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-50 px-5 py-4"><div><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Ready for reimbursement</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Approved claims awaiting payment processing.</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">{claims.length} {claims.length===1?'claim':'claims'}</span></div><div role="region" aria-label="Claims ready for reimbursement table; scroll horizontally to view all columns" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[1150px] text-left text-[13px]"><caption className="sr-only">Approved claims waiting for reimbursement, with employee, department, amount, date, status, and processing action.</caption><thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]">{['Claim Number','Employee','Department','Claim Type','Amount','Date','Reimbursement Status','Action'].map(header=><th key={header} scope="col" className="whitespace-nowrap px-4 py-3.5">{header}</th>)}</tr></thead><tbody>{claims.length===0?<tr><td colSpan={8}><Empty>No approved claims are waiting for reimbursement.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35"><th scope="row" className="px-4 py-3.5 text-left font-semibold text-[#17345b]">{claim.claimNumber}</th><td className="px-4 py-3.5 text-slate-700">{employeeName(employees,claim.employeeId)}</td><td className="px-4 py-3.5 text-slate-600">{claim.department||'—'}</td><td className="px-4 py-3.5 text-slate-700">{claim.claimType}</td><td className="px-4 py-3.5 font-semibold tabular-nums text-[#17345b]">{peso(claim.amount)}</td><td className="px-4 py-3.5 text-slate-600">{claim.date}</td><td className="px-4 py-3.5"><span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">Ready for Reimbursement</span></td><td className="px-4 py-3.5"><Button onClick={()=>onProcess(claim)}><Check size={14}/>Process Reimbursement</Button></td></tr>)}</tbody></table></div></Card>}
+function ForReimbursement({claims,employees,onProcess}:{claims:ExpenseClaim[];employees:Employee[];onProcess:(claim:ExpenseClaim)=>void}){
+  return <div role="region" aria-label="Claims ready for reimbursement table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[820px] text-left text-[13px]"><caption className="sr-only">Approved claims waiting for reimbursement, with employee, type, date, amount, status, and processing action.</caption>
+    <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Action'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
+    <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No approved claims are waiting for reimbursement.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
+      <th scope="row" className={rowHeader}>{claim.claimNumber}</th>
+      <td className={cell}><EmployeeCell employees={employees} claim={claim}/></td>
+      <td className={`${cell} whitespace-nowrap text-slate-700`}>{claim.claimType}</td>
+      <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.date)}</td>
+      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
+      <td className={cell}><ClaimStatusBadge claim={claim}/></td>
+      <td className={cell}><Button onClick={()=>onProcess(claim)}><Check size={14}/>Process</Button></td>
+    </tr>)}</tbody></table></div>;
+}
 
-function ReimbursementHistory({claims,employees}:{claims:ExpenseClaim[];employees:Employee[]}){return <Card className="min-w-0 overflow-hidden border-blue-100 p-0"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-50 px-5 py-4"><div><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Reimbursement History</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Completed reimbursement records.</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">{claims.length} {claims.length===1?'record':'records'}</span></div><div role="region" aria-label="Reimbursement history table; scroll horizontally to view all columns" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[1100px] text-left text-[13px]"><caption className="sr-only">Completed reimbursement history with claim number, employee, department, claim type, amount, date, status, and payment date.</caption><thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]">{['Claim Number','Employee','Department','Claim Type','Amount','Date','Reimbursement Status','Payment Date'].map(header=><th key={header} scope="col" className="whitespace-nowrap px-4 py-3.5">{header}</th>)}</tr></thead><tbody>{claims.length===0?<tr><td colSpan={8}><Empty>No reimbursement history yet.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35"><th scope="row" className="px-4 py-3.5 text-left font-semibold text-[#17345b]">{claim.claimNumber}</th><td className="px-4 py-3.5 text-slate-700">{employeeName(employees,claim.employeeId)}</td><td className="px-4 py-3.5 text-slate-600">{claim.department||'—'}</td><td className="px-4 py-3.5 text-slate-700">{claim.claimType}</td><td className="px-4 py-3.5 font-semibold tabular-nums text-[#17345b]">{peso(claim.amount)}</td><td className="px-4 py-3.5 text-slate-600">{claim.date}</td><td className="px-4 py-3.5"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClass('Paid')}`}>Reimbursed / Paid</span></td><td className="px-4 py-3.5 text-slate-600">{claim.paymentDate||'—'}</td></tr>)}</tbody></table></div></Card>}
-
-function processReimbursement(claim:ExpenseClaim):Partial<ExpenseClaim>|null{if(claim.approvalStatus!=='Approved'){alert('Only approved claims can be reimbursed.');return null}if(claim.paymentStatus!=='Unpaid'){alert('This claim has already been reimbursed and cannot be processed again.');return null}return{paymentStatus:'Paid',paymentMethod:'',paymentDate:today()}}
+function ReimbursementHistory({claims,employees}:{claims:ExpenseClaim[];employees:Employee[]}){
+  return <div role="region" aria-label="Reimbursement history table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[820px] text-left text-[13px]"><caption className="sr-only">Completed reimbursements with claim number, employee, type, expense date, amount, status, and payment date.</caption>
+    <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Expense Date','Amount','Status','Paid On'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
+    <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No reimbursement history yet.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
+      <th scope="row" className={rowHeader}>{claim.claimNumber}</th>
+      <td className={cell}><EmployeeCell employees={employees} claim={claim}/></td>
+      <td className={`${cell} whitespace-nowrap text-slate-700`}>{claim.claimType}</td>
+      <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.date)}</td>
+      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
+      <td className={cell}><ClaimStatusBadge claim={claim}/></td>
+      <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.paymentDate)}</td>
+    </tr>)}</tbody></table></div>;
+}
