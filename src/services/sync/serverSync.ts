@@ -48,12 +48,12 @@ export async function hydrateFromServer(reloadOnChange=false){
    if(pending.has(item.key))continue;
    if(RETIRED_KEYS.includes(item.key)){if(!item.deleted)schedulePush(item.key,{deleted:true});continue}
    if(item.deleted){
-    if(window.localStorage.getItem(item.key)!==null)changed=true;
+   if(window.localStorage.getItem(item.key)!==null){console.log('HYDRATE DIFF (deleted)',item.key);changed=true} if(window.localStorage.getItem(item.key)!==null)changed=true;
     rawRemove.call(window.localStorage,item.key);
     continue;
    }
    const raw=JSON.stringify(item.value);
-   if(window.localStorage.getItem(item.key)!==raw)changed=true;
+   if(window.localStorage.getItem(item.key)!==raw){console.log('HYDRATE DIFF',item.key,window.localStorage.getItem(item.key),raw);changed=true}
    rawSet.call(window.localStorage,item.key,raw);
   }
   for(const key of RETIRED_KEYS)rawRemove.call(window.localStorage,key);
