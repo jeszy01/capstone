@@ -125,6 +125,8 @@ export const hmoService={
 
  approveDependent:(id:string)=>patch('dependents',id,{action:'approve'}),
  rejectDependent:(id:string,rejection_reason:string)=>patch('dependents',id,{action:'reject',rejection_reason}),
+ submitDependentToMaxicare:(id:string)=>patch('dependents',id,{action:'submit_to_maxicare'}),
+ activateDependent:(id:string,maxicare_reference:string)=>patch('dependents',id,{action:'activate',maxicare_reference}),
  terminateDependent:(id:string)=>patch('dependents',id,{action:'terminate'}),
 
  createPayrollDeduction:async(v:{employeeId:string;enrollmentId:string;periodStart:string;periodEnd:string})=>deduction(await post('payroll-deductions',{employee_id:v.employeeId,enrollment_id:v.enrollmentId,period_start:v.periodStart,period_end:v.periodEnd})),

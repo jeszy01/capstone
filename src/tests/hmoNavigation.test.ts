@@ -5,9 +5,9 @@ import {modules,titles} from '../components/navigation/navConfig';
 describe('HMO presentation navigation',()=>{
   it('keeps the HMO tabs in order',()=>{
     expect(hmoTabs.map(tab=>tab.label)).toEqual([
-      'HMO Plan','Employee Enrollment','Dependents','HMO Records',
+      'HMO Plan','Employee Enrollment','Dependents','Payroll Deductions','HMO Records',
     ]);
-    expect(new Set(hmoTabs.map(tab=>tab.to)).size).toBe(4);
+    expect(new Set(hmoTabs.map(tab=>tab.to)).size).toBe(5);
   });
 
   it('selects the corresponding panel on each direct route and refresh',()=>{

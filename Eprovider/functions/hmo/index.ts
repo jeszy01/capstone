@@ -20,6 +20,22 @@ const dateValue=(value:unknown,name:string)=>{
 };
 const numberValue=(value:unknown,name:string)=>{const n=Number(value);if(!Number.isFinite(n)||n<0)throw new HttpError(400,'INVALID_HMO_AMOUNT',`${name} must be a non-negative number.`);return Math.round(n*100)/100};
 const first=async(table:string,filter:Record<string,unknown>)=>(await listRows<Row>(table,filter))[0];
+// Only these columns may come from the client. Approval, Maxicare and verification columns change only through the
+// workflow actions, so a request body cannot mark a record approved, active or verified directly.
+const PLAN_FIELDS=['provider_id','name','coverage_start','coverage_end','annual_benefit_limit','inpatient','outpatient','emergency','preventive_care','dental','employee_company_share','employee_member_share','dependent_company_share','dependent_member_share','employee_monthly_premium','dependent_monthly_premium','collect_employee_share_via_payroll','status'];
+const PROVIDER_FIELDS=['name','contact_person','contact_number','status'];
+const UTILIZATION_FIELDS=['service_date','service_type','amount_used','status','remarks'];
+const PLAN_STATUSES=['Draft','Active','Expiring','Expired','Archived'];
+const pick=(input:Record<string,unknown>,fields:string[])=>Object.fromEntries(Object.entries(input).filter(([key])=>fields.includes(key)));
+const planStatus=(value:unknown,fallback:string)=>{const status=text(value)||fallback;if(!PLAN_STATUSES.includes(status))throw new HttpError(400,'INVALID_HMO_PLAN_STATUS',`Plan status must be one of ${PLAN_STATUSES.join(', ')}.`);return status;};
+const utilizationValues=(input:Record<string,unknown>,partial:boolean)=>{
+  const values=pick(input,UTILIZATION_FIELDS);
+  if(!partial||values.service_date!==undefined)values.service_date=dateValue(values.service_date,'service_date');
+  if(!partial||values.service_type!==undefined)values.service_type=required(values.service_type,'service_type');
+  if(!partial||values.amount_used!==undefined)values.amount_used=numberValue(values.amount_used,'amount_used');
+  if(values.status!==undefined&&!['Recorded','Voided'].includes(String(values.status)))throw new HttpError(400,'INVALID_HMO_UTILIZATION_STATUS','Utilization status must be Recorded or Voided.');
+  return values;
+};
 const snapshot=(row:Row|undefined)=>row?JSON.parse(JSON.stringify(row)) as Record<string,unknown>:{};
 const addCalendarMonths=(day:string,months:number)=>{
   const [year,month,date]=day.split('-').map(Number);
@@ -181,7 +197,8 @@ export default verifiedEdge(async ctx=>{
 
     if(resource==='payroll-deductions'&&action==='verify'){
       if(previous.verification_status!=='Pending')throw new HttpError(409,'HMO_DEDUCTION_ALREADY_REVIEWED','This deduction has already been reviewed.');
-      return await saveTransition('verified',targetId,previous,{verification_status:'Verified',verified_by:ctx.userId??null,verified_at:now,updated_at:now});
+      // hmo_payroll_deductions has no updated_at column; verified_at records when it was reviewed.
+      return await saveTransition('verified',targetId,previous,{verification_status:'Verified',verified_by:ctx.userId??null,verified_at:now});
     }
     throw new HttpError(400,'HMO_ACTION_NOT_SUPPORTED',`Action '${action}' is not supported for ${resource}.`);
   };
@@ -204,8 +221,9 @@ export default verifiedEdge(async ctx=>{
         const employeeCompanyShare=Number(input.employee_company_share??previous.employee_company_share??100);
         const employeeMemberShare=Number(input.employee_member_share??previous.employee_member_share??0);
         if(employeeCompanyShare!==100||employeeMemberShare!==0)throw new HttpError(400,'INVALID_EMPLOYEE_CONTRIBUTION_POLICY','The company must pay 100% of the employee HMO premium.');
-        const values:Record<string,unknown>={...input};delete values.action;delete values.id;
+        const values:Record<string,unknown>=pick(input,PLAN_FIELDS);
         values.provider_id=providerId;values.name=name;values.coverage_start=start;values.coverage_end=end;values.employee_company_share=employeeCompanyShare;values.employee_member_share=employeeMemberShare;values.updated_at=now;
+        if(input.status!==undefined)values.status=planStatus(input.status,String(previous.status));
         await updateRows(table,{id:updateId},values);const updated=await first(table,{id:updateId})??({...previous,...values,id:updateId} as Row);
         await history('plan',updateId,'updated',ctx.userId,previous,updated);return ok(updated);
       }
@@ -223,9 +241,9 @@ export default verifiedEdge(async ctx=>{
       if(end<start)throw new HttpError(400,'INVALID_HMO_DATES','coverage_end must be on or after coverage_start.');
       const employeeCompanyShare=Number(input.employee_company_share??100);const employeeMemberShare=Number(input.employee_member_share??0);
       if(employeeCompanyShare!==100||employeeMemberShare!==0)throw new HttpError(400,'INVALID_EMPLOYEE_CONTRIBUTION_POLICY','The company must pay 100% of the employee HMO premium.');
-      const values:Record<string,unknown>={...input};delete values.action;delete values.id;
+      const values:Record<string,unknown>=pick(input,PLAN_FIELDS);
       values.provider_id=providerId;values.name=name;values.coverage_start=start;values.coverage_end=end;values.employee_company_share=employeeCompanyShare;values.employee_member_share=employeeMemberShare;
-      values.status=String(input.status??'Draft');values.created_at=now;values.updated_at=now;
+      values.status=planStatus(input.status,'Draft');values.created_at=now;values.updated_at=now;
       const row=await insertRow<Row>(table,values);await history('plan',row.id,'created',ctx.userId,undefined,row);return created(row);
     }
     if(resource==='enrollments'){
@@ -281,8 +299,20 @@ export default verifiedEdge(async ctx=>{
       const row=await insertRow<Row>('hmo_payroll_deductions',{employee_id:employeeId,enrollment_id:enrollmentId,period_start:periodStart,period_end:periodEnd,amount,verification_status:'Pending',created_at:now});
       await history('payroll_deduction',row.id,'created',ctx.userId,undefined,row);return created(row);
     }
-    const values:Record<string,unknown>={...input};delete values.action;delete values.id;values.created_at=now;values.updated_at=now;
-    const row=await insertRow<Row>(table,values);await history(historyType(resource),row.id,'created',ctx.userId,undefined,row);return created(row);
+    if(resource==='providers'){
+      const values={...pick(input,PROVIDER_FIELDS),created_at:now,updated_at:now};
+      const row=await insertRow<Row>(table,values);await history('provider',row.id,'created',ctx.userId,undefined,row);return created(row);
+    }
+    if(resource==='utilizations'){
+      const enrollmentId=required(input.enrollment_id,'enrollment_id');
+      if(!await first('hmo_enrollments',{id:enrollmentId}))throw new HttpError(404,'HMO_ENROLLMENT_NOT_FOUND','HMO enrollment was not found.');
+      const dependentId=text(input.dependent_id)||null;
+      if(dependentId){const dependent=await first('hmo_dependents',{id:dependentId});if(!dependent||String(dependent.enrollment_id)!==enrollmentId)throw new HttpError(409,'HMO_DEPENDENT_MISMATCH','The dependent does not belong to this enrollment.');}
+      // hmo_utilizations has no updated_at column.
+      const row=await insertRow<Row>(table,{...utilizationValues(input,false),enrollment_id:enrollmentId,dependent_id:dependentId,status:text(input.status)||'Recorded',created_at:now});
+      await history('utilization',row.id,'created',ctx.userId,undefined,row);return created(row);
+    }
+    return new Response('Method Not Allowed',{status:405});
   }
 
   if(!pathId)return new Response('ID is required',{status:400});
@@ -291,13 +321,21 @@ export default verifiedEdge(async ctx=>{
     const input=await body<Record<string,unknown>>(ctx.request);const action=text(input.action);
     if(action)return await handleAction(action,text(input.id)||pathId,input);
     const now=new Date().toISOString();
-    if(resource==='plans')await ensureMaxicare(String(input.provider_id??previous.provider_id));
-    const values:Record<string,unknown>={...input};delete values.action;delete values.id;values.updated_at=now;
+    if(['enrollments','dependents','payroll-deductions'].includes(resource))throw new HttpError(409,'HMO_ACTION_REQUIRED','Change this record with its workflow actions (approve, reject, activate, terminate or verify).');
+    if(resource==='plans')throw new HttpError(400,'HMO_ACTION_REQUIRED','Update a plan with the "update" action.');
+    let values:Record<string,unknown>;
+    if(resource==='providers'){
+      values=pick(input,PROVIDER_FIELDS);
+      if(values.name!==undefined&&text(values.name).toLowerCase()!=='maxicare')throw new HttpError(400,'MAXICARE_REQUIRED','Only Maxicare is supported by the PBMS HMO module.');
+      values.updated_at=now;
+    }else values=utilizationValues(input,true);
+    if(!Object.keys(values).some(key=>key!=='updated_at'))throw new HttpError(400,'VALIDATION_ERROR','No updatable fields provided.');
     await updateRows(table,{id:pathId},values);const updated=await first(table,{id:pathId})??({...previous,...values} as Row);
     await history(historyType(resource),pathId,'updated',ctx.userId,previous,updated);return ok(updated);
   }
   if(ctx.request.method==='DELETE'){
     if(['enrollments','dependents','plans','providers'].includes(resource))throw new HttpError(409,'HMO_DELETE_NOT_ALLOWED','HMO workflow records are retained; terminate or archive them instead.');
+    if(resource==='payroll-deductions'&&previous.verification_status!=='Pending')throw new HttpError(409,'HMO_DEDUCTION_LOCKED','A reviewed payroll deduction is part of payroll records and cannot be deleted.');
     await deleteRows(table,{id:pathId});await history(historyType(resource),pathId,'deleted',ctx.userId,previous,{});return noContent();
   }
   return new Response('Method Not Allowed',{status:405});

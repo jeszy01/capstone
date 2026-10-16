@@ -1063,7 +1063,22 @@ const ensureEmployeeEligibility = async (employeeId, effectiveDate) => {
 const enrollmentSnapshot = (e, hireDate, eligibilityDate) => ({ id: e.id, employee_number: e.employee_number ?? null, name: employeeName(e), hire_date: hireDate,
   employment_status: e.employment_status ?? null, employment_type: e.employment_type ?? null, status: e.status ?? null, hmo_eligibility_date: eligibilityDate });
 // Fields a client may write directly; the id and audit columns are always server-controlled.
-const clientValues = b => { const values = { ...b }; delete values.action; delete values.id; return values; };
+// Only these columns may come from the client. Approval, Maxicare and verification columns change only through the
+// workflow actions, so a request body cannot mark a record approved, active or verified directly.
+const HMO_PLAN_FIELDS = ['provider_id', 'name', 'coverage_start', 'coverage_end', 'annual_benefit_limit', 'inpatient', 'outpatient', 'emergency', 'preventive_care', 'dental', 'employee_company_share', 'employee_member_share', 'dependent_company_share', 'dependent_member_share', 'employee_monthly_premium', 'dependent_monthly_premium', 'collect_employee_share_via_payroll', 'status'];
+const HMO_PROVIDER_FIELDS = ['name', 'contact_person', 'contact_number', 'status'];
+const HMO_UTILIZATION_FIELDS = ['service_date', 'service_type', 'amount_used', 'status', 'remarks'];
+const HMO_PLAN_STATUSES = ['Draft', 'Active', 'Expiring', 'Expired', 'Archived'];
+const pickFields = (b, fields) => Object.fromEntries(Object.entries(b).filter(([key]) => fields.includes(key)));
+const hmoPlanStatus = (value, fallback) => { const status = text(value) || fallback; if (!HMO_PLAN_STATUSES.includes(status)) throw new HttpError(400, 'INVALID_HMO_PLAN_STATUS', `Plan status must be one of ${HMO_PLAN_STATUSES.join(', ')}.`); return status; };
+const hmoUtilizationValues = (b, partial) => {
+  const values = pickFields(b, HMO_UTILIZATION_FIELDS);
+  if (!partial || values.service_date !== undefined) values.service_date = hmoDate(values.service_date, 'service_date');
+  if (!partial || values.service_type !== undefined) values.service_type = required(values.service_type, 'service_type');
+  if (!partial || values.amount_used !== undefined) values.amount_used = hmoNumber(values.amount_used, 'amount_used');
+  if (values.status !== undefined && !['Recorded', 'Voided'].includes(String(values.status))) throw new HttpError(400, 'INVALID_HMO_UTILIZATION_STATUS', 'Utilization status must be Recorded or Voided.');
+  return values;
+};
 
 async function hmoHandler(req, res) {
   const resource = req.params.resource, pathId = req.params.id;
@@ -1178,7 +1193,8 @@ async function hmoHandler(req, res) {
 
     if (resource === 'payroll-deductions' && action === 'verify') {
       if (previous.verification_status !== 'Pending') throw new HttpError(409, 'HMO_DEDUCTION_ALREADY_REVIEWED', 'This deduction has already been reviewed.');
-      return saveTransition('verified', targetId, previous, { verification_status: 'Verified', verified_by: ctx.userId ?? null, verified_at: now, updated_at: now });
+      // hmo_payroll_deductions has no updated_at column; verified_at records when it was reviewed.
+      return saveTransition('verified', targetId, previous, { verification_status: 'Verified', verified_by: ctx.userId ?? null, verified_at: now });
     }
     throw new HttpError(400, 'HMO_ACTION_NOT_SUPPORTED', `Action '${action}' is not supported for ${resource}.`);
   };
@@ -1200,7 +1216,7 @@ async function hmoHandler(req, res) {
         const employeeCompanyShare = Number(b.employee_company_share ?? previous.employee_company_share ?? 100);
         const employeeMemberShare = Number(b.employee_member_share ?? previous.employee_member_share ?? 0);
         if (employeeCompanyShare !== 100 || employeeMemberShare !== 0) throw new HttpError(400, 'INVALID_EMPLOYEE_CONTRIBUTION_POLICY', 'The company must pay 100% of the employee HMO premium.');
-        const values = { ...clientValues(b), provider_id: providerId, name, coverage_start: start, coverage_end: end, employee_company_share: employeeCompanyShare, employee_member_share: employeeMemberShare, updated_at: now };
+        const values = { ...pickFields(b, HMO_PLAN_FIELDS), ...(b.status !== undefined ? { status: hmoPlanStatus(b.status, String(previous.status)) } : {}), provider_id: providerId, name, coverage_start: start, coverage_end: end, employee_company_share: employeeCompanyShare, employee_member_share: employeeMemberShare, updated_at: now };
         await updateRows(table, { id: updateId }, values);
         const updated = await first(table, { id: updateId }) ?? { ...previous, ...values, id: updateId };
         await hmoHistory('plan', updateId, 'updated', ctx.userId, previous, updated);
@@ -1221,8 +1237,8 @@ async function hmoHandler(req, res) {
       if (end < start) throw new HttpError(400, 'INVALID_HMO_DATES', 'coverage_end must be on or after coverage_start.');
       const employeeCompanyShare = Number(b.employee_company_share ?? 100), employeeMemberShare = Number(b.employee_member_share ?? 0);
       if (employeeCompanyShare !== 100 || employeeMemberShare !== 0) throw new HttpError(400, 'INVALID_EMPLOYEE_CONTRIBUTION_POLICY', 'The company must pay 100% of the employee HMO premium.');
-      const row = await insertRow(table, { ...clientValues(b), provider_id: providerId, name, coverage_start: start, coverage_end: end, employee_company_share: employeeCompanyShare,
-        employee_member_share: employeeMemberShare, status: String(b.status ?? 'Draft'), created_at: now, updated_at: now });
+      const row = await insertRow(table, { ...pickFields(b, HMO_PLAN_FIELDS), provider_id: providerId, name, coverage_start: start, coverage_end: end, employee_company_share: employeeCompanyShare,
+        employee_member_share: employeeMemberShare, status: hmoPlanStatus(b.status, 'Draft'), created_at: now, updated_at: now });
       await hmoHistory('plan', row.id, 'created', ctx.userId, undefined, row);
       return created(res, row);
     }
@@ -1297,9 +1313,22 @@ async function hmoHandler(req, res) {
       await hmoHistory('payroll_deduction', row.id, 'created', ctx.userId, undefined, row);
       return created(res, row);
     }
-    const row = await insertRow(table, { ...clientValues(b), created_at: now, updated_at: now });
-    await hmoHistory(hmoHistoryType(resource), row.id, 'created', ctx.userId, undefined, row);
-    return created(res, row);
+    if (resource === 'providers') {
+      const row = await insertRow(table, { ...pickFields(b, HMO_PROVIDER_FIELDS), created_at: now, updated_at: now });
+      await hmoHistory('provider', row.id, 'created', ctx.userId, undefined, row);
+      return created(res, row);
+    }
+    if (resource === 'utilizations') {
+      const enrollmentId = required(b.enrollment_id, 'enrollment_id');
+      if (!await first('hmo_enrollments', { id: enrollmentId })) throw new HttpError(404, 'HMO_ENROLLMENT_NOT_FOUND', 'HMO enrollment was not found.');
+      const dependentId = text(b.dependent_id) || null;
+      if (dependentId) { const dependent = await first('hmo_dependents', { id: dependentId }); if (!dependent || String(dependent.enrollment_id) !== enrollmentId) throw new HttpError(409, 'HMO_DEPENDENT_MISMATCH', 'The dependent does not belong to this enrollment.'); }
+      // hmo_utilizations has no updated_at column.
+      const row = await insertRow(table, { ...hmoUtilizationValues(b, false), enrollment_id: enrollmentId, dependent_id: dependentId, status: text(b.status) || 'Recorded', created_at: now });
+      await hmoHistory('utilization', row.id, 'created', ctx.userId, undefined, row);
+      return created(res, row);
+    }
+    return fail(res, 405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
   }
 
   if (!pathId) return fail(res, 400, 'VALIDATION_ERROR', 'ID is required');
@@ -1308,8 +1337,15 @@ async function hmoHandler(req, res) {
   if (method === 'PATCH' || method === 'PUT') {
     const b = input(req), action = text(b.action);
     if (action) return handleAction(action, text(b.id) || pathId, b);
-    if (resource === 'plans') await ensureMaxicare(String(b.provider_id ?? previous.provider_id));
-    const values = { ...clientValues(b), updated_at: new Date().toISOString() };
+    if (['enrollments', 'dependents', 'payroll-deductions'].includes(resource)) throw new HttpError(409, 'HMO_ACTION_REQUIRED', 'Change this record with its workflow actions (approve, reject, activate, terminate or verify).');
+    if (resource === 'plans') throw new HttpError(400, 'HMO_ACTION_REQUIRED', 'Update a plan with the "update" action.');
+    let values;
+    if (resource === 'providers') {
+      values = pickFields(b, HMO_PROVIDER_FIELDS);
+      if (values.name !== undefined && text(values.name).toLowerCase() !== 'maxicare') throw new HttpError(400, 'MAXICARE_REQUIRED', 'Only Maxicare is supported by the PBMS HMO module.');
+      values.updated_at = new Date().toISOString();
+    } else values = hmoUtilizationValues(b, true);
+    if (!Object.keys(values).some(key => key !== 'updated_at')) throw new HttpError(400, 'VALIDATION_ERROR', 'No updatable fields provided.');
     await updateRows(table, { id: pathId }, values);
     const updated = await first(table, { id: pathId }) ?? { ...previous, ...values };
     await hmoHistory(hmoHistoryType(resource), pathId, 'updated', ctx.userId, previous, updated);
@@ -1317,6 +1353,7 @@ async function hmoHandler(req, res) {
   }
   if (method === 'DELETE') {
     if (['enrollments', 'dependents', 'plans', 'providers'].includes(resource)) throw new HttpError(409, 'HMO_DELETE_NOT_ALLOWED', 'HMO workflow records are retained; terminate or archive them instead.');
+    if (resource === 'payroll-deductions' && previous.verification_status !== 'Pending') throw new HttpError(409, 'HMO_DEDUCTION_LOCKED', 'A reviewed payroll deduction is part of payroll records and cannot be deleted.');
     await deleteRows(table, { id: pathId });
     await hmoHistory(hmoHistoryType(resource), pathId, 'deleted', ctx.userId, previous, {});
     return res.status(204).end();

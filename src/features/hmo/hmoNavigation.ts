@@ -2,6 +2,7 @@ export const hmoTabs = [
   { id: 'plan', label: 'HMO Plan', to: '/hmo-benefits/hmo/plan' },
   { id: 'enrollment', label: 'Employee Enrollment', to: '/hmo-benefits/hmo/employee-enrollment' },
   { id: 'dependents', label: 'Dependents', to: '/hmo-benefits/hmo/dependents' },
+  { id: 'deductions', label: 'Payroll Deductions', to: '/hmo-benefits/hmo/payroll-deductions' },
   { id: 'history', label: 'HMO Records', to: '/hmo-benefits/hmo/history' },
 ] as const;
 
