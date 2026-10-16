@@ -101,8 +101,11 @@ async function settlePayroll(payrollRunId:string,actorId:string|undefined){
   }
   const buckets={sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0};
   for(const line of rowLines){const bucket=payrollBucket(text(line.loanType),text(line.recordType) as LoanType) as keyof typeof buckets;buckets[bucket]=cents(buckets[bucket]+Number(line.amount));}
-  for(const key of Object.keys(buckets) as (keyof typeof buckets)[]){if(cents(Number(input[key]??0))!==buckets[key])throw new HttpError(409,'PAYROLL_LOAN_AMOUNT_MISMATCH','Payroll loan deduction amounts no longer match the approved installment schedule.');}
-  if(cents(Number((payrollRow.result as Row|undefined)?.loans??0))!==cents(Object.values(buckets).reduce((sum,value)=>sum+value,0)))throw new HttpError(409,'PAYROLL_LOAN_TOTAL_MISMATCH','The approved payroll loan deduction total does not match its scheduled loan details.');
+  // Government loan deductions share the SSS and Pag-IBIG loan inputs; they are settled by the government-loans function.
+  const government={sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0};
+  for(const line of asArray(payrollRow.governmentLoans).map(value=>value as Row)){const bucket=text(line.loanType)==='SSS'?'sssLoan':'pagibigLoan';government[bucket]=cents(government[bucket]+Number(line.amount));}
+  for(const key of Object.keys(buckets) as (keyof typeof buckets)[]){if(cents(Number(input[key]??0))!==cents(buckets[key]+government[key]))throw new HttpError(409,'PAYROLL_LOAN_AMOUNT_MISMATCH','Payroll loan deduction amounts no longer match the approved installment schedule.');}
+  if(cents(Number((payrollRow.result as Row|undefined)?.loans??0))!==cents([...Object.values(buckets),...Object.values(government)].reduce((sum,value)=>sum+value,0)))throw new HttpError(409,'PAYROLL_LOAN_TOTAL_MISMATCH','The approved payroll loan deduction total does not match its scheduled loan details.');
  }
  if(!lines.length)return {posted:false,count:0,totalAmount:0};
  if(new Set(lines.map(line=>line.loanId)).size!==lines.length)throw new HttpError(400,'DUPLICATE_LOAN_REPAYMENT','A payroll run contains a duplicate loan installment.');
@@ -140,7 +143,7 @@ async function settlePayroll(payrollRunId:string,actorId:string|undefined){
 }
 
 export default verifiedEdge(async ctx=>{
- const url=new URL(ctx.request.url);const parts=url.pathname.split('/').filter(Boolean);const tail=parts.at(-1)??'loans';
+ const url=new URL(ctx.request.url);const parts=url.pathname.split('/').filter(Boolean);const tail=parts[parts.length-1]??'loans';
  requirePbmsRole(ctx,ctx.request.method==='POST'&&tail==='settle'?['admin']:['admin','hr_staff']);
  if(ctx.request.method==='GET'){
   if(tail==='schedule'){
@@ -180,7 +183,7 @@ export default verifiedEdge(async ctx=>{
   return created(employeeRow);
  }
  if(ctx.request.method==='PATCH'){
-  const id=parts.at(-1);if(!id||id==='loans')throw new HttpError(400,'LOAN_ID_REQUIRED','Loan record ID is required.');
+  const id=parts[parts.length-1];if(!id||id==='loans')throw new HttpError(400,'LOAN_ID_REQUIRED','Loan record ID is required.');
   const input=await body<Record<string,unknown>>(ctx.request);const action=text(input.action);
   const previous=await first('employee_loans',{id});if(!previous)throw new HttpError(404,'LOAN_NOT_FOUND','Loan or cash advance record was not found.');
   if(previous.approval_status!=='Pending')throw new HttpError(409,'LOAN_NOT_PENDING','Only pending loan and cash-advance records can be reviewed.');

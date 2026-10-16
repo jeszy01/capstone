@@ -1418,9 +1418,12 @@ async function settlePayroll(payrollRunId, actorId) {
         amount: loanMoney(line.amount, 'loanRepayments.amount'), recordType: text(line.recordType), loanType: text(line.loanType) });
     const buckets = { sssLoan: 0, pagibigLoan: 0, companyLoan: 0, cashAdvance: 0 };
     for (const line of rowLines) { const bucket = payrollBucket(text(line.loanType), text(line.recordType)); buckets[bucket] = cents(buckets[bucket] + Number(line.amount)); }
+    // Government loan deductions share the SSS and Pag-IBIG loan inputs; they are settled by /government-loans/settle.
+    const government = { sssLoan: 0, pagibigLoan: 0, companyLoan: 0, cashAdvance: 0 };
+    for (const line of asArray(payrollRow.governmentLoans)) { const bucket = text(line.loanType) === 'SSS' ? 'sssLoan' : 'pagibigLoan'; government[bucket] = cents(government[bucket] + Number(line.amount)); }
     for (const key of Object.keys(buckets))
-      if (cents(Number(rowInput[key] ?? 0)) !== buckets[key]) throw new HttpError(409, 'PAYROLL_LOAN_AMOUNT_MISMATCH', 'Payroll loan deduction amounts no longer match the approved installment schedule.');
-    if (cents(Number(payrollRow.result?.loans ?? 0)) !== cents(Object.values(buckets).reduce((s, v) => s + v, 0)))
+      if (cents(Number(rowInput[key] ?? 0)) !== cents(buckets[key] + government[key])) throw new HttpError(409, 'PAYROLL_LOAN_AMOUNT_MISMATCH', 'Payroll loan deduction amounts no longer match the approved installment schedule.');
+    if (cents(Number(payrollRow.result?.loans ?? 0)) !== cents([...Object.values(buckets), ...Object.values(government)].reduce((s, v) => s + v, 0)))
       throw new HttpError(409, 'PAYROLL_LOAN_TOTAL_MISMATCH', 'The approved payroll loan deduction total does not match its scheduled loan details.');
   }
   if (!lines.length) return { posted: false, count: 0, totalAmount: 0 };
