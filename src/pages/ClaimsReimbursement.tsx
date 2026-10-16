@@ -11,7 +11,7 @@ export default function ClaimsReimbursement(){
  const [params,setParams]=useSearchParams();
  const tab:TabId=params.get('tab')==='reimbursement'?'reimbursement':'claims';
  return <div>
-  <PageHeader title="Claims & Reimbursement"/>
+  <PageHeader title="Claims & Reimbursement" description="File employee claims, review approvals and track reimbursement payouts."/>
   <Tabs label="Claims & Reimbursement sections" value={tab} onChange={next=>setParams(next==='claims'?{}:{tab:next},{replace:true})} tabs={TABS}/>
   <div className="mt-4">{tab==='claims'?<Claims/>:<Reimbursement/>}</div>
  </div>;
