@@ -22,6 +22,8 @@ import {loadWithholdingRules,ruleForDate} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
 import {compensationService} from '../compensation/compensationService';
 import {loanService} from '../deductions/loanService';
+import {governmentLoanService} from '../governmentLoans/governmentLoanService';
+import {governmentLoanDeductions,governmentLoanTotals} from '../governmentLoans/governmentLoanPayroll';
 
 type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions'|'thirteenthMonthAndOtherBenefits'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
@@ -72,11 +74,12 @@ export default function ReviewPayroll(){
   if(active){setRows(built);setLoading(false)}
   return;
  }
- const[employees,records,bundle,scheduledLoans]=await Promise.all([
+ const[employees,records,bundle,scheduledLoans,scheduledGovernmentLoans]=await Promise.all([
  employeeService.getAllFromServer(),
  fetchAttendance({from,to}),
  compensationService.load(),
  loanService.schedule(from,to),
+ governmentLoanService.schedule(from,to),
 ]);
  const assignments=bundle.assignments;
 const grades=bundle.grades;
@@ -103,7 +106,12 @@ const built:RunRow[]=[];
      const graded=activeAssignments.find(assignment=>employeeIds.includes(assignment.employeeId)&&gradeCodes.has(assignment.salaryCode.trim().toLowerCase()));
      const dailyRate=graded?graded.dailyRate:(item.salary as number)/rates.daysPerMonth;
      const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave').length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,...loanAmounts};
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:calculatePayroll({...input,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
+     // Government loans are deducted from the net pay left after every other deduction.
+     const compute=(payrollInput:PayrollInput)=>calculatePayroll({...payrollInput,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()});
+     const governmentLoans=governmentLoanDeductions(scheduledGovernmentLoans,employeeIds,compute(input).net,rates.payPeriodsPerMonth);
+     const governmentTotals=governmentLoanTotals(governmentLoans);
+     if(governmentLoans.length){input.sssLoan=numberValue(input.sssLoan)+governmentTotals.sssLoan;input.pagibigLoan=numberValue(input.pagibigLoan)+governmentTotals.pagibigLoan}
+     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
     if(active){setRows(built);setLoading(false)}

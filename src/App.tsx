@@ -8,6 +8,7 @@ import {Dashboard,Employees,Payroll,Deductions,Compensation,Benefits} from './pa
 import TimeAttendance from './features/attendance/TimeAttendance';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
+import GovernmentLoans from './features/governmentLoans/GovernmentLoans';
 import ClaimsReimbursement from './pages/ClaimsReimbursement';
 import ReviewPayroll from './features/payroll/ReviewPayroll';
 import {LogsAudits} from './pages/Admin';
@@ -37,6 +38,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/hmo-benefits" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="/hmo-benefits/hmo" element={<HmoBenefits/>}/>
   {hmoTabs.map(({to})=><Route key={to} path={to} element={<HmoBenefits/>}/>)}
+  <Route path="/hmo-benefits/government-loans" element={<GovernmentLoans/>}/>
   <Route path="/hmo-benefits/employee-benefits" element={<Benefits/>}/>
   <Route path="/hmo-benefits/dependents" element={<HmoBenefits section="dependents"/>}/>
   <Route path="/hmo-benefits/benefits-history" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>

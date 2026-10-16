@@ -1,13 +1,18 @@
 import type {PayrollInput,PayrollResult} from '../../types/domain';
 import type {RunRow} from './payrollRuns';
 import {numberValue} from '../../utils/storage';
+import {governmentLoanTotals} from '../governmentLoans/governmentLoanPayroll';
+import type {GovernmentLoanDeduction} from '../governmentLoans/governmentLoanPayroll';
 
 export interface PayslipLine{label:string;amount:number}
 export interface PayslipBreakdown{earnings:PayslipLine[];deductions:PayslipLine[];earningsTotal:number;deductionsTotal:number;netPay:number;earningsDifference:number;deductionsDifference:number;netDifference:number}
 const round=(amount:number)=>Math.round((amount+Number.EPSILON)*100)/100;
 
 /** Itemize every input represented in gross pay and every deduction included in net pay. */
-export function buildPayslipBreakdown(input:PayrollInput,result:PayrollResult,hmo=0):PayslipBreakdown{
+export function buildPayslipBreakdown(input:PayrollInput,result:PayrollResult,hmo=0,governmentLoans:GovernmentLoanDeduction[]=[]):PayslipBreakdown{
+ // Each government loan is its own line; the SSS and Pag-IBIG loan lines keep any remaining (non-government) amount.
+ const governmentTotals=governmentLoanTotals(governmentLoans);
+ const governmentLines=governmentLoans.map(loan=>({label:`${loan.loanType} Loan (${loan.referenceNo})`,amount:loan.amount}));
  const earnings:PayslipLine[]=[
   {label:'Basic Salary',amount:result.basic},
   {label:'Overtime',amount:result.overtime},
@@ -29,8 +34,9 @@ export function buildPayslipBreakdown(input:PayrollInput,result:PayrollResult,hm
   {label:'Pag-IBIG Employee Share',amount:result.pagibig},
   {label:'Withholding Tax',amount:result.tax},
   {label:'HMO',amount:hmo},
-  {label:'SSS Loan',amount:numberValue(input.sssLoan)},
-  {label:'Pag-IBIG Loan',amount:numberValue(input.pagibigLoan)},
+  ...governmentLines,
+  {label:'SSS Loan',amount:round(numberValue(input.sssLoan)-governmentTotals.sssLoan)},
+  {label:'Pag-IBIG Loan',amount:round(numberValue(input.pagibigLoan)-governmentTotals.pagibigLoan)},
   {label:'Company Loan',amount:numberValue(input.companyLoan)},
   {label:'Cash Advance',amount:numberValue(input.cashAdvance)},
   {label:'Other Deductions',amount:numberValue(input.otherDeductions)},
@@ -41,4 +47,4 @@ export function buildPayslipBreakdown(input:PayrollInput,result:PayrollResult,hm
 }
 
 /** Construct line items for existing payroll results while preserving their stored calculation amounts. */
-export function buildPayslipBreakdownFromRun(row:RunRow){return buildPayslipBreakdown(row.input,row.result,row.hmo);}
+export function buildPayslipBreakdownFromRun(row:RunRow){return buildPayslipBreakdown(row.input,row.result,row.hmo,row.governmentLoans);}

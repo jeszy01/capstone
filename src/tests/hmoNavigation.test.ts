@@ -23,7 +23,7 @@ describe('HMO presentation navigation',()=>{
   it('groups benefit modules while retaining HMO details as internal tabs',()=>{
     const hmo=modules.find(item=>item.label==='HMO & Benefits');
     expect(hmo?.to).toBe('/hmo-benefits');
-    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'}]);
+    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Government Loans',to:'/hmo-benefits/government-loans'}]);
   });
 
   it('shows Claims & Reimbursement as a single item',()=>{

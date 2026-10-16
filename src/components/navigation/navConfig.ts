@@ -17,6 +17,7 @@ export const modules:NavItem[]=[
  {label:'Claims & Reimbursement',to:'/claims-reimbursement',icon:FileText},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse,children:[
   {label:'HMO',to:'/hmo-benefits/hmo'},
+  {label:'Government Loans',to:'/hmo-benefits/government-loans'},
  ]},
 ];
 export const titles={

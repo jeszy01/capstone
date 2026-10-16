@@ -1,14 +1,16 @@
 import type {PayrollInput,PayrollResult} from '../../types/domain';
-import {read,write} from '../../utils/storage';
+import {peso,read,write} from '../../utils/storage';
 import {recordAudit} from '../audit/auditService';
 import {apiClient} from '../../services/api/apiClient';
 import {loanService} from '../deductions/loanService';
+import {governmentLoanService} from '../governmentLoans/governmentLoanService';
+import type {GovernmentLoanDeduction} from '../governmentLoans/governmentLoanPayroll';
 import {cutoffFor,cutoffNumberFor} from '../settings/payrollSettings';
 import type {PayrollSettingsSnapshot} from '../settings/payrollSettings';
 
 export type RunStatus='Pending Approval'|'Approved'|'Rejected';
 export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:'Loan'|'Cash Advance';loanType:string;amount:number;installmentNumber:number;installmentCount:number};
-export type RunRow={position:string;rest:number;hmo:number;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[]};
+export type RunRow={position:string;rest:number;hmo:number;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
 // released: department name -> ISO date-time when released to ESS
 export type PayrollRunType='regular'|'thirteenth-month';
 export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot};
@@ -54,10 +56,16 @@ export async function payRun(id:string,method:PaymentMethod,by:string):Promise<P
  if(!run||run.status!=='Approved'||run.paidAt)return undefined;
  const next=runs.map(item=>item.id===id?{...item,paymentMethod:method,paidAt:new Date().toISOString(),paidBy:by}:item);
  write(RUNS_KEY,next);
- if(run.rows.some(row=>Boolean(row.loanRepayments?.length))){
+ const hasLoans=run.rows.some(row=>Boolean(row.loanRepayments?.length)),hasGovernmentLoans=run.rows.some(row=>Boolean(row.governmentLoans?.length));
+ if(hasLoans||hasGovernmentLoans){
   try{
    await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:next});
-   await loanService.postPaidPayrollRun(id);
+   if(hasLoans)await loanService.postPaidPayrollRun(id);
+   // Government loan balances drop only now, when the payroll is released.
+   if(hasGovernmentLoans){
+    const posted=await governmentLoanService.settle(id);
+    if(posted.count)recordAudit({action:'Posted government loan deductions',module:'Government Loans',description:`Deducted ${peso(posted.totalAmount)} from ${posted.count} government loan${posted.count===1?'':'s'} for ${periodLabel(run.from,run.to)}.`});
+   }
   }catch(cause){
    const rollback=read<PayrollRun[]>(RUNS_KEY,[]).map(item=>item.id===id?{...item,paidAt:undefined,paidBy:undefined,paymentMethod:undefined}:item);
    write(RUNS_KEY,rollback);
