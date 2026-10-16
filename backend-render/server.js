@@ -68,14 +68,16 @@ app.get('/current-user', auth, (req, res) => {
 
 const okKey = k => typeof k === 'string' && k.length <= 200 && PREFIXES.some(p => k.startsWith(p));
 
+// app_data.value is a text column holding the value's exact JSON text, so key order survives the sync.
+// Rows saved by bc9fbee were JSON-encoded twice; decoding a second time repairs them on read.
+const appValue = v => {
+  for (let i = 0; i < 2 && typeof v === 'string'; i++) { try { v = JSON.parse(v); } catch { break; } }
+  return v;
+};
+
 app.get('/app-data', auth, async (_req, res) => {
   const { rows } = await pool.query('select key,value,deleted from app_data');
-  // Values are stored as JSON text so key order survives; older rows are plain jsonb.
-  res.json({ data: rows.map(({ key, value, deleted }) => {
-    let v = value;
-    if (typeof v === 'string') { try { v = JSON.parse(v); } catch { /* keep the raw string */ } }
-    return { key, value: v, deleted };
-  }) });
+  res.json({ data: rows.map(({ key, value, deleted }) => ({ key, value: appValue(value), deleted })) });
 });
 
 app.post('/app-data', auth, async (req, res) => {
@@ -85,7 +87,7 @@ app.post('/app-data', auth, async (req, res) => {
   await pool.query(
     `insert into app_data(key,value,deleted,updated_by) values($1,$2,$3,$4)
      on conflict(key) do update set value=$2, deleted=$3, updated_at=now(), updated_by=$4`,
-    [key, JSON.stringify(JSON.stringify(isDel ? {} : value ?? null)), isDel, req.user.id]);
+    [key, JSON.stringify(isDel ? {} : value ?? null), isDel, req.user.id]);
   res.json({ data: { key, value: isDel ? null : value, deleted: isDel } });
 });
 
@@ -579,7 +581,7 @@ const DEFAULT_MONTHLY_WORK_DAYS = 22;
 const roundMoney = value => Math.round((value + Number.EPSILON) * 100) / 100;
 async function monthlyWorkDays() {
   const row = await first('app_data', { key: 'payroll:rates' });
-  const value = row && !row.deleted ? parseJson(row.value) : null;
+  const value = row && !row.deleted ? appValue(row.value) : null;
   const days = Number(value && typeof value === 'object' ? value.daysPerMonth : NaN);
   return Number.isFinite(days) && days >= 1 && days <= 31 ? days : DEFAULT_MONTHLY_WORK_DAYS;
 }
@@ -1381,7 +1383,7 @@ const payrollBucket = (loanType, recordType) => recordType === 'Cash Advance' ? 
 async function settlePayroll(payrollRunId, actorId) {
   const appData = await first('app_data', { key: 'payroll:runs' });
   if (!appData || appData.deleted === true) throw new HttpError(409, 'PAYROLL_RUN_NOT_FOUND', 'The approved payroll run is not synchronized to the database.');
-  const payrollRun = asArray(parseJson(appData.value)).find(r => String(r.id) === payrollRunId);
+  const payrollRun = asArray(appValue(appData.value)).find(r => String(r.id) === payrollRunId);
   if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found in synchronized payroll data.');
   if (payrollRun.status !== 'Approved' || !text(payrollRun.paidAt)) throw new HttpError(409, 'PAYROLL_NOT_PAID', 'Only an approved payroll run confirmed as paid may update loan balances.');
   const periodStart = loanDate(payrollRun.from, 'payroll.period_start'), periodEnd = loanDate(payrollRun.to, 'payroll.period_end');
