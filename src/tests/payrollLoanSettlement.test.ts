@@ -1,38 +1,86 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({data:new Map<string,unknown>(),order:[] as string[],post:vi.fn(),settle:vi.fn(),audit:vi.fn()}));
-vi.mock('../utils/storage',()=>({read:(key:string,fallback:unknown)=>mocks.data.has(key)?mocks.data.get(key):fallback,write:(key:string,value:unknown)=>{mocks.data.set(key,value)}}));
+const mocks=vi.hoisted(()=>({data:new Map<string,unknown>(),order:[] as string[],post:vi.fn(),validate:vi.fn(),settle:vi.fn(),govValidate:vi.fn(),govSettle:vi.fn(),audit:vi.fn()}));
+vi.mock('../utils/storage',()=>({read:(key:string,fallback:unknown)=>mocks.data.has(key)?mocks.data.get(key):fallback,write:(key:string,value:unknown)=>{mocks.data.set(key,value)},peso:(value:number)=>`₱${value}`}));
 vi.mock('../services/api/apiClient',()=>({apiClient:{post:async(...args:unknown[])=>{mocks.order.push('app-data');return mocks.post(...args)}}}));
-vi.mock('../features/deductions/loanService',()=>({loanService:{postPaidPayrollRun:async(...args:unknown[])=>{mocks.order.push('settle');return mocks.settle(...args)}}}));
+vi.mock('../features/deductions/loanService',()=>({loanService:{
+ validatePaidPayrollRun:async(...args:unknown[])=>{mocks.order.push('validate');return mocks.validate(...args)},
+ postPaidPayrollRun:async(...args:unknown[])=>{mocks.order.push('settle');return mocks.settle(...args)},
+}}));
+vi.mock('../features/governmentLoans/governmentLoanService',()=>({governmentLoanService:{
+ validateSettlement:async(...args:unknown[])=>{mocks.order.push('gov-validate');return mocks.govValidate(...args)},
+ settle:async(...args:unknown[])=>{mocks.order.push('gov-settle');return mocks.govSettle(...args)},
+}}));
 vi.mock('../features/audit/auditService',()=>({recordAudit:(...args:unknown[])=>mocks.audit(...args)}));
 import {RUNS_KEY,payRun} from '../features/payroll/payrollRuns';
 import type {PayrollRun} from '../features/payroll/payrollRuns';
 
-const run=(status:'Pending Approval'|'Approved'|'Rejected',hasInstallment:boolean):PayrollRun=>({id:'run-1',from:'2026-11-01',to:'2026-11-15',status,rows:hasInstallment?[{position:'',rest:0,hmo:0,input:{} as PayrollRun['rows'][number]['input'],result:{} as PayrollRun['rows'][number]['result'],loanRepayments:[{loanId:'loan-1',employeeId:'employee-1',recordType:'Loan',loanType:'Company Loan',amount:100,installmentNumber:1,installmentCount:4}]}]:[],totals:{gross:1000,deductions:100,net:900},preparedBy:'Payroll',createdAt:'2026-11-15T00:00:00.000Z'});
+type Row=PayrollRun['rows'][number];
+const employeeLoan:Row['loanRepayments']=[{loanId:'loan-1',employeeId:'employee-1',recordType:'Loan',loanType:'Company Loan',amount:100,installmentNumber:1,installmentCount:4}];
+const governmentLoan:Row['governmentLoans']=[{loanId:'gov-1',loanType:'SSS',referenceNo:'SSS-1',amount:300,scheduledAmount:300}];
+const row=(loans:{employee?:boolean;government?:boolean}):Row=>({position:'',rest:0,hmo:0,input:{} as Row['input'],result:{} as Row['result'],loanRepayments:loans.employee?employeeLoan:[],...(loans.government?{governmentLoans:governmentLoan}:{})});
+const run=(status:PayrollRun['status'],loans:{employee?:boolean;government?:boolean}={}):PayrollRun=>({id:'run-1',from:'2026-11-01',to:'2026-11-15',status,rows:[row(loans)],totals:{gross:1000,deductions:100,net:900},preparedBy:'Payroll',createdAt:'2026-11-15T00:00:00.000Z'});
+const paidMarker=()=>(mocks.data.get(RUNS_KEY) as PayrollRun[])[0].paidAt;
 
-describe('payroll loan settlement',()=>{
- beforeEach(()=>{mocks.data.clear();mocks.order.length=0;mocks.post.mockReset().mockResolvedValue({});mocks.settle.mockReset().mockResolvedValue({posted:true});mocks.audit.mockReset()});
- it('does not settle an unapproved payroll or a payroll without an installment',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Pending Approval',true)]);
-  expect(await payRun('run-1','Bank Transfer','HR')).toBeUndefined();
-  expect(mocks.settle).not.toHaveBeenCalled();
-  mocks.data.set(RUNS_KEY,[run('Approved',false)]);
-  await payRun('run-1','Bank Transfer','HR');
-  expect(mocks.settle).not.toHaveBeenCalled();
+describe('paying a payroll run settles each loan type separately',()=>{
+ beforeEach(()=>{
+  mocks.data.clear();mocks.order.length=0;mocks.audit.mockReset();
+  mocks.post.mockReset().mockResolvedValue({});
+  mocks.validate.mockReset().mockResolvedValue({valid:true});mocks.settle.mockReset().mockResolvedValue({posted:true});
+  mocks.govValidate.mockReset().mockResolvedValue({valid:true});mocks.govSettle.mockReset().mockResolvedValue({posted:true,count:1,totalAmount:300});
  });
- it('synchronizes the paid approved run before posting the loan batch',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved',true)]);
+
+ it('does not settle an unapproved payroll',async()=>{
+  mocks.data.set(RUNS_KEY,[run('Pending Approval',{employee:true,government:true})]);
+  expect(await payRun('run-1','Bank Transfer','HR')).toBeUndefined();
+  expect(mocks.order).toEqual([]);
+ });
+
+ it('no loans: marks the run paid without calling either settlement',async()=>{
+  mocks.data.set(RUNS_KEY,[run('Approved')]);
   await payRun('run-1','Bank Transfer','HR');
-  expect(mocks.order).toEqual(['app-data','settle']);
-  expect(mocks.post).toHaveBeenCalledWith('/app-data',expect.objectContaining({key:RUNS_KEY,value:expect.arrayContaining([expect.objectContaining({paidAt:expect.any(String),status:'Approved'})])}));
+  expect(mocks.order).toEqual([]);
+  expect(paidMarker()).toEqual(expect.any(String));
+ });
+
+ it('employee loans only: checks, then posts only the employee loan batch',async()=>{
+  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true})]);
+  await payRun('run-1','Bank Transfer','HR');
+  expect(mocks.order).toEqual(['app-data','validate','settle']);
   expect(mocks.settle).toHaveBeenCalledWith('run-1');
-  expect(mocks.data.get(RUNS_KEY)).toEqual(expect.arrayContaining([expect.objectContaining({id:'run-1',paidAt:expect.any(String)})]));
+  expect(mocks.govSettle).not.toHaveBeenCalled();
+  expect(paidMarker()).toEqual(expect.any(String));
   expect(await payRun('run-1','Bank Transfer','HR')).toBeUndefined();
   expect(mocks.settle).toHaveBeenCalledTimes(1);
  });
- it('rolls back the paid marker when database loan settlement fails',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved',true)]);mocks.settle.mockRejectedValueOnce(new Error('Loan schedule changed'));
+
+ it('government loans only: checks, then posts only the government deductions',async()=>{
+  mocks.data.set(RUNS_KEY,[run('Approved',{government:true})]);
+  await payRun('run-1','Bank Transfer','HR');
+  expect(mocks.order).toEqual(['app-data','gov-validate','gov-settle']);
+  expect(mocks.settle).not.toHaveBeenCalled();
+  expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({action:'Posted government loan deductions'}));
+ });
+
+ it('both: checks both settlements before posting either',async()=>{
+  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true,government:true})]);
+  await payRun('run-1','Bank Transfer','HR');
+  expect(mocks.order).toEqual(['app-data','validate','gov-validate','settle','gov-settle']);
+  expect(paidMarker()).toEqual(expect.any(String));
+ });
+
+ it('posts no balances and rolls back the paid marker when a government check fails',async()=>{
+  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true,government:true})]);
+  mocks.govValidate.mockRejectedValueOnce(new Error('A government loan in this run is no longer active.'));
+  await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('no longer active');
+  expect(mocks.settle).not.toHaveBeenCalled();
+  expect(mocks.govSettle).not.toHaveBeenCalled();
+  expect(paidMarker()).toBeUndefined();
+  expect(mocks.post).toHaveBeenLastCalledWith('/app-data',expect.objectContaining({key:RUNS_KEY,value:[expect.objectContaining({paidAt:undefined,paymentMethod:undefined})]}));
+ });
+
+ it('rolls back the paid marker when posting the employee loan batch fails',async()=>{
+  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true})]);mocks.settle.mockRejectedValueOnce(new Error('Loan schedule changed'));
   await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('Loan schedule changed');
   expect(mocks.data.get(RUNS_KEY)).toEqual([expect.objectContaining({id:'run-1',status:'Approved',paidAt:undefined,paymentMethod:undefined})]);
-  expect(mocks.post).toHaveBeenLastCalledWith('/app-data',expect.objectContaining({key:RUNS_KEY,value:[expect.objectContaining({paidAt:undefined})]}));
  });
 });

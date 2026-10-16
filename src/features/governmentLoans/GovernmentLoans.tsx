@@ -1,13 +1,14 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Check,Download,Eye,Pencil,Plus,X} from 'lucide-react';
-import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
+import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,Tabs,TextInput,ghost,input} from '../../components/common/ui';
+import {loadRates} from '../settings/payrollSettings';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {recordAudit} from '../audit/auditService';
 import {confirmWithPasskey} from '../auth/passkeyGate';
 import {peso} from '../../utils/storage';
 import {governmentLoanService} from './governmentLoanService';
-import type {GovernmentLoan,GovernmentLoanInput,GovernmentLoanNotice,GovernmentLoanStatus,GovernmentLoanTransaction,GovernmentLoanType} from './governmentLoanService';
+import type {GovernmentLoan,GovernmentLoanInput,GovernmentLoanNotice,GovernmentLoanStatus,GovernmentLoanTransaction,GovernmentLoanType,ScheduledGovernmentLoan} from './governmentLoanService';
 
 const MODULE='Government Loans';
 const TABS=[{id:'pending',label:'Pending'},{id:'active',label:'Active'},{id:'closed',label:'Closed'}] as const;
@@ -66,8 +67,11 @@ function LoanForm({loan,employees,saving,error,onClose,onSave}:{loan?:Government
  </Modal>;
 }
 
-export default function GovernmentLoans(){
+/** SSS and Pag-IBIG loans, shown under Payroll Management → Deductions → Loans & Cash Advances. With a cutoff it also
+ * previews what payroll will deduct; balances change only when a released payroll run is settled. */
+export default function GovernmentLoans({periodStart,periodEnd,query=''}:{periodStart?:string;periodEnd?:string;query?:string}={}){
  const [loans,setLoans]=useState<GovernmentLoan[]>([]),[transactions,setTransactions]=useState<GovernmentLoanTransaction[]>([]),[employees,setEmployees]=useState<Employee[]>([]);
+ const [due,setDue]=useState<ScheduledGovernmentLoan[]>([]),[dueError,setDueError]=useState('');
  const [loading,setLoading]=useState(true),[error,setError]=useState(''),[actionError,setActionError]=useState(''),[retry,setRetry]=useState(0),[tab,setTab]=useState<TabId>('pending');
  const [form,setForm]=useState<{loan?:GovernmentLoan}|null>(null),[formError,setFormError]=useState(''),[saving,setSaving]=useState(false);
  const [viewing,setViewing]=useState<GovernmentLoan|null>(null),[verifying,setVerifying]=useState<GovernmentLoan|null>(null),[rejecting,setRejecting]=useState<GovernmentLoan|null>(null),[remarks,setRemarks]=useState(''),[busy,setBusy]=useState(false);
@@ -77,8 +81,17 @@ export default function GovernmentLoans(){
    .catch(cause=>{if(active)setError(errorText(cause,'Government loans could not be loaded.'))}).finally(()=>{if(active)setLoading(false)});
   return()=>{active=false};
  },[retry]);
+ useEffect(()=>{
+  if(!periodStart||!periodEnd)return;
+  let active=true;setDueError('');
+  governmentLoanService.schedule(periodStart,periodEnd).then(rows=>{if(active)setDue(rows)}).catch(cause=>{if(active){setDue([]);setDueError(errorText(cause,'Government loan deductions could not be loaded. Payroll must not proceed without this data.'))}});
+  return()=>{active=false};
+ },[periodStart,periodEnd,retry]);
  const reload=()=>setRetry(value=>value+1);
- const shown=useMemo(()=>loans.filter(loan=>TAB_STATUSES[tab].includes(loan.status)),[loans,tab]);
+ const matches=(text:string)=>!query.trim()||text.toLowerCase().includes(query.trim().toLowerCase());
+ const shown=useMemo(()=>loans.filter(loan=>TAB_STATUSES[tab].includes(loan.status)&&matches(`${loan.employeeName} ${loan.employeeNumber} ${loan.loanType} ${loan.referenceNo}`)),[loans,tab,query]); // eslint-disable-line react-hooks/exhaustive-deps
+ const dueShown=due.filter(item=>matches(`${item.employeeName} ${item.employeeNumber} ${item.loanType} ${item.referenceNo}`));
+ const payPeriods=Math.max(1,loadRates().payPeriodsPerMonth);
  const count=(status:GovernmentLoanStatus)=>loans.filter(loan=>loan.status===status).length;
  const monthlyAmortization=loans.filter(loan=>loan.status==='Active').reduce((total,loan)=>total+loan.monthlyAmortization,0);
  const cards:Array<[string,string]>=[['Pending verification',String(count('Pending'))],['Active loans',String(count('Active'))],['Total monthly amortization',peso(monthlyAmortization)],['Closed',String(count('Closed'))]];
@@ -110,10 +123,14 @@ export default function GovernmentLoans(){
  };
  const history=viewing?transactions.filter(item=>item.loanId===viewing.id):[];
  return <div>
-  <PageHeader title="Government Loans" actions={<><button type="button" className={ghost} onClick={()=>void exportCsv()} disabled={!loans.length}><Download size={15}/>Export CSV</button><Button onClick={()=>{setFormError('');setForm({})}}><Plus size={15}/>Record Loan</Button></>}/>
+  <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">Government Loans</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">SSS and Pag-IBIG loans approved by the agency: notice verification, payroll installments and repayment history. Kept separate from employee loans.</p></div><div className="flex flex-wrap gap-2"><button type="button" className={`${ghost} border-blue-100 text-[#17345b]`} onClick={()=>void exportCsv()} disabled={!loans.length}><Download size={15}/>Export CSV</button><Button onClick={()=>{setFormError('');setForm({})}}><Plus size={15}/>Record Loan</Button></div></div>
   {error&&<div className="mt-4"><ErrorAlert title="Government loans are unavailable." onRetry={reload}>{error}</ErrorAlert></div>}
+  {dueError&&<div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] leading-relaxed text-amber-900"><b>Installment preview unavailable.</b> {dueError}</div>}
   {actionError&&<div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] text-rose-800">{actionError}</div>}
   <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label,value])=><Card key={label}><div className="text-[11px] font-medium text-slate-500">{label}</div><div className="mt-2 text-[21px] font-semibold tracking-tight text-[#17345b]">{value}</div></Card>)}</div>
+  {periodStart&&periodEnd&&<Card className="mt-4 overflow-hidden p-0"><div className="border-b border-slate-100 px-5 py-4"><h3 className="m-0 text-[14px] font-semibold text-[#17345b]">Installments due · {periodStart} to {periodEnd}</h3><p className="mb-0 mt-1 text-[11px] text-slate-500">Preview only. Payroll deducts up to the net pay left after other deductions; balances change only after the released payroll is settled.</p></div>
+   {loading?<div className="p-5"><LoadingState>Loading government loans…</LoadingState></div>:!dueShown.length?<Empty>No government loans to deduct in this cutoff.</Empty>:<div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-[12px]"><thead><tr className="border-b bg-[#f3f8ff] text-[10px] uppercase tracking-wide text-[#536987]">{['Employee','Loan type','Reference no.','Monthly amortization','This cutoff','Outstanding balance'].map(label=><th key={label} className="whitespace-nowrap px-3 py-3">{label}</th>)}</tr></thead><tbody>{dueShown.map(item=><tr key={item.loanId} className="border-b border-slate-100"><td className="px-3 py-3"><div className="font-semibold text-[#17345b]">{item.employeeName}</div><div className="text-[10px] text-slate-500">{item.employeeNumber}</div></td><td className="px-3 py-3">{item.loanType}</td><td className="px-3 py-3">{item.referenceNo}</td><td className="px-3 py-3 tabular-nums">{peso(item.monthlyAmortization)}</td><td className="px-3 py-3 font-semibold tabular-nums">{peso(Math.min(item.monthlyAmortization/payPeriods,item.outstandingBalance))}</td><td className="px-3 py-3 tabular-nums">{peso(item.outstandingBalance)}</td></tr>)}</tbody></table></div>}
+  </Card>}
   <Tabs label="Government loan status" value={tab} onChange={setTab} tabs={TABS}/>
   <Card className="mt-4 overflow-hidden p-0">{loading?<div className="p-5"><LoadingState>Loading government loans…</LoadingState></div>:!shown.length?<Empty>No government loans.</Empty>:<div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[12px]"><thead><tr className="border-b bg-[#f3f8ff] text-[10px] uppercase tracking-wide text-[#536987]">{['Employee','Loan type','Reference no.','Amortization','Start date','Outstanding balance','Status','Actions'].map(label=><th key={label} className="whitespace-nowrap px-3 py-3">{label}</th>)}</tr></thead><tbody>
    {shown.map(loan=><tr key={loan.id} className="border-b border-slate-100 hover:bg-blue-50/30"><td className="px-3 py-3"><div className="font-semibold text-[#17345b]">{loan.employeeName}</div><div className="text-[10px] text-slate-500">{loan.employeeNumber}</div></td><td className="px-3 py-3">{loan.loanType}</td><td className="px-3 py-3 font-medium">{loan.referenceNo}</td><td className="px-3 py-3 tabular-nums">{peso(loan.monthlyAmortization)}</td><td className="whitespace-nowrap px-3 py-3">{loan.startDate}</td><td className="px-3 py-3 font-semibold tabular-nums">{peso(loan.outstandingBalance)}</td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass[loan.status]}`}>{loan.status}</span></td>

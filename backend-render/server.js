@@ -1337,7 +1337,9 @@ const loanDate = (v, field) => {
 };
 const parseJson = v => { if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch { return v; } };
 const asArray = v => Array.isArray(v) ? v : [];
-const loanTypes = { Loan: ['SSS Loan', 'Pag-IBIG Loan', 'Company Loan', 'Other Loan'], 'Cash Advance': ['Salary Advance', 'Emergency Cash Advance', 'Other Cash Advance'] };
+// New employee loans are company loans only; SSS and Pag-IBIG loans are recorded as Government Loans. Existing
+// 'SSS Loan' and 'Pag-IBIG Loan' records still settle through payrollBucket.
+const loanTypes = { Loan: ['Company Loan', 'Other Loan'], 'Cash Advance': ['Salary Advance', 'Emergency Cash Advance', 'Other Cash Advance'] };
 const frequencies = ['Per Payroll', 'Monthly First Cutoff', 'Monthly Second Cutoff'];
 const installment = (principal, count) => cents(Math.ceil(principal / count * 100 - 1e-8) / 100);
 const frequencyDue = (frequency, startDate, start, end) => {
@@ -1399,7 +1401,11 @@ async function loadLoanWorkspace() {
   return { loans: formatted, transactions };
 }
 const payrollBucket = (loanType, recordType) => recordType === 'Cash Advance' ? 'cashAdvance' : loanType === 'SSS Loan' ? 'sssLoan' : loanType === 'Pag-IBIG Loan' ? 'pagibigLoan' : 'companyLoan';
-async function settlePayroll(payrollRunId, actorId) {
+// Government loans have their own payroll fields (govSssLoan, govPagibigLoan). Rows built before that split carried
+// government amounts inside sssLoan and pagibigLoan, so for those rows the government amounts are added back.
+const separatedLoanRow = rowInput => Object.prototype.hasOwnProperty.call(rowInput, 'govSssLoan') || Object.prototype.hasOwnProperty.call(rowInput, 'govPagibigLoan');
+// validateOnly runs every check and reports what would be posted, without writing anything.
+async function settlePayroll(payrollRunId, actorId, validateOnly = false) {
   const appData = await first('app_data', { key: 'payroll:runs' });
   if (!appData || appData.deleted === true) throw new HttpError(409, 'PAYROLL_RUN_NOT_FOUND', 'The approved payroll run is not synchronized to the database.');
   const payrollRun = asArray(appValue(appData.value)).find(r => String(r.id) === payrollRunId);
@@ -1418,21 +1424,23 @@ async function settlePayroll(payrollRunId, actorId) {
         amount: loanMoney(line.amount, 'loanRepayments.amount'), recordType: text(line.recordType), loanType: text(line.loanType) });
     const buckets = { sssLoan: 0, pagibigLoan: 0, companyLoan: 0, cashAdvance: 0 };
     for (const line of rowLines) { const bucket = payrollBucket(text(line.loanType), text(line.recordType)); buckets[bucket] = cents(buckets[bucket] + Number(line.amount)); }
-    // Government loan deductions share the SSS and Pag-IBIG loan inputs; they are settled by /government-loans/settle.
+    // Government loans are settled by /government-loans/settle; here they only count toward the row's loan total.
     const government = { sssLoan: 0, pagibigLoan: 0, companyLoan: 0, cashAdvance: 0 };
     for (const line of asArray(payrollRow.governmentLoans)) { const bucket = text(line.loanType) === 'SSS' ? 'sssLoan' : 'pagibigLoan'; government[bucket] = cents(government[bucket] + Number(line.amount)); }
+    const separated = separatedLoanRow(rowInput);
     for (const key of Object.keys(buckets))
-      if (cents(Number(rowInput[key] ?? 0)) !== cents(buckets[key] + government[key])) throw new HttpError(409, 'PAYROLL_LOAN_AMOUNT_MISMATCH', 'Payroll loan deduction amounts no longer match the approved installment schedule.');
+      if (cents(Number(rowInput[key] ?? 0)) !== cents(buckets[key] + (separated ? 0 : government[key]))) throw new HttpError(409, 'PAYROLL_LOAN_AMOUNT_MISMATCH', 'Payroll loan deduction amounts no longer match the approved installment schedule.');
     if (cents(Number(payrollRow.result?.loans ?? 0)) !== cents([...Object.values(buckets), ...Object.values(government)].reduce((s, v) => s + v, 0)))
       throw new HttpError(409, 'PAYROLL_LOAN_TOTAL_MISMATCH', 'The approved payroll loan deduction total does not match its scheduled loan details.');
   }
-  if (!lines.length) return { posted: false, count: 0, totalAmount: 0 };
+  if (!lines.length) return validateOnly ? { valid: true, count: 0, totalAmount: 0 } : { posted: false, count: 0, totalAmount: 0 };
   if (new Set(lines.map(l => l.loanId)).size !== lines.length) throw new HttpError(400, 'DUPLICATE_LOAN_REPAYMENT', 'A payroll run contains a duplicate loan installment.');
   const totalAmount = cents(lines.reduce((s, l) => s + l.amount, 0));
   const batches = await listRows('employee_loan_repayment_batches');
   const existingRun = batches.find(b => String(b.payroll_run_id) === payrollRunId);
   if (existingRun) {
-    if (samePeriod(existingRun, periodStart, periodEnd) && sameLines(lines, storedLines(existingRun.repayments))) return { posted: true, count: lines.length, totalAmount, idempotent: true };
+    if (samePeriod(existingRun, periodStart, periodEnd) && sameLines(lines, storedLines(existingRun.repayments)))
+      return validateOnly ? { valid: true, count: lines.length, totalAmount, alreadyPosted: true } : { posted: true, count: lines.length, totalAmount, idempotent: true };
     throw new HttpError(409, 'PAYROLL_LOAN_REPAYMENT_CONFLICT', 'This payroll run already has a different loan repayment batch.');
   }
   if (batches.some(b => samePeriod(b, periodStart, periodEnd))) throw new HttpError(409, 'PAYROLL_PERIOD_ALREADY_SETTLED', 'Loan deductions for this payroll period have already been posted.');
@@ -1448,6 +1456,7 @@ async function settlePayroll(payrollRunId, actorId) {
       throw new HttpError(409, 'PAYROLL_LOAN_EMPLOYEE_MISMATCH', 'A scheduled repayment does not match the payroll employee.');
     if (loan.approval_status !== 'Approved') throw new HttpError(409, 'LOAN_APPROVAL_REQUIRED', 'Only HR-approved loans may be deducted from payroll.');
   }
+  if (validateOnly) return { valid: true, count: lines.length, totalAmount };
   const repayments = lineSort(lines).map(l => ({ loan_id: l.loanId, employee_id: l.employeeId, amount: l.amount, record_type: l.recordType, loan_type: l.loanType }));
   let batch;
   try {
@@ -1471,7 +1480,7 @@ app.get('/loans/schedule', auth, role('admin', 'hr_staff'), async (req, res) => 
 });
 
 app.post('/loans/settle', auth, role('admin'), async (req, res) =>
-  ok(res, await settlePayroll(required(input(req).payroll_run_id, 'payroll_run_id'), req.user.id)));
+  ok(res, await settlePayroll(required(input(req).payroll_run_id, 'payroll_run_id'), req.user.id, input(req).validate_only === true)));
 
 app.post('/loans', auth, role('admin', 'hr_staff'), async (req, res) => {
   const b = input(req), ctx = ctxOf(req);
@@ -1621,34 +1630,60 @@ app.get('/government-loans/:id/notice', auth, role('admin', 'hr_staff'), async (
   ok(res, { name: notice.file_name, data: notice.data });
 });
 
-// Posts the deductions of a released payroll run once; a loan whose balance reaches zero is closed.
-app.post('/government-loans/settle', auth, role('admin', 'hr_staff'), async (req, res) => {
-  const payrollRunId = required(input(req).payroll_run_id, 'payroll_run_id'), actorId = req.user.id;
+// The transaction ledger is the source of truth: balance = total amount less every posted deduction.
+const govLedgerBalance = (loan, transactions) => cents(Number(loan.total_amount) - transactions.filter(t => String(t.loan_id) === String(loan.id)).reduce((s, t) => s + Number(t.amount), 0));
+// Posts the deductions of a released payroll run once; a loan whose balance reaches zero is closed. Every line is checked
+// before anything is written, so a run posts completely or not at all. validate_only stops after the checks. A retry
+// also repairs a loan balance that was not updated after its deduction was recorded.
+app.post('/government-loans/settle', auth, role('admin'), async (req, res) => {
+  const payrollRunId = required(input(req).payroll_run_id, 'payroll_run_id'), actorId = req.user.id, validateOnly = input(req).validate_only === true;
   const appData = await first('app_data', { key: 'payroll:runs' });
   if (!appData || appData.deleted === true) throw new HttpError(409, 'PAYROLL_RUN_NOT_FOUND', 'The released payroll run is not synchronized to the database.');
   const payrollRun = asArray(appValue(appData.value)).find(r => String(r.id) === payrollRunId);
   if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found in synchronized payroll data.');
   if (payrollRun.status !== 'Approved' || !text(payrollRun.paidAt)) throw new HttpError(409, 'PAYROLL_NOT_RELEASED', 'Only a released payroll run may reduce government loan balances.');
   const periodStart = loanDate(payrollRun.from, 'payroll.from'), periodEnd = loanDate(payrollRun.to, 'payroll.to');
-  const lines = asArray(payrollRun.rows).flatMap(r => asArray(r.governmentLoans))
-    .map(l => ({ loanId: required(l.loanId, 'governmentLoans.loanId'), amount: loanMoney(l.amount, 'governmentLoans.amount') }));
-  if (new Set(lines.map(l => l.loanId)).size !== lines.length) throw new HttpError(400, 'DUPLICATE_LOAN_DEDUCTION', 'A payroll run contains the same government loan twice.');
-  let count = 0, totalAmount = 0;
-  for (const line of lines) {
-    if (await first('government_loan_transactions', { payroll_run_id: payrollRunId, loan_id: line.loanId })) continue;
-    const loan = await first('government_loans', { id: line.loanId });
-    if (!loan) throw new HttpError(404, 'LOAN_NOT_FOUND', 'A government loan in this payroll run was not found.');
-    if (loan.status === 'Closed') continue;
-    if (loan.status !== 'Active') throw new HttpError(409, 'LOAN_NOT_ACTIVE', 'Only active government loans may be deducted.');
-    const amount = cents(Math.min(line.amount, Number(loan.outstanding_balance)));
-    if (amount <= 0) continue;
-    const balance = cents(Number(loan.outstanding_balance) - amount), now = new Date().toISOString();
-    await insertRow('government_loan_transactions', { loan_id: line.loanId, payroll_run_id: payrollRunId, period_start: periodStart, period_end: periodEnd, amount, balance_after: balance, posted_by: actorId, created_at: now });
-    await updateRows('government_loans', { id: line.loanId }, { outstanding_balance: balance, ...(balance === 0 ? { status: 'Closed', closed_at: now } : {}), updated_at: now });
-    await audit('government_loan.deduction', actorId, 'government_loans', line.loanId, { payrollRunId, periodStart, periodEnd, amount, balanceAfter: balance, closed: balance === 0 });
-    count++; totalAmount = cents(totalAmount + amount);
+  const lines = [];
+  for (const row of asArray(payrollRun.rows)) {
+    const rowInput = row.input ?? {}, totals = { SSS: 0, 'Pag-IBIG': 0 };
+    for (const l of asArray(row.governmentLoans)) {
+      const item = { loanId: required(l.loanId, 'governmentLoans.loanId'), amount: loanMoney(l.amount, 'governmentLoans.amount'), loanType: text(l.loanType), employeeNumber: text(rowInput.empId) };
+      lines.push(item); totals[item.loanType] = cents((totals[item.loanType] ?? 0) + item.amount);
+    }
+    if (separatedLoanRow(rowInput) && (cents(Number(rowInput.govSssLoan ?? 0)) !== cents(totals.SSS ?? 0) || cents(Number(rowInput.govPagibigLoan ?? 0)) !== cents(totals['Pag-IBIG'] ?? 0)))
+      throw new HttpError(409, 'GOVERNMENT_LOAN_AMOUNT_MISMATCH', 'The payroll government loan deductions do not match their loan details. Rebuild the payroll run before payment.');
   }
-  ok(res, { posted: true, count, totalAmount, idempotent: count === 0 && lines.length > 0 });
+  if (new Set(lines.map(l => l.loanId)).size !== lines.length) throw new HttpError(400, 'DUPLICATE_LOAN_DEDUCTION', 'A payroll run contains the same government loan twice.');
+  if (!lines.length) return ok(res, validateOnly ? { valid: true, count: 0, totalAmount: 0 } : { posted: false, count: 0, totalAmount: 0, idempotent: false });
+  const [loans, transactions, employees] = await Promise.all([listRows('government_loans'), listRows('government_loan_transactions'), listRows('employees')]);
+  const loanById = new Map(loans.map(l => [String(l.id), l])), employeeById = new Map(employees.map(e => [String(e.id), e]));
+  const pending = [];
+  for (const line of lines) {
+    const loan = loanById.get(line.loanId);
+    if (!loan) throw new HttpError(404, 'LOAN_NOT_FOUND', 'A government loan in this payroll run was not found.');
+    if (transactions.some(t => String(t.payroll_run_id) === payrollRunId && String(t.loan_id) === line.loanId)) continue;
+    if (text(employeeById.get(String(loan.employee_id))?.employee_number) !== line.employeeNumber || loan.loan_type !== line.loanType)
+      throw new HttpError(409, 'GOVERNMENT_LOAN_EMPLOYEE_MISMATCH', 'A government loan deduction does not match the payroll employee or loan type.');
+    if (loan.status !== 'Active') throw new HttpError(409, 'LOAN_NOT_ACTIVE', 'A government loan in this run is no longer active. Rebuild the payroll run before payment.');
+    if (line.amount > govLedgerBalance(loan, transactions)) throw new HttpError(409, 'LOAN_BALANCE_EXCEEDED', 'A government loan deduction is larger than the remaining balance. Rebuild the payroll run before payment.');
+    pending.push(line);
+  }
+  const totalAmount = cents(pending.reduce((s, l) => s + l.amount, 0));
+  if (validateOnly) return ok(res, { valid: true, count: pending.length, totalAmount, alreadyPosted: lines.length - pending.length });
+  const now = new Date().toISOString(), ledger = [...transactions];
+  for (const line of pending) {
+    const loan = loanById.get(line.loanId), balanceAfter = cents(govLedgerBalance(loan, ledger) - line.amount);
+    await insertRow('government_loan_transactions', { loan_id: line.loanId, payroll_run_id: payrollRunId, period_start: periodStart, period_end: periodEnd, amount: line.amount, balance_after: balanceAfter, posted_by: actorId, created_at: now });
+    ledger.push({ loan_id: line.loanId, amount: line.amount });
+    await audit('government_loan.deduction', actorId, 'government_loans', line.loanId, { payrollRunId, periodStart, periodEnd, amount: line.amount, balanceAfter, closed: balanceAfter === 0 });
+  }
+  // Bring every loan in the run in line with the ledger, including one left behind by an earlier interrupted attempt.
+  for (const loanId of new Set(lines.map(l => l.loanId))) {
+    const loan = loanById.get(loanId), balance = govLedgerBalance(loan, ledger);
+    if (cents(Number(loan.outstanding_balance)) !== balance || (balance === 0 && loan.status !== 'Closed'))
+      await updateRows('government_loans', { id: loanId }, { outstanding_balance: balance, ...(balance === 0 ? { status: 'Closed', closed_at: now } : {}), updated_at: now });
+  }
+  ok(res, { posted: true, count: pending.length, totalAmount, idempotent: pending.length === 0 });
 });
 
 app.post('/government-loans', auth, role('admin', 'hr_staff'), async (req, res) => {

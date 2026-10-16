@@ -60,6 +60,9 @@ export async function payRun(id:string,method:PaymentMethod,by:string):Promise<P
  if(hasLoans||hasGovernmentLoans){
   try{
    await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:next});
+   // Check both loan settlements before posting either, so one failing never leaves the other's balances changed.
+   if(hasLoans)await loanService.validatePaidPayrollRun(id);
+   if(hasGovernmentLoans)await governmentLoanService.validateSettlement(id);
    if(hasLoans)await loanService.postPaidPayrollRun(id);
    // Government loan balances drop only now, when the payroll is released.
    if(hasGovernmentLoans){

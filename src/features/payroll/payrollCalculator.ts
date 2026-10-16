@@ -43,7 +43,7 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const supplementary=overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+numberValue(r.otherEarnings);
  const taxBreakdown=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:thirteenth,taxExemptBenefits:taxExempt,mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules});
  const tax=taxBreakdown.withholdingTax;
- const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance));
+ const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance)+numberValue(r.govSssLoan)+numberValue(r.govPagibigLoan));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));
  const net=round(gross-deductions);
  return{basic,earnedBasic,absences,overtime,leavePay,allowances,earnings,gross,late,undertime,lateUt:round(late+undertime),sss,phil,pagibig,tax,taxBreakdown,loans,deductions,net,shortfall:net<0?round(-net):0};

@@ -19,7 +19,9 @@ const parseJson=(v:unknown):unknown=>{if(typeof v!=='string')return v;try{return
 const asArray=(v:unknown):unknown[]=>Array.isArray(v)?v:[];
 const isActive=(e:Row)=>String(e.status??'').toLowerCase()==='active'&&String(e.employment_status??'').toLowerCase()!=='resigned';
 const employeeName=(e:Row)=>[e.first_name,e.middle_name,e.last_name].map(text).filter(Boolean).join(' ');
-const loanTypes:Record<LoanType,string[]>={Loan:['SSS Loan','Pag-IBIG Loan','Company Loan','Other Loan'],'Cash Advance':['Salary Advance','Emergency Cash Advance','Other Cash Advance']};
+// New employee loans are company loans only; SSS and Pag-IBIG loans are recorded as Government Loans. Existing
+// 'SSS Loan' and 'Pag-IBIG Loan' records still settle through payrollBucket.
+const loanTypes:Record<LoanType,string[]>={Loan:['Company Loan','Other Loan'],'Cash Advance':['Salary Advance','Emergency Cash Advance','Other Cash Advance']};
 const frequencies:Frequency[]=['Per Payroll','Monthly First Cutoff','Monthly Second Cutoff'];
 const installment=(principal:number,count:number)=>cents(Math.ceil(principal/count*100-1e-8)/100);
 const frequencyDue=(frequency:Frequency,startDate:string,start:string,end:string)=>{
@@ -81,7 +83,11 @@ function payrollBucket(loanType:string,recordType:LoanType){
  if(loanType==='Pag-IBIG Loan')return 'pagibigLoan';
  return 'companyLoan';
 }
-async function settlePayroll(payrollRunId:string,actorId:string|undefined){
+// Government loans have their own payroll fields (govSssLoan, govPagibigLoan). Rows built before that split carried
+// government amounts inside sssLoan and pagibigLoan, so for those rows the government amounts are added back.
+const separatedLoanRow=(input:Row)=>Object.prototype.hasOwnProperty.call(input,'govSssLoan')||Object.prototype.hasOwnProperty.call(input,'govPagibigLoan');
+/** validateOnly runs every check and reports what would be posted, without writing anything. */
+async function settlePayroll(payrollRunId:string,actorId:string|undefined,validateOnly=false){
  const appData=await first('app_data',{key:'payroll:runs'});
  if(!appData||appData.deleted===true)throw new HttpError(409,'PAYROLL_RUN_NOT_FOUND','The approved payroll run is not synchronized to the database.');
  const stored=parseJson(appData.value);const run=asArray(stored).map(x=>x as Row).find(item=>String(item.id)===payrollRunId);
@@ -101,19 +107,20 @@ async function settlePayroll(payrollRunId:string,actorId:string|undefined){
   }
   const buckets={sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0};
   for(const line of rowLines){const bucket=payrollBucket(text(line.loanType),text(line.recordType) as LoanType) as keyof typeof buckets;buckets[bucket]=cents(buckets[bucket]+Number(line.amount));}
-  // Government loan deductions share the SSS and Pag-IBIG loan inputs; they are settled by the government-loans function.
+  // Government loans are settled by the government-loans function; here they only count toward the row's loan total.
   const government={sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0};
   for(const line of asArray(payrollRow.governmentLoans).map(value=>value as Row)){const bucket=text(line.loanType)==='SSS'?'sssLoan':'pagibigLoan';government[bucket]=cents(government[bucket]+Number(line.amount));}
-  for(const key of Object.keys(buckets) as (keyof typeof buckets)[]){if(cents(Number(input[key]??0))!==cents(buckets[key]+government[key]))throw new HttpError(409,'PAYROLL_LOAN_AMOUNT_MISMATCH','Payroll loan deduction amounts no longer match the approved installment schedule.');}
+  const separated=separatedLoanRow(input);
+  for(const key of Object.keys(buckets) as (keyof typeof buckets)[]){if(cents(Number(input[key]??0))!==cents(buckets[key]+(separated?0:government[key])))throw new HttpError(409,'PAYROLL_LOAN_AMOUNT_MISMATCH','Payroll loan deduction amounts no longer match the approved installment schedule.');}
   if(cents(Number((payrollRow.result as Row|undefined)?.loans??0))!==cents([...Object.values(buckets),...Object.values(government)].reduce((sum,value)=>sum+value,0)))throw new HttpError(409,'PAYROLL_LOAN_TOTAL_MISMATCH','The approved payroll loan deduction total does not match its scheduled loan details.');
  }
- if(!lines.length)return {posted:false,count:0,totalAmount:0};
+ if(!lines.length)return validateOnly?{valid:true,count:0,totalAmount:0}:{posted:false,count:0,totalAmount:0};
  if(new Set(lines.map(line=>line.loanId)).size!==lines.length)throw new HttpError(400,'DUPLICATE_LOAN_REPAYMENT','A payroll run contains a duplicate loan installment.');
  const batches=await listRows<Row>('employee_loan_repayment_batches');
  const existingRun=batches.find(batch=>String(batch.payroll_run_id)===payrollRunId);
  if(existingRun){
   const existingLines=storedLines(existingRun.repayments);
-  if(String(existingRun.period_start).slice(0,10)===periodStart&&String(existingRun.period_end).slice(0,10)===periodEnd&&sameLines(lines,existingLines))return {posted:true,count:lines.length,totalAmount:cents(lines.reduce((sum,line)=>sum+line.amount,0)),idempotent:true};
+  if(String(existingRun.period_start).slice(0,10)===periodStart&&String(existingRun.period_end).slice(0,10)===periodEnd&&sameLines(lines,existingLines)){const totalAmount=cents(lines.reduce((sum,line)=>sum+line.amount,0));return validateOnly?{valid:true,count:lines.length,totalAmount,alreadyPosted:true}:{posted:true,count:lines.length,totalAmount,idempotent:true}}
   throw new HttpError(409,'PAYROLL_LOAN_REPAYMENT_CONFLICT','This payroll run already has a different loan repayment batch.');
  }
  if(batches.some(batch=>String(batch.period_start).slice(0,10)===periodStart&&String(batch.period_end).slice(0,10)===periodEnd))throw new HttpError(409,'PAYROLL_PERIOD_ALREADY_SETTLED','Loan deductions for this payroll period have already been posted.');
@@ -129,6 +136,7 @@ async function settlePayroll(payrollRunId:string,actorId:string|undefined){
  }
  const repayments=lineSort(lines).map(line=>({loan_id:line.loanId,employee_id:line.employeeId,amount:line.amount,record_type:line.recordType,loan_type:line.loanType}));
  const totalAmount=cents(lines.reduce((sum,line)=>sum+line.amount,0));
+ if(validateOnly)return {valid:true,count:lines.length,totalAmount};
  let batch:Row;
  try{
   batch=await insertRow<Row>('employee_loan_repayment_batches',{payroll_run_id:payrollRunId,period_start:periodStart,period_end:periodEnd,repayments,total_amount:totalAmount,posted_by:actorId??null,created_at:new Date().toISOString()});
@@ -159,7 +167,7 @@ export default verifiedEdge(async ctx=>{
   const input=await body<Record<string,unknown>>(ctx.request);
   if(tail==='settle'){
    const payrollRunId=required(input.payroll_run_id,'payroll_run_id');
-   return ok(await settlePayroll(payrollRunId,ctx.userId));
+   return ok(await settlePayroll(payrollRunId,ctx.userId,input.validate_only===true));
   }
   if(tail!=='loans')return new Response('Not Found',{status:404});
   const employeeId=required(input.employee_id,'employee_id');

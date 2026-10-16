@@ -26,6 +26,8 @@ export const governmentLoanService={
  update:(id:string,input:GovernmentLoanInput)=>patch(id,{action:'update',...payload(input)}),
  verify:(id:string)=>patch(id,{action:'verify'}),
  reject:(id:string,remarks:string)=>patch(id,{action:'reject',remarks}),
+ /** Runs every settlement check for a released payroll run without changing any balance. */
+ validateSettlement:(payrollRunId:string)=>apiClient.post<{payroll_run_id:string;validate_only:true},Envelope<{valid:boolean;count:number;totalAmount:number}>>('/government-loans/settle',{payroll_run_id:payrollRunId,validate_only:true}).then(response=>response.data),
  /** Posts a released payroll run's government loan deductions; safe to repeat for the same run. */
  settle:(payrollRunId:string)=>apiClient.post<{payroll_run_id:string},Envelope<{posted:boolean;count:number;totalAmount:number;idempotent:boolean}>>('/government-loans/settle',{payroll_run_id:payrollRunId}).then(response=>response.data),
 };

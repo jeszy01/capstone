@@ -1,5 +1,7 @@
 import {describe,expect,it} from 'vitest';
-import {governmentLoanDeductions,governmentLoanTotals} from '../features/governmentLoans/governmentLoanPayroll';
+import {governmentLoanDeductions,governmentLoanTotals,isSeparatedLoanRow,rowLoanAmounts} from '../features/governmentLoans/governmentLoanPayroll';
+import {calculatePayroll} from '../features/payroll/payrollCalculator';
+import {DEFAULT_RATES} from '../features/payroll/payrollRules';
 import type {ScheduledGovernmentLoan} from '../features/governmentLoans/governmentLoanService';
 import {buildPayslipBreakdown} from '../features/payroll/payslipMath';
 import type {PayrollInput,PayrollResult} from '../types/domain';
@@ -32,5 +34,30 @@ describe('government loan payroll deductions',()=>{
   const lines=Object.fromEntries(breakdown.deductions.map(line=>[line.label,line.amount]));
   expect(lines).toMatchObject({'SSS Loan (SSS-001)':1000,'Pag-IBIG Loan (HDMF-9)':500,'SSS Loan':300,'Pag-IBIG Loan':0});
   expect(breakdown.deductionsTotal).toBe(1800);
+ });
+});
+
+describe('employee and government loans stay separate in payroll',()=>{
+ const base={empId:'E-1',name:'Ana Cruz',dailyRate:1000,daysWorked:10,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0} as PayrollInput;
+ const governmentLines=[{loanId:'a',loanType:'SSS' as const,referenceNo:'SSS-001',amount:1000,scheduledAmount:1000},{loanId:'b',loanType:'Pag-IBIG' as const,referenceNo:'HDMF-9',amount:500,scheduledAmount:500}];
+ it('counts government loan fields in the loan total and net pay',()=>{
+  const without=calculatePayroll(base,DEFAULT_RATES);
+  const withLoans=calculatePayroll({...base,companyLoan:200,govSssLoan:1000,govPagibigLoan:500},DEFAULT_RATES);
+  expect(withLoans.loans).toBe(1700);
+  expect(withLoans.net).toBeCloseTo(without.net-1700,2);
+ });
+ it('reads separated rows as they are and splits legacy rows that merged government amounts into the SSS fields',()=>{
+  expect(rowLoanAmounts({...base,sssLoan:0,companyLoan:200,govSssLoan:1000,govPagibigLoan:500},governmentLines)).toEqual({sssLoan:0,pagibigLoan:0,companyLoan:200,cashAdvance:0,govSssLoan:1000,govPagibigLoan:500});
+  expect(rowLoanAmounts({...base,sssLoan:1300,pagibigLoan:500},governmentLines)).toEqual({sssLoan:300,pagibigLoan:0,companyLoan:0,cashAdvance:0,govSssLoan:1000,govPagibigLoan:500});
+  expect(isSeparatedLoanRow({...base,govSssLoan:0,govPagibigLoan:0})).toBe(true);
+  expect(isSeparatedLoanRow(base)).toBe(false);
+ });
+ it('itemizes a separated row on the payslip without double counting',()=>{
+  const input={...base,companyLoan:200,govSssLoan:1000,govPagibigLoan:500};
+  const result=calculatePayroll(input,DEFAULT_RATES);
+  const breakdown=buildPayslipBreakdown(input,result,0,governmentLines);
+  const lines=Object.fromEntries(breakdown.deductions.map(line=>[line.label,line.amount]));
+  expect(lines).toMatchObject({'SSS Loan (SSS-001)':1000,'Pag-IBIG Loan (HDMF-9)':500,'SSS Loan':0,'Pag-IBIG Loan':0,'Company Loan':200});
+  expect(breakdown.deductionsDifference).toBe(0);
  });
 });

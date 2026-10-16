@@ -20,7 +20,6 @@ export const modules:NavItem[]=[
  ]},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse,children:[
   {label:'HMO',to:'/hmo-benefits/hmo'},
-  {label:'Government Loans',to:'/hmo-benefits/government-loans'},
   {label:'Employee Benefits',to:'/hmo-benefits/employee-benefits'},
  ]},
 ];

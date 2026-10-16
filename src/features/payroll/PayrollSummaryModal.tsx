@@ -5,6 +5,7 @@ import {numberValue,peso} from '../../utils/storage';
 import {runLabel} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {getCurrentUser} from '../auth/authService';
+import {rowLoanAmounts} from '../governmentLoans/governmentLoanPayroll';
 
 const sum=(rows:RunRow[],pick:(row:RunRow)=>number)=>rows.reduce((total,row)=>total+(pick(row)||0),0);
 const COLORS={net:'#0e6b58',stat:'#2f4c8c',att:'#c27a12',co:'#7a5c9e'};
@@ -40,10 +41,12 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
     ];
     const company:[string,number][]=[
       ['HMO',sum(rows,r=>r.hmo)],
-      ['SSS loan',sum(rows,r=>numberValue(r.input.sssLoan))],
-      ['Pag-IBIG loan',sum(rows,r=>numberValue(r.input.pagibigLoan))],
+      ['SSS loan (employee)',sum(rows,r=>rowLoanAmounts(r.input,r.governmentLoans).sssLoan)],
+      ['Pag-IBIG loan (employee)',sum(rows,r=>rowLoanAmounts(r.input,r.governmentLoans).pagibigLoan)],
       ['Company loan',sum(rows,r=>numberValue(r.input.companyLoan))],
       ['Cash advance',sum(rows,r=>numberValue(r.input.cashAdvance))],
+      ['SSS government loan',sum(rows,r=>rowLoanAmounts(r.input,r.governmentLoans).govSssLoan)],
+      ['Pag-IBIG government loan',sum(rows,r=>rowLoanAmounts(r.input,r.governmentLoans).govPagibigLoan)],
       ['Other deductions',sum(rows,r=>numberValue(r.input.otherDeductions))],
     ];
     const gross=sum(rows,r=>r.result.gross);

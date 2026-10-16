@@ -23,13 +23,14 @@ import type {AnnualTaxHistory} from './withholdingTax';
 import {compensationService} from '../compensation/compensationService';
 import {loanService} from '../deductions/loanService';
 import {governmentLoanService} from '../governmentLoans/governmentLoanService';
-import {governmentLoanDeductions,governmentLoanTotals} from '../governmentLoans/governmentLoanPayroll';
+import {governmentLoanDeductions,governmentLoanTotals,rowLoanAmounts} from '../governmentLoans/governmentLoanPayroll';
 
 type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions'|'thirteenthMonthAndOtherBenefits'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
-const blank:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0,thirteenthMonthAndOtherBenefits:0,taxExemptBenefits:0,priorEmployerTaxableCompensation:0,priorEmployerBenefitsPaid:0,priorEmployerWithheld:0,priorEmployerPayrollPeriods:0};
+const blank:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,govSssLoan:0,govPagibigLoan:0,otherDeductions:0,thirteenthMonthAndOtherBenefits:0,taxExemptBenefits:0,priorEmployerTaxableCompensation:0,priorEmployerBenefitsPaid:0,priorEmployerWithheld:0,priorEmployerPayrollPeriods:0};
+const governmentLoanSum=(row:RunRow)=>{const loans=rowLoanAmounts(row.input,row.governmentLoans);return loans.govSssLoan+loans.govPagibigLoan};
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Night Differential','Holiday Pay','Leave Pay','Allowances','Incentives & Bonuses','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','13th-month & other benefits','Tax-exempt benefits','Prior-employer taxable YTD','Prior-employer benefits YTD','Prior-employer tax withheld','Prior-employer payroll periods','Total'];
+const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Night Differential','Holiday Pay','Leave Pay','Allowances','Incentives & Bonuses','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','Government Loans','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','13th-month & other benefits','Tax-exempt benefits','Prior-employer taxable YTD','Prior-employer benefits YTD','Prior-employer tax withheld','Prior-employer payroll periods','Total'];
 
 export default function ReviewPayroll(){
  const[params]=useSearchParams();const nav=useNavigate();const user=getCurrentUser();
@@ -110,7 +111,8 @@ const built:RunRow[]=[];
      const compute=(payrollInput:PayrollInput)=>calculatePayroll({...payrollInput,otherDeductions:hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()});
      const governmentLoans=governmentLoanDeductions(scheduledGovernmentLoans,employeeIds,compute(input).net,rates.payPeriodsPerMonth);
      const governmentTotals=governmentLoanTotals(governmentLoans);
-     if(governmentLoans.length){input.sssLoan=numberValue(input.sssLoan)+governmentTotals.sssLoan;input.pagibigLoan=numberValue(input.pagibigLoan)+governmentTotals.pagibigLoan}
+     // Government loans have their own fields so they never mix with employee loan installments.
+     input.govSssLoan=governmentTotals.sssLoan;input.govPagibigLoan=governmentTotals.pagibigLoan;
      const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
@@ -188,7 +190,7 @@ const built:RunRow[]=[];
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>{thirteenth?'No eligible employees with 13th month pay due.':'No employees with an assigned salary for this cutoff.'}</Empty>:<>
     <div className="overflow-x-auto rounded-xl border border-slate-200"><table>
      <thead>
-      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={8}>Earnings</th><th colSpan={19}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
+      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={8}>Earnings</th><th colSpan={20}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
       <tr>{heads.map(label=><th key={label}>{label}</th>)}</tr>
      </thead>
      <tbody>
@@ -196,10 +198,10 @@ const built:RunRow[]=[];
        <td><b>{row.input.name}</b><div>{row.input.empId} · {row.position}</div></td>
        <td className="n">{numberValue(row.input.daysWorked)}</td><td className="n">{numberValue(row.input.absentDays)}</td><td className="n">{numberValue(row.input.vlDays)}</td><td className="n">{row.rest}</td><td className="n">{numberValue(row.input.lateMin)}</td><td className="n">{numberValue(row.input.undertimeMin)}</td><td className="n">{numberValue(row.input.otHours)}</td>
        {cols[index].map((value,k)=><td key={k} className="n">{nf(value)}</td>)}
-      <td className="n">{nf(c.tax)}</td>{editKeys.map(key=><td key={key} className="n">{editCell(index,row,key)}</td>)}
+      <td className="n">{nf(c.tax)}</td><td className="n">{nf(governmentLoanSum(row))}</td>{editKeys.map(key=><td key={key} className="n">{editCell(index,row,key)}</td>)}
        <td className="n"><b>{nf(c.deductions)}</b></td><td className="n"><b>{nf(c.net)}</b></td>
       </tr>)}
-      <tr><td colSpan={8}><b>TOTAL</b></td>{colSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}{editSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(totals.deductions)}</b></td><td className="n"><b>{nf(totals.net)}</b></td></tr>
+      <tr><td colSpan={8}><b>TOTAL</b></td>{colSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(view.reduce((t,x)=>t+x.c.tax,0))}</b></td><td className="n"><b>{nf(rows.reduce((t,row)=>t+governmentLoanSum(row),0))}</b></td>{editSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(totals.deductions)}</b></td><td className="n"><b>{nf(totals.net)}</b></td></tr>
      </tbody>
     </table></div>
     <div className="mt-10 grid grid-cols-2 gap-16 text-center text-[11px]">
