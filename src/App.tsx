@@ -9,7 +9,7 @@ import TimeAttendance from './features/attendance/TimeAttendance';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import GovernmentLoans from './features/governmentLoans/GovernmentLoans';
-import ClaimsReimbursement from './pages/ClaimsReimbursement';
+import ClaimsReimbursement,{ClaimsReimbursementRedirect} from './pages/ClaimsReimbursement';
 import ReviewPayroll from './features/payroll/ReviewPayroll';
 import {LogsAudits} from './pages/Admin';
 import SettingsPrivacy from './pages/SettingsPrivacy';
@@ -34,7 +34,9 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/compensation/salary-structure" element={<Compensation section="salary-structure"/>}/>
   <Route path="/compensation/adjustments" element={<Compensation section="adjustments"/>}/>
   <Route path="/compensation/history" element={<Compensation section="history"/>}/>
-  <Route path="/claims-reimbursement" element={<ClaimsReimbursement/>}/>
+  <Route path="/claims-reimbursement" element={<ClaimsReimbursementRedirect/>}/>
+  <Route path="/claims-reimbursement/claims" element={<ClaimsReimbursement section="claims"/>}/>
+  <Route path="/claims-reimbursement/reimbursement" element={<ClaimsReimbursement section="reimbursement"/>}/>
   <Route path="/hmo-benefits" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="/hmo-benefits/hmo" element={<HmoBenefits/>}/>
   {hmoTabs.map(({to})=><Route key={to} path={to} element={<HmoBenefits/>}/>)}

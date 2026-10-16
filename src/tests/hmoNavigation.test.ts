@@ -26,9 +26,10 @@ describe('HMO presentation navigation',()=>{
     expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Government Loans',to:'/hmo-benefits/government-loans'}]);
   });
 
-  it('shows Claims & Reimbursement as a single item',()=>{
+  it('groups Claims and Reimbursement as submodules',()=>{
     const claims=modules.find(item=>item.label==='Claims & Reimbursement');
     expect(claims?.to).toBe('/claims-reimbursement');
-    expect(claims?.children).toBeUndefined();
+    expect(claims?.children).toEqual([{label:'Claims',to:'/claims-reimbursement/claims'},{label:'Reimbursement',to:'/claims-reimbursement/reimbursement'}]);
+    expect(titles['/claims-reimbursement/reimbursement']).toBe('Reimbursement');
   });
 });

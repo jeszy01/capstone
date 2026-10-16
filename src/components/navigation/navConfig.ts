@@ -14,7 +14,10 @@ export const modules:NavItem[]=[
   {label:'Adjustments',to:'/compensation/adjustments'},
   {label:'History',to:'/compensation/history'},
  ]},
- {label:'Claims & Reimbursement',to:'/claims-reimbursement',icon:FileText},
+ {label:'Claims & Reimbursement',to:'/claims-reimbursement',icon:FileText,children:[
+  {label:'Claims',to:'/claims-reimbursement/claims'},
+  {label:'Reimbursement',to:'/claims-reimbursement/reimbursement'},
+ ]},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse,children:[
   {label:'HMO',to:'/hmo-benefits/hmo'},
   {label:'Government Loans',to:'/hmo-benefits/government-loans'},
@@ -30,4 +33,5 @@ export const titles={
  '/payroll-settings':'Payroll Settings',
  '/hmo-benefits/dependents':'Dependents',
  '/hmo-benefits':'HMO & Benefits',
+ '/claims-reimbursement':'Claims & Reimbursement',
 } as Record<string,string>;
