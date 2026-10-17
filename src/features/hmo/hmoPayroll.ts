@@ -1,4 +1,4 @@
-import type {HmoDependent,HmoEnrollment,HmoPayrollDeduction,HmoPlan} from './hmoTypes';
+import type {HmoDependent,HmoEnrollment,HmoPlan} from './hmoTypes';
 import {calculateEmployeeHmoShare} from './hmoContribution';
 
 export type HmoCutoffLine={employeeId:string;enrollmentId:string;planName:string;monthlyShare:number;cutoffDeduction:number;status:string};
@@ -21,10 +21,3 @@ export function hmoCutoffLines({plans,enrollments,dependents,from,to,payPeriodsP
  });
 }
 export const hmoCutoffDeduction=(lines:HmoCutoffLine[],employeeId:string)=>round(lines.filter(line=>line.employeeId===employeeId).reduce((sum,line)=>sum+line.cutoffDeduction,0));
-
-/** Sum only verified HMO deductions assigned to this exact payroll cutoff. */
-export function verifiedHmoDeductionTotal(items:HmoPayrollDeduction[],employeeId:string,periodStart:string,periodEnd:string):number{
- if(!employeeId||!/^\d{4}-\d{2}-\d{2}$/.test(periodStart)||!/^\d{4}-\d{2}-\d{2}$/.test(periodEnd)||periodEnd<periodStart)throw new Error('A valid employee and payroll period are required to calculate HMO deductions.');
- const amount=items.filter(item=>item.employeeId===employeeId&&item.periodStart===periodStart&&item.periodEnd===periodEnd&&item.verificationStatus==='Verified').reduce((sum,item)=>sum+Number(item.amount||0),0);
- return Math.round((amount+Number.EPSILON)*100)/100;
-}

@@ -24,12 +24,10 @@ import { hmoService } from "./hmoService";
 import { hasOpenHmoEnrollment, hmoEligibilityDate, isHmoEmployeeEligible } from "./hmoEnrollment";
 import { recordAudit } from "../audit/auditService";
 import { localToday } from "../../components/common/tableUi";
-import { cutoffRange } from "../payroll/payrollRuns";
 import { can } from "../auth/permissions";
 import type {
   HmoDependent,
   HmoEnrollment,
-  HmoPayrollDeduction,
   HmoPlan,
   HmoProvider,
 } from "./hmoTypes";
@@ -140,9 +138,7 @@ export default function HmoBenefits({
               ? "HMO Plan"
               : tab === "history"
                 ? "HMO Records"
-                : tab === "deductions"
-                  ? "HMO Payroll Deductions"
-                  : "HMO"
+                : "HMO"
         }
         description="Manage the company HMO plan, employee enrollment, and dependents."
         actions={
@@ -232,13 +228,6 @@ export default function HmoBenefits({
                 enrollments={enrollments}
                 employeeMap={employeeMap}
                 onChanged={() => void load()}
-              />
-            )}{" "}
-            {tab === "deductions" && (
-              <PayrollDeductionSection
-                enrollments={enrollments}
-                dependents={dependents}
-                employeeMap={employeeMap}
               />
             )}{" "}
             {tab === "history" && (
@@ -671,8 +660,7 @@ function PlanSection({
             </div>{" "}
             <p className={`mt-3 ${muted}`}>
               Configured additional-dependent premium:{" "}
-              {money(plan.dependentMonthlyPremium)}. Payroll deductions must
-              only be created for confirmed, approved, employee-paid premiums.
+              {money(plan.dependentMonthlyPremium)}.
             </p>{" "}
           </div>{" "}
         </div>{" "}
@@ -1070,91 +1058,6 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
   );
 }
 
-/** Creates and verifies the HMO payroll deductions that Review Payroll reads. Payroll deducts only Verified amounts
- * whose dates match the payroll cutoff exactly. The company pays the full employee premium, so a deduction comes from
- * employee-paid dependents. */
-function PayrollDeductionSection({ enrollments, dependents, employeeMap }: { enrollments: HmoEnrollment[]; dependents: HmoDependent[]; employeeMap: Map<string, Employee> }) {
-  const [range, setRange] = useState(cutoffRange),
-    [deductions, setDeductions] = useState<HmoPayrollDeduction[]>([]),
-    [loading, setLoading] = useState(true),
-    [busy, setBusy] = useState(""),
-    [error, setError] = useState(""),
-    [notice, setNotice] = useState(""),
-    [retry, setRetry] = useState(0);
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    hmoService.getPayrollDeductions().then((rows) => { if (active) setDeductions(rows); })
-      .catch((cause) => { if (active) setError(cause instanceof Error && cause.message ? cause.message : "HMO payroll deductions could not be loaded."); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [retry]);
-  const validRange = /^\d{4}-\d{2}-\d{2}$/.test(range.from) && /^\d{4}-\d{2}-\d{2}$/.test(range.to) && range.from <= range.to;
-  const overlaps = (start: string | null, end: string | null) => (!start || start <= range.to) && (!end || end >= range.from);
-  const inPeriod = deductions.filter((item) => item.periodStart === range.from && item.periodEnd === range.to);
-  const covered = new Set(inPeriod.map((item) => item.enrollmentId));
-  // Active employee coverage with at least one employee-paid dependent active in the cutoff, and no deduction yet.
-  const due = validRange ? enrollments.filter((e) => e.status === "Active" && e.approvalStatus === "Approved" && e.maxicareStatus === "Active" && overlaps(e.effectiveDate, e.expirationDate) && !covered.has(e.id)
-    && dependents.some((d) => d.enrollmentId === e.id && d.status === "Active" && d.approvalStatus === "Approved" && d.maxicareStatus === "Active" && !d.companySponsored && d.employeeShare > 0 && overlaps(d.effectiveDate, d.expirationDate))) : [];
-  const generate = async () => {
-    setBusy("generate"); setError(""); setNotice("");
-    const failures: string[] = [];
-    let createdCount = 0;
-    for (const e of due) {
-      try { await hmoService.createPayrollDeduction({ employeeId: e.employeeId, enrollmentId: e.id, periodStart: range.from, periodEnd: range.to }); createdCount++; }
-      catch (cause) { failures.push(`${employeeMap.get(e.employeeId)?.name ?? e.employeeId}: ${cause instanceof Error ? cause.message : "could not be created"}`); }
-    }
-    if (createdCount) recordAudit({ action: "Created HMO payroll deductions", module: "HMO & Benefits", description: `Created ${createdCount} HMO payroll deduction${createdCount === 1 ? "" : "s"} for ${range.from} to ${range.to}.` });
-    setNotice(createdCount ? `Created ${createdCount} deduction${createdCount === 1 ? "" : "s"}. Verify them before running payroll.` : "");
-    if (failures.length) setError(failures.join(" · "));
-    setBusy(""); setRetry((n) => n + 1);
-  };
-  const verify = async (item: HmoPayrollDeduction) => {
-    setBusy(item.id); setError(""); setNotice("");
-    try {
-      await hmoService.verifyPayrollDeduction(item.id);
-      recordAudit({ action: "Verified HMO payroll deduction", module: "HMO & Benefits", description: `Verified the ${money(item.amount)} HMO deduction of ${employeeMap.get(item.employeeId)?.name ?? item.employeeId} for ${item.periodStart} to ${item.periodEnd}.` });
-      setRetry((n) => n + 1);
-    } catch (cause) { setError(cause instanceof Error && cause.message ? cause.message : "The deduction could not be verified."); }
-    finally { setBusy(""); }
-  };
-  return (
-    <Card className="mt-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="m-0 text-[16px] font-semibold text-[#142b50]">Payroll deductions for a cutoff</h2>
-          <p className="mb-0 mt-1 max-w-[640px] text-[12px] text-[#647796]">Payroll deducts only <b>Verified</b> HMO amounts whose dates match the payroll cutoff exactly. The company pays the full employee premium, so deductions come from employee-paid dependents.</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="From"><TextInput type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></Field>
-          <Field label="To"><TextInput type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></Field>
-          {can("hmo.manage") && <Button disabled={!due.length || Boolean(busy)} onClick={() => void generate()}>{busy === "generate" ? "Creating…" : `Create deductions${due.length ? ` (${due.length})` : ""}`}</Button>}
-        </div>
-      </div>
-      {!validRange && <p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">Enter a cutoff whose end date is on or after its start date.</p>}
-      {notice && <p role="status" className="mb-0 mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-[12px] text-blue-900">{notice}</p>}
-      {error && <p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-[13px]">
-          <thead><tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">{["Employee", "Cutoff", "Amount", "Status", "Action"].map((h) => <th key={h} className={`px-4 py-3 ${h === "Amount" ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
-          <tbody>
-            {loading ? <tr><td colSpan={5}><LoadingState>Loading HMO payroll deductions…</LoadingState></td></tr>
-              : !inPeriod.length ? <tr><td colSpan={5}><Empty>{due.length ? "No deductions yet for this cutoff. Use Create deductions." : "No employee-paid dependent coverage needs a deduction in this cutoff."}</Empty></td></tr>
-              : inPeriod.map((item) => (
-                <tr key={item.id} className="border-b border-[#eef1f6]">
-                  <td className="px-4 py-3 font-semibold">{employeeMap.get(item.employeeId)?.name ?? item.employeeId}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{formatHmoDate(item.periodStart)} – {formatHmoDate(item.periodEnd)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{money(item.amount)}</td>
-                  <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${item.verificationStatus === "Verified" ? "bg-emerald-50 text-emerald-700" : item.verificationStatus === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800"}`}>{item.verificationStatus}</span></td>
-                  <td className="px-4 py-3">{item.verificationStatus === "Pending" && can("hmo.manage") ? <Button disabled={Boolean(busy)} onClick={() => void verify(item)}>{busy === item.id ? "Verifying…" : "Verify"}</Button> : <span className="text-[12px] text-[#6b7794]">{item.verifiedAt ? formatHmoDate(item.verifiedAt) : "—"}</span>}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
 function PlanModal({
   provider,
   onClose,

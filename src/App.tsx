@@ -45,6 +45,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/hmo-benefits" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="/hmo-benefits/hmo" element={<HmoBenefits/>}/>
   {hmoTabs.map(({to})=><Route key={to} path={to} element={<HmoBenefits/>}/>)}
+  <Route path="/hmo-benefits/hmo/payroll-deductions" element={<Navigate to="/deductions?tab=hmo" replace/>}/>
   <Route path="/hmo-benefits/government-loans" element={<Navigate to="/deductions?tab=loans&loans=government" replace/>}/>
   <Route path="/hmo-benefits/employee-benefits" element={<EmployeeBenefits/>}/>
   <Route path="/hmo-benefits/dependents" element={<HmoBenefits section="dependents"/>}/>

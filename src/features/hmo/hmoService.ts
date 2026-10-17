@@ -1,6 +1,6 @@
 import {apiClient} from '../../services/api/apiClient';
-import {hmoCutoffLines,verifiedHmoDeductionTotal} from './hmoPayroll';
-import type {HmoApprovalStatus,HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPayrollDeduction,HmoPlan,HmoProvider,HmoUtilization,MaxicareStatus} from './hmoTypes';
+import {hmoCutoffLines} from './hmoPayroll';
+import type {HmoApprovalStatus,HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPlan,HmoProvider,HmoUtilization,MaxicareStatus} from './hmoTypes';
 
 type Envelope<T>={data:T};
 type ServerProvider={id:string;name:string;contact_person?:string|null;contact_number?:string|null;status:HmoProvider['status']};
@@ -8,7 +8,6 @@ type ServerPlan={id:string;provider_id:string;name:string;coverage_start:string;
 type ServerEnrollment={id:string;plan_id:string;employee_id:string;eligibility_date:string|null;employee_eligibility_date?:string|null;employee_eligible_for_effective_date?:boolean;effective_date:string;expiration_date:string|null;status:HmoEnrollment['status'];approval_status?:HmoApprovalStatus;approved_by?:string|null;approved_at?:string|null;rejection_reason?:string|null;maxicare_status?:MaxicareStatus;maxicare_reference?:string|null;maxicare_activated_at?:string|null;activated_at?:string|null;terminated_at?:string|null};
 type ServerDependent={id:string;enrollment_id:string;name:string;relationship:string;date_of_birth:string|null;eligibility_status:HmoDependent['eligibilityStatus'];effective_date:string|null;expiration_date:string|null;status:HmoDependent['status'];approval_status?:HmoApprovalStatus;approved_by?:string|null;approved_at?:string|null;rejection_reason?:string|null;maxicare_status?:MaxicareStatus;maxicare_reference?:string|null;company_sponsored?:boolean;employee_share?:number;company_share?:number};
 type ServerUtilization={id:string;enrollment_id:string;dependent_id:string|null;service_date:string;service_type:string;amount_used:number;status:HmoUtilization['status'];remarks:string|null};
-type ServerDeduction={id:string;employee_id:string;enrollment_id:string;period_start:string;period_end:string;amount:number;verification_status:'Pending'|'Verified'|'Rejected';verified_by:string|null;verified_at:string|null;created_at:string};
 type ServerHistory={id:string;entity_type:string;entity_id:string;action:string;actor_id:string|null;actor_name?:string|null;previous_values:Record<string,unknown>;new_values:Record<string,unknown>;created_at:string};
 
 const get=<T>(resource:string)=>apiClient.get<Envelope<T[]>>(`/hmo/${resource}`).then(r=>r.data);
@@ -65,7 +64,6 @@ const dependent=(x:ServerDependent):HmoDependent=>({id:x.id,enrollmentId:x.enrol
 
 const utilization=(x:ServerUtilization):HmoUtilization=>({id:x.id,enrollmentId:x.enrollment_id,dependentId:x.dependent_id,serviceDate:x.service_date,serviceType:x.service_type,amountUsed:Number(x.amount_used),status:x.status,remarks:x.remarks});
 
-const deduction=(x:ServerDeduction):HmoPayrollDeduction=>({id:x.id,employeeId:x.employee_id,enrollmentId:x.enrollment_id,periodStart:x.period_start,periodEnd:x.period_end,amount:Number(x.amount),verificationStatus:x.verification_status,verifiedBy:x.verified_by,verifiedAt:x.verified_at,createdAt:x.created_at});
 
 const history=(x:ServerHistory):HmoHistoryRow=>({id:x.id,entityType:x.entity_type,entityId:x.entity_id,action:x.action,actorId:x.actor_id,actorName:x.actor_name??null,previousValues:x.previous_values,newValues:x.new_values,createdAt:x.created_at});
 
@@ -133,11 +131,8 @@ export const hmoService={
  activateDependent:(id:string,maxicare_reference:string)=>patch('dependents',id,{action:'activate',maxicare_reference}),
  terminateDependent:(id:string)=>patch('dependents',id,{action:'terminate'}),
 
- createPayrollDeduction:async(v:{employeeId:string;enrollmentId:string;periodStart:string;periodEnd:string})=>deduction(await post('payroll-deductions',{employee_id:v.employeeId,enrollment_id:v.enrollmentId,period_start:v.periodStart,period_end:v.periodEnd})),
 
- verifyPayrollDeduction:(id:string)=>patch('payroll-deductions',id,{action:'verify'}),
 
- getPayrollDeductions:async()=>get<ServerDeduction>('payroll-deductions').then(x=>x.map(deduction)),
 
  /** HMO cutoff deductions for from..to, shown in Deductions and deducted in payroll. */
  cutoffLines:async(from:string,to:string,payPeriodsPerMonth:number)=>{
@@ -145,8 +140,4 @@ export const hmoService={
   return hmoCutoffLines({plans,enrollments,dependents,from,to,payPeriodsPerMonth});
  },
 
- getPayrollDeduction:async(employeeId:string,periodStart:string,periodEnd:string)=>{
-  const deductions=await hmoService.getPayrollDeductions();
-  return verifiedHmoDeductionTotal(deductions,employeeId,periodStart,periodEnd);
- }
 };
