@@ -3,7 +3,7 @@ import {can} from '../../features/auth/permissions';
 
 type PendingWrite={raw?:string;deleted?:boolean};
 // Logs & Audit is kept by the server, so 'audit:' keys are no longer synchronized.
-const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','leave:','payroll:','reimbursement:'];
+const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
 // Payroll Settings keys: every 'payroll:' key except runs and records, plus the legacy 13th month rules key.
 const settingsKey=(key:string)=>(key.startsWith('payroll:')&&key!=='payroll:runs'&&key!=='payroll:records')||key==='compensation:thirteenth-month-rules';

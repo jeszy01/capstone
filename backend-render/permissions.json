@@ -39,6 +39,7 @@
     "payroll.generate",
     "payroll.release",
     "leave.encode",
-    "leave.approve"
+    "leave.approve",
+    "deductions.manage"
   ]
 }

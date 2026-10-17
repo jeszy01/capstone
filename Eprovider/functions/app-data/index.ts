@@ -7,7 +7,7 @@ import type {RequestContext} from "../../lib/types";
 import {can} from "../../lib/permissions";
 
 type AppDataRow={key:string;value:unknown;deleted:boolean;updated_at:string;updated_by:string|null};
-const SYNCED_PREFIXES=["admin:","audit:","attendance:","benefits:","claims:","compensation:","payroll:","reimbursement:"];
+const SYNCED_PREFIXES=["admin:","audit:","attendance:","benefits:","claims:","compensation:","deductions:","leave:","payroll:","reimbursement:"];
 const isSyncedKey=(key:string)=>SYNCED_PREFIXES.some(prefix=>key.startsWith(prefix));
 // Payroll Settings keys: every "payroll:" key except runs and records, plus the legacy 13th month rules key.
 const isSettingsKey=(key:string)=>(key.startsWith("payroll:")&&key!=="payroll:runs"&&key!=="payroll:records")||key==="compensation:thirteenth-month-rules";
@@ -16,6 +16,7 @@ const PAYROLL_RULE_KEYS=["payroll:rates","payroll:time-settings","payroll:holida
 const parse=(value:unknown)=>{if(typeof value==="string"){try{return JSON.parse(value)}catch{/* keep the text */}}return value};
 function guardWrite(ctx:RequestContext,key:string){
  if(isSettingsKey(key)&&!can(ctx.pbmsRole,"settings.edit"))throw new HttpError(403,"FORBIDDEN","Only an Admin can change payroll settings.");
+ if(key.startsWith("deductions:")&&!can(ctx.pbmsRole,"deductions.manage"))throw new HttpError(403,"FORBIDDEN","Only HR Staff can change authorized deductions.");
 }
 function validateKey(value:unknown){
  const key=required(value,"key");

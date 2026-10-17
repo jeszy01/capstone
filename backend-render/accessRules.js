@@ -153,6 +153,31 @@ function leaveEvents(user, before, after) {
   }
   return events;
 }
+// Other authorized deductions: HR Staff add them as Active with a signed authorization, then may stop them.
+// A stopped deduction is locked, and none are deleted.
+function otherDeductionEvents(user, before, after) {
+  const prev = byId(before), next = byId(after), events = [];
+  const label = item => `${item.deductionType} deduction of ${pesoText(item.amountPerCutoff)} per cutoff from ${item.startDate}`;
+  if ([...prev.keys()].some(id => !next.has(id))) throw forbid('Authorized deductions cannot be deleted; stop them instead.');
+  for (const [id, item] of next) {
+    const old = prev.get(id);
+    if (!old) {
+      need(user, 'deductions.manage', 'Only HR Staff can add authorized deductions.');
+      if (item.status !== 'Active' || item.authorized !== true || !(Number(item.amountPerCutoff) > 0)) throw forbid('A new deduction must be active, authorized and greater than zero.');
+      events.push(['deduction.added', 'Deductions', id, `Added ${label(item)}.`]);
+      continue;
+    }
+    if (stable(old) === stable(item)) continue;
+    need(user, 'deductions.manage', 'Only HR Staff can change authorized deductions.');
+    if (old.status !== 'Active') throw forbid('A stopped deduction is locked.');
+    if (item.status === 'Stopped' && stable(without(old, ['status', 'stoppedAt', 'stoppedBy'])) === stable(without(item, ['status', 'stoppedAt', 'stoppedBy']))) {
+      events.push(['deduction.stopped', 'Deductions', id, `Stopped ${label(item)}.`]);
+      continue;
+    }
+    throw forbid('Only stopping an authorized deduction is allowed.');
+  }
+  return events;
+}
 // Saved attendance is locked: later writes may only add records.
 function attendanceEvents(user, before, after, existed) {
   need(user, 'attendance.encode', 'Only HR Staff can encode attendance.');
@@ -203,6 +228,8 @@ export async function appDataEvents(user, key, before, after, existed, releasedR
   if (key.startsWith('claims:') || key.startsWith('reimbursement:')) { need(user, 'claims.encode'); return []; }
   if (key.startsWith('attendance:')) return attendanceEvents(user, before, after, existed);
   if (key === 'leave:records') return leaveEvents(user, before, after);
+  if (key === 'deductions:other') return otherDeductionEvents(user, before, after);
+  if (key.startsWith('deductions:')) { need(user, 'deductions.manage'); return []; }
   if (key.startsWith('leave:')) { need(user, 'leave.encode'); return []; }
   if (key.startsWith('compensation:')) { need(user, 'compensation.manage'); return []; }
   if (key.startsWith('benefits:')) { need(user, 'hmo.manage'); return []; }
