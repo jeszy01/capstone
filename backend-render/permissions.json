@@ -4,6 +4,7 @@
     "employees.view",
     "payroll.view",
     "attendance.view",
+    "leave.view",
     "deductions.view",
     "compensation.view",
     "claims.view",
@@ -20,6 +21,7 @@
     "employees.view",
     "payroll.view",
     "attendance.view",
+    "leave.view",
     "deductions.view",
     "compensation.view",
     "claims.view",
@@ -34,6 +36,8 @@
     "claims.pay",
     "attendance.encode",
     "payroll.generate",
-    "payroll.release"
+    "payroll.release",
+    "leave.encode",
+    "leave.approve"
   ]
 }

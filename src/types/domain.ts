@@ -4,7 +4,7 @@ export interface User{ id:string; employeeId:string; name:string; role:'Admin'|'
 export interface Session{token:string;user:User}
 export interface Employee{id:string;employeeNo:string;name:string;email:string|null;position:string;department:string;dateHired:string;basicSalary:number;positionRate:number;status:EmployeeStatus;employmentStatus?:EmploymentStatus}
 export type AttendanceStatus='Present'|'Absent'|'On Leave'|'Day Off';
-export interface AttendanceRecord{id:number;empId:string;name:string;date:string;status:AttendanceStatus;timeIn:string;timeOut:string}
+export interface AttendanceRecord{id:number;empId:string;name:string;date:string;status:AttendanceStatus;timeIn:string;timeOut:string;leaveType?:string;paidLeave?:boolean}
 export type OvertimeRounding='none'|'15'|'30'|'60';
 export interface AttendanceSchedule{start:string;end:string;otMin:number;otRounding?:OvertimeRounding}
 export interface PayrollRates{hoursPerDay:number;daysPerMonth:number;ndRate:number;otMinMinutes:number;firstCutoffEndDay:number;firstPayDay:number;secondPayDay:number;holidayRegularUnworked:number;holidayRegularWorked:number;holidayRegularRestDay:number;holidaySpecialWorked:number;holidaySpecialRestDay:number;holidayDouble:number;holidaySpecialWorking:number;sssEcLow:number;sssEcHigh:number;sssEcThreshold:number;philTotalRate:number;otMultiplier:number;otRestMultiplier:number;sssRate:number;sssMin:number;sssMax:number;philRate:number;philMin:number;philMax:number;pagibigRate:number;pagibigMax:number;pagibigLowerSalaryThreshold:number;pagibigLowerEmployeeRate:number;sssEmployerRate:number;philEmployerRate:number;pagibigEmployerRate:number;sssStep:number;payPeriodsPerMonth:number}

@@ -2,7 +2,7 @@ import {apiClient} from '../api/apiClient';
 
 type PendingWrite={raw?:string;deleted?:boolean};
 // Logs & Audit is kept by the server, so 'audit:' keys are no longer synchronized.
-const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
+const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','leave:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
 // Attendance now comes from HR2; purge the retired manually-entered copies.
 const RETIRED_KEYS=['attendance:records','attendance:schedule'];

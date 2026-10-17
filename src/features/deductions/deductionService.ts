@@ -17,7 +17,7 @@ export function computeDeductions(a:{employees:Employee[];records:AttendanceReco
   const employeeSalary=Number(employee.basicSalary??0);
   const salary=assignment?assignment.fixedSalary:employeeSalary>0?employeeSalary:(grade?grade.fixedSalary:null);
   let lateMin=0,undertimeMin=0,otMin=0,daysWorked=0,absentDays=0;
-  a.records.filter(r=>r.date>=a.from&&r.date<=a.to&&(r.empId===employee.employeeNo||r.empId===employee.id)).forEach(r=>{const c=calculateAttendance(r,a.schedule);lateMin+=c.late;undertimeMin+=c.under;otMin+=c.ot;if(r.status==='Present'&&r.timeIn&&r.timeOut)daysWorked++;if(r.status==='Absent')absentDays++});
+  a.records.filter(r=>r.date>=a.from&&r.date<=a.to&&(r.empId===employee.employeeNo||r.empId===employee.id)).forEach(r=>{const c=calculateAttendance(r,a.schedule);lateMin+=c.late;undertimeMin+=c.under;otMin+=c.ot;if(r.status==='Present'&&r.timeIn&&r.timeOut)daysWorked++;if(r.status==='Absent'||(r.status==='On Leave'&&r.paidLeave===false))absentDays++});
   const perMin=salary?salary/a.rates.daysPerMonth/a.rates.hoursPerDay/60:0;
   const contrib=salary?calculateContributions(salary,a.rates):null;
   const share=(agency:Agency)=>contrib?round(contrib[agency].employee/a.rates.payPeriodsPerMonth):0;

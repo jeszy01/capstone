@@ -114,6 +114,34 @@ function claimEvents(user, before, after) {
   }
   return events;
 }
+// Leave: HR Staff encode it as Pending, then approve or reject it. A decided leave is locked.
+const LEAVE_DECISION_FIELDS = ['status', 'decidedAt', 'decidedBy'];
+function leaveEvents(user, before, after) {
+  const prev = byId(before), next = byId(after), events = [];
+  for (const [id, old] of prev) if (!next.has(id)) {
+    if (old.status !== 'Pending') throw forbid('Approved or rejected leave cannot be deleted.');
+    need(user, 'leave.encode', 'Only HR Staff can encode leave.');
+  }
+  for (const [id, leave] of next) {
+    const old = prev.get(id);
+    if (!old) {
+      need(user, 'leave.encode', 'Only HR Staff can encode leave.');
+      if (leave.status !== 'Pending') throw forbid('New leave must start as Pending.');
+      continue;
+    }
+    if (stable(old) === stable(leave)) continue;
+    if (old.status !== 'Pending') throw forbid('Approved or rejected leave is locked.');
+    if (old.status !== leave.status) {
+      need(user, 'leave.approve', 'Only HR Staff can approve or reject leave.');
+      if (!['Approved', 'Rejected'].includes(leave.status) || stable(without(old, LEAVE_DECISION_FIELDS)) !== stable(without(leave, LEAVE_DECISION_FIELDS)))
+        throw forbid('This leave change is not allowed.');
+      events.push([`leave.${leave.status.toLowerCase()}`, 'Leave', id, `${leave.status} ${leave.leaveType} leave (${leave.paid ? 'paid' : 'unpaid'}), ${leave.from} to ${leave.to}, ${leave.days} day${leave.days === 1 ? '' : 's'}.`]);
+      continue;
+    }
+    need(user, 'leave.encode', 'Only HR Staff can encode leave.');
+  }
+  return events;
+}
 // Saved attendance is locked: later writes may only add records.
 function attendanceEvents(user, before, after, existed) {
   need(user, 'attendance.encode', 'Only HR Staff can encode attendance.');
@@ -163,6 +191,8 @@ export async function appDataEvents(user, key, before, after, existed, releasedR
   if (key === 'claims:records') return claimEvents(user, before, after);
   if (key.startsWith('claims:') || key.startsWith('reimbursement:')) { need(user, 'claims.encode'); return []; }
   if (key.startsWith('attendance:')) return attendanceEvents(user, before, after, existed);
+  if (key === 'leave:records') return leaveEvents(user, before, after);
+  if (key.startsWith('leave:')) { need(user, 'leave.encode'); return []; }
   if (key.startsWith('compensation:')) { need(user, 'compensation.manage'); return []; }
   if (key.startsWith('benefits:')) { need(user, 'hmo.manage'); return []; }
   return [];

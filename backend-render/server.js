@@ -8,7 +8,7 @@ import { AccessError, FORBIDDEN_MESSAGE, ROLE_LABELS, appDataEvents, can, pesoTe
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
 const origins = ['http://localhost:5173', ...ALLOWED_ORIGINS.split(',').filter(Boolean)];
-const PREFIXES = ['admin:','audit:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
+const PREFIXES = ['admin:','audit:','attendance:','benefits:','claims:','compensation:','leave:','payroll:','reimbursement:'];
 
 const b64u = b => Buffer.from(b).toString('base64url');
 const hash = pw => { const s = crypto.randomBytes(16); return `pbkdf2_sha256$210000$${b64u(s)}$${b64u(crypto.pbkdf2Sync(pw, s, 210000, 32, 'sha256'))}`; };
@@ -441,6 +441,7 @@ async function releasedRecentlyBy(user, runId) {
 const ACTION_LABELS = {
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
+  'leave.approved': 'Approved leave', 'leave.rejected': 'Rejected leave',
   'claim.approved': 'Approved claim', 'claim.rejected': 'Rejected claim', 'claim.returned': 'Returned claim', 'claim.paid': 'Marked claim as Paid',
   'settings.updated': 'Updated payroll settings', 'user.created': 'Created user account', 'user.updated': 'Updated user account',
   'user.role.changed': 'Changed user role', 'user.activated': 'Activated user account', 'user.deactivated': 'Deactivated user account',

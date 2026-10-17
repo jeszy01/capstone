@@ -6,6 +6,7 @@ import Login from './features/auth/Login';
 import {getCurrentUser,refreshCurrentUser} from './features/auth/authService';
 import {Dashboard,Employees,Payroll,Deductions,Compensation} from './pages/Modules';
 import TimeAttendance from './features/attendance/TimeAttendance';
+import Leave from './features/leave/Leave';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import EmployeeBenefits from './features/benefits/EmployeeBenefits';
@@ -32,6 +33,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/payroll" element={<Payroll/>}/>
   <Route path="/payroll/review" element={<ReviewPayroll/>}/>
   <Route path="/time-attendance" element={<TimeAttendance/>}/>
+  <Route path="/leave" element={<Leave/>}/>
   <Route path="/deductions" element={<Deductions/>}/>
   <Route path="/compensation" element={<Navigate to="/compensation/salary-structure" replace/>}/>
   <Route path="/compensation/salary-structure" element={<Compensation section="salary-structure"/>}/>
