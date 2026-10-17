@@ -14,7 +14,14 @@ export class AccessError extends Error {
 // ---- Synchronized app data: payroll runs, claims, attendance and payroll settings ----
 const forbid = message => new AccessError(message);
 const need = (user, permission, message) => { if (!can(user.role, permission)) throw forbid(message); };
-export const readableKey = (user, key) => !key.startsWith('audit:') && (key !== 'admin:users' || can(user.role, 'users.manage'));
+// Payroll Settings keys: every 'payroll:' key except runs and records, plus the legacy 13th month rules key.
+export const isSettingsKey = key => (key.startsWith('payroll:') && key !== 'payroll:runs' && key !== 'payroll:records') || key === 'compensation:thirteenth-month-rules';
+// The settings values payroll needs for its calculations. Roles without Payroll Settings access read only these,
+// read-only, through GET /app-data?scope=payroll-rules.
+export const PAYROLL_RULE_KEYS = ['payroll:rates', 'payroll:time-settings', 'payroll:holidays', 'payroll:withholding-tax-rules', 'payroll:tax-brackets',
+  'payroll:thirteenth-month-rules', 'compensation:thirteenth-month-rules'];
+export const readableKey = (user, key) => !key.startsWith('audit:') && (key !== 'admin:users' || can(user.role, 'users.manage'))
+  && (!isSettingsKey(key) || can(user.role, 'settings.view'));
 // Key order differs between browsers, so values are compared with sorted keys.
 const stable = value => JSON.stringify(value, (_k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
 const without = (row, keys) => { const copy = { ...row }; for (const k of keys) delete copy[k]; return copy; };
@@ -187,7 +194,7 @@ export async function appDataEvents(user, key, before, after, existed, releasedR
   if (key === 'admin:users') { need(user, 'users.manage'); return []; }
   if (key === 'payroll:runs') return payrollRunEvents(user, before, after, releasedRecentlyBy);
   if (key === 'payroll:records') { if (!can(user.role, 'payroll.generate') && !can(user.role, 'payroll.approve')) throw forbid(); return []; }
-  if (key.startsWith('payroll:') || key === 'compensation:thirteenth-month-rules') return settingsEvents(user, key, before, after);
+  if (isSettingsKey(key)) return settingsEvents(user, key, before, after);
   if (key === 'claims:records') return claimEvents(user, before, after);
   if (key.startsWith('claims:') || key.startsWith('reimbursement:')) { need(user, 'claims.encode'); return []; }
   if (key.startsWith('attendance:')) return attendanceEvents(user, before, after, existed);

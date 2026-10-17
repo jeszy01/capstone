@@ -3,7 +3,7 @@ import cors from 'cors';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { AccessError, FORBIDDEN_MESSAGE, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey } from './accessRules.js';
+import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey } from './accessRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -80,6 +80,12 @@ const appValue = v => {
 };
 
 app.get('/app-data', auth, async (req, res) => {
+  // Read-only payroll rates and rules for computing payroll, without the rest of Payroll Settings.
+  if (req.query.scope === 'payroll-rules') {
+    if (!can(req.user.role, 'payroll.view')) return fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE);
+    const { rows } = await pool.query('select key,value from app_data where key = any($1) and deleted is not true', [PAYROLL_RULE_KEYS]);
+    return res.json({ data: rows.map(({ key, value }) => ({ key, value: appValue(value) })) });
+  }
   const { rows } = await pool.query('select key,value,deleted from app_data');
   res.json({ data: rows.filter(({ key }) => readableKey(req.user, key)).map(({ key, value, deleted }) => ({ key, value: appValue(value), deleted })) });
 });

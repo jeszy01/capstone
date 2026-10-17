@@ -10,6 +10,12 @@ describe('role permissions',()=>{
   for(const permission of ['payroll.generate','payroll.release','claims.encode','claims.approve','claims.pay','attendance.encode','employees.manage','compensation.manage','hmo.manage'] as const)expect(can(permission,'HR Staff')).toBe(true);
   for(const permission of ['payroll.approve','compensation.approve','users.manage','settings.edit','audit.view'] as const)expect(can(permission,'HR Staff')).toBe(false);
  });
+ it('gives Payroll Settings to Admin only',()=>{
+  expect(can('settings.view','Admin')).toBe(true);
+  expect(can('settings.view','HR Staff')).toBe(false);
+  expect(can('settings.edit','HR Staff')).toBe(false);
+  expect(can('payroll.view','HR Staff')).toBe(true);
+ });
  it('denies everything without a signed-in user',()=>{
   expect(can('payroll.view',undefined)).toBe(false);
  });

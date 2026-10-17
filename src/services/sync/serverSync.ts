@@ -1,9 +1,12 @@
 import {apiClient} from '../api/apiClient';
+import {can} from '../../features/auth/permissions';
 
 type PendingWrite={raw?:string;deleted?:boolean};
 // Logs & Audit is kept by the server, so 'audit:' keys are no longer synchronized.
 const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','leave:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
+// Payroll Settings keys: every 'payroll:' key except runs and records, plus the legacy 13th month rules key.
+const settingsKey=(key:string)=>(key.startsWith('payroll:')&&key!=='payroll:runs'&&key!=='payroll:records')||key==='compensation:thirteenth-month-rules';
 // Attendance now comes from HR2; purge the retired manually-entered copies.
 const RETIRED_KEYS=['attendance:records','attendance:schedule'];
 const rawSet=Storage.prototype.setItem;
@@ -62,9 +65,21 @@ export async function hydrateFromServer(reloadOnChange=false){
    if(window.localStorage.getItem(item.key)!==raw){console.log('HYDRATE DIFF',item.key,window.localStorage.getItem(item.key),raw);changed=true}
    rawSet.call(window.localStorage,item.key,raw);
   }
+  // Without Payroll Settings access, payroll reads only the rates and rules it needs, read-only; they are never pushed back.
+  const settingsHidden=!can('settings.view');
+  if(settingsHidden){
+   const rules=await apiClient.get<{data:{key:string;value:unknown}[]}>('/app-data?scope=payroll-rules');
+   for(const item of rules.data){
+    serverKeys.add(item.key);
+    const raw=JSON.stringify(item.value);
+    if(window.localStorage.getItem(item.key)!==raw)changed=true;
+    rawSet.call(window.localStorage,item.key,raw);
+   }
+  }
   for(const key of RETIRED_KEYS)rawRemove.call(window.localStorage,key);
   for(let i=0;i<window.localStorage.length;i++){
    const key=window.localStorage.key(i);
+   if(key&&settingsHidden&&settingsKey(key)&&!serverKeys.has(key)){rawRemove.call(window.localStorage,key);i--;continue}
    if(key&&synced(key)&&!serverKeys.has(key)&&!pending.has(key)){
     const raw=window.localStorage.getItem(key);
     if(raw)schedulePush(key,{raw});
