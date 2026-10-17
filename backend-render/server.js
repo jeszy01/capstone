@@ -3,7 +3,7 @@ import cors from 'cors';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey } from './accessRules.js';
+import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -127,12 +127,17 @@ app.delete('/app-data', auth, async (req, res) => {
   res.status(204).end();
 });
 
+// Optional contact, government ID and bank fields; blank values are stored as null.
+const EMPLOYEE_DETAIL_FIELDS = ['phone', 'address', 'birth_date', 'sss_number', 'philhealth_number', 'pagibig_number', 'tin', 'bank_name', 'bank_account_number'];
+const optionalText = v => typeof v === 'string' && v.trim() ? v.trim().slice(0, 300) : null;
 const empVals = b => [b.employee_number, b.first_name, b.middle_name ?? null, b.last_name, b.email ?? null,
-  b.position ?? null, b.department ?? null, b.hire_date ?? null, b.employment_status ?? null, b.status || 'Active'];
+  b.position ?? null, b.department ?? null, b.hire_date ?? null, b.employment_status ?? null, b.status || 'Active',
+  ...EMPLOYEE_DETAIL_FIELDS.map(field => optionalText(b[field]))];
+await pool.query(EMPLOYEE_DETAIL_FIELDS.map(field => `alter table employees add column if not exists ${field} text;`).join('\n'));
 
-app.get('/employees', auth, allow('employees.view'), async (_req, res) => {
+app.get('/employees', auth, allow('employees.view'), async (req, res) => {
   const { rows } = await pool.query('select * from employees order by employee_number');
-  res.json({ data: rows });
+  res.json({ data: rows.map(row => visibleEmployee(req.user.role, row)) });
 });
 
 app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
@@ -141,9 +146,10 @@ app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
     return fail(res, 400, 'VALIDATION_ERROR', 'Employee number and name are required');
   try {
     const { rows: [r] } = await pool.query(
-      `insert into employees(employee_number,first_name,middle_name,last_name,email,position,department,hire_date,employment_status,status)
-       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`, empVals(b));
-    res.status(201).json({ data: r });
+      `insert into employees(employee_number,first_name,middle_name,last_name,email,position,department,hire_date,employment_status,status,
+       phone,address,birth_date,sss_number,philhealth_number,pagibig_number,tin,bank_name,bank_account_number)
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning *`, empVals(b));
+    res.status(201).json({ data: visibleEmployee(req.user.role, r) });
   } catch (e) {
     if (e.code === '23505') return fail(res, 409, 'DUPLICATE', 'Employee number already exists');
     throw e;
@@ -151,10 +157,17 @@ app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
 });
 
 app.put('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
+  // A role that cannot see government IDs or the bank account number keeps the stored values.
+  const b = { ...req.body };
+  if (!can(req.user.role, 'employees.sensitive.view')) {
+    const { rows: [stored] } = await pool.query('select * from employees where id=$1', [req.params.id]);
+    if (stored) for (const field of SENSITIVE_EMPLOYEE_FIELDS) b[field] = stored[field];
+  }
   const { rows: [r] } = await pool.query(
     `update employees set employee_number=$1,first_name=$2,middle_name=$3,last_name=$4,email=$5,position=$6,
-     department=$7,hire_date=$8,employment_status=$9,status=$10 where id=$11 returning id`,
-    [...empVals(req.body), req.params.id]);
+     department=$7,hire_date=$8,employment_status=$9,status=$10,phone=$11,address=$12,birth_date=$13,sss_number=$14,
+     philhealth_number=$15,pagibig_number=$16,tin=$17,bank_name=$18,bank_account_number=$19 where id=$20 returning id`,
+    [...empVals(b), req.params.id]);
   if (!r) return fail(res, 404, 'NOT_FOUND', 'Employee not found');
   res.json({ data: { id: r.id } });
 });

@@ -6,14 +6,20 @@ import {listRows,insertRow,updateRows,deleteRows} from "../../lib/database";
 import {audit} from "../../lib/audit";
 import {HttpError} from "../../lib/errors";
 import type {Employee} from "../../lib/types";
+import {can} from "../../lib/permissions";
 
-const FIELDS=["employee_number","first_name","middle_name","last_name","email","phone","address","birth_date","hire_date","employment_status","employment_type","position","department","status"];
+const FIELDS=["employee_number","first_name","middle_name","last_name","email","phone","address","birth_date","hire_date","employment_status","employment_type","position","department","status","sss_number","philhealth_number","pagibig_number","tin","bank_name","bank_account_number"];
+// Government IDs and the bank account number are returned only to roles with employees.sensitive.view.
+const SENSITIVE=["sss_number","philhealth_number","pagibig_number","tin","bank_account_number"];
 const pick=(input:Record<string,unknown>)=>Object.fromEntries(Object.entries(input).filter(([k])=>FIELDS.includes(k)));
 
 export default verifiedEdge(async ctx=>{
  requirePbmsRole(ctx,["admin","hr_staff"]);
  const method=ctx.request.method;
- if(method==="GET")return ok(await listRows<Employee>("employees"));
+ if(method==="GET"){
+  const rows=await listRows<Employee>("employees");
+  return ok(can(ctx.pbmsRole,"employees.sensitive.view")?rows:rows.map(row=>Object.fromEntries(Object.entries(row).filter(([key])=>!SENSITIVE.includes(key)))));
+ }
  if(method==="POST"){
   const input=pick(await body<Record<string,unknown>>(ctx.request));
   required(input.employee_number,"employee_number");

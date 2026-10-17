@@ -6,6 +6,10 @@ export const PERMISSIONS = JSON.parse(readFileSync(new URL('./permissions.json',
 export const ROLE_LABELS = { admin: 'Admin', hr_staff: 'HR Staff' };
 export const roleKey = role => { const r = String(role ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_'); return r === 'hr' ? 'hr_staff' : r; };
 export const can = (role, permission) => (PERMISSIONS[roleKey(role)] ?? []).includes(permission);
+// Government IDs and the bank account number are returned only to roles with employees.sensitive.view.
+export const SENSITIVE_EMPLOYEE_FIELDS = ['sss_number', 'philhealth_number', 'pagibig_number', 'tin', 'bank_account_number'];
+export const visibleEmployee = (role, row) => can(role, 'employees.sensitive.view') ? row
+  : Object.fromEntries(Object.entries(row).filter(([key]) => !SENSITIVE_EMPLOYEE_FIELDS.includes(key)));
 export const FORBIDDEN_MESSAGE = 'You do not have permission to perform this action.';
 export class AccessError extends Error {
   constructor(message = FORBIDDEN_MESSAGE) { super(message); this.status = 403; this.code = 'FORBIDDEN'; }
