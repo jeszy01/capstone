@@ -61,13 +61,13 @@ app.post('/auth-login', async (req, res) => {
   if (!u || u.status !== 'active' || !verify(pw, u.password_hash))
     return fail(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
   const token = jwt.sign({ sub: u.id, employee_id: u.employee_id, role: u.role }, JWT_SECRET, { expiresIn: '8h' });
-  res.json({ data: { token, user: { id: u.id, employeeId: u.employee_id, name: u.name || u.email,
+  res.json({ data: { token, user: { id: u.id, employeeId: u.employee_id, name: u.name || u.email, displayName: u.display_name || null,
     role: ROLE_LABELS[roleKey(u.role)] ?? 'HR Staff' } } });
 });
 
 app.get('/current-user', auth, (req, res) => {
-  const { id, name, email, employee_id, role } = req.user;
-  res.json({ data: [{ id, name, email, employee_id, role }] });
+  const { id, name, display_name, email, employee_id, role } = req.user;
+  res.json({ data: [{ id, name, display_name, email, employee_id, role }] });
 });
 
 const okKey = k => typeof k === 'string' && k.length <= 200 && PREFIXES.some(p => k.startsWith(p));
@@ -174,6 +174,7 @@ await pool.query(`
   alter table users add column if not exists updated_at timestamptz not null default now();
   alter table users add column if not exists otp_enabled boolean not null default true;
   alter table users add column if not exists passkey_hash text;
+  alter table users add column if not exists display_name text;
   alter table users add column if not exists passkey_failed_attempts integer not null default 0;
   alter table users add column if not exists passkey_locked_until timestamptz;
   alter table employees add column if not exists salary_grade_id uuid;
@@ -549,6 +550,13 @@ app.post('/account', auth, async (req, res) => {
     await audit('account.session.signed_out', user.id, 'user_sessions', ctx.sessionId);
     return ok(res, { signed_out: true });
   }
+  // Each user sets only their own display name; it is shown in the header profile button.
+  if (action === 'set_display_name') {
+    const displayName = required(body.display_name, 'display_name').slice(0, 80);
+    await updateRows('users', { id: user.id }, { display_name: displayName, updated_at: new Date().toISOString() });
+    await audit('account.display_name.changed', user.id, 'users', user.id, { previous: user.display_name ?? null, next: displayName });
+    return ok(res, { display_name: displayName });
+  }
   if (action === 'verify_passkey') {
     // 'settings' confirms Payroll Settings changes; it is accepted here only (the eProvider function knows export and release).
     const purpose = ['export', 'release', 'settings'].includes(body.purpose) ? body.purpose : null;
@@ -626,9 +634,9 @@ async function createAccount(values) {
       `select coalesce(max(substring(employee_id from '^USR-([0-9]+)$')::int), 0) as highest from users`);
     const now = new Date().toISOString();
     const { rows: [row] } = await client.query(
-      `insert into users(employee_id,name,email,role,status,password_hash,created_at,updated_at)
-       values($1,$2,$3,$4,'active',$5,$6,$6) returning *`,
-      [`USR-${String(highest + 1).padStart(4, '0')}`, values.name, values.email, values.role, values.password_hash, now]);
+      `insert into users(employee_id,name,display_name,email,role,status,password_hash,created_at,updated_at)
+       values($1,$2,$3,$4,$5,'active',$6,$7,$7) returning *`,
+      [`USR-${String(highest + 1).padStart(4, '0')}`, values.name, values.display_name, values.email, values.role, values.password_hash, now]);
     await client.query('commit');
     return row;
   } catch (e) {
@@ -636,7 +644,7 @@ async function createAccount(values) {
     throw e;
   } finally { client.release(); }
 }
-const publicUser = u => ({ id: u.id, employee_id: u.employee_id, name: u.name ?? null, email: u.email, role: roleKey(u.role), status: String(u.status).toLowerCase() });
+const publicUser = u => ({ id: u.id, employee_id: u.employee_id, name: u.name ?? null, display_name: u.display_name ?? null, email: u.email, role: roleKey(u.role), status: String(u.status).toLowerCase() });
 const isActive = u => String(u.status).toLowerCase() === 'active';
 const accountLabel = u => `${u.name || u.email} (${u.email})`;
 const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -698,13 +706,14 @@ app.post('/users', auth, allow('users.manage'), async (req, res) => {
     return ok(res, { deleted: true, id: target.id });
   }
   const name = required(body.name, 'name');
+  const displayName = required(body.display_name, 'display_name').slice(0, 80);
   const email = required(body.email, 'email').toLowerCase();
   const password = required(body.password, 'password');
   const newRole = accountRole(body.role ?? 'hr_staff');
   if (!VALID_EMAIL.test(email)) throw new HttpError(400, 'INVALID_EMAIL', 'Enter a valid email address.');
   if (password.length < 8) throw new HttpError(400, 'WEAK_PASSWORD', 'Password must be at least 8 characters.');
   if (await first('users', { email })) throw new HttpError(409, 'DUPLICATE_EMAIL', 'A user with this email already exists.');
-  const row = await createAccount({ name, email, role: newRole, password_hash: hash(password) });
+  const row = await createAccount({ name, display_name: displayName, email, role: newRole, password_hash: hash(password) });
   await log('user.created', row.id, `Created ${ROLE_LABELS[newRole]} account for ${accountLabel(row)}.`);
   // OTP is disabled on this backup, so no verification email is sent.
   created(res, { user: publicUser(row), otp_sent: false, otp_disabled: true, challenge_id: null, emailId: null });

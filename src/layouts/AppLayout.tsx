@@ -4,7 +4,7 @@ import {useState,useEffect,useRef} from 'react';
 import {Bell,ChevronDown,Search,Menu,ChevronRight,House,ShieldCheck,ClipboardList,LogOut,FileText,Wallet,Sun,Moon} from 'lucide-react';
 import {Sidebar} from '../components/navigation/Sidebar';
 import {titles,modules} from '../components/navigation/navConfig';
-import {getCurrentUser,logout} from '../features/auth/authService';
+import {CURRENT_USER_EVENT,getCurrentUser,logout,profileName} from '../features/auth/authService';
 import {can} from '../features/auth/permissions';
 import {accountService} from '../features/auth/accountService';
 import {PasskeyGateHost} from '../features/auth/passkeyGate';
@@ -34,7 +34,10 @@ export default function AppLayout(){
  return()=>{window.clearTimeout(timer);events.forEach(e=>window.removeEventListener(e,reset))};
 },[navigate]);
  const title=titles[pathname]??'PBMS';
- const user=getCurrentUser(),userName=user?.name||'User';
+ // Re-read the signed-in user when their details change, e.g. a new display name.
+ const[user,setUser]=useState(getCurrentUser);
+ useEffect(()=>{const sync=()=>setUser(getCurrentUser());window.addEventListener(CURRENT_USER_EVENT,sync);return()=>window.removeEventListener(CURRENT_USER_EVENT,sync)},[]);
+ const userName=profileName(user)||'User';
  const parent=modules.find(module=>module.children?.some(child=>pathname===child.to||pathname.startsWith(`${child.to}/`)));
  const go=(path:string)=>{setAdminOpen(false);navigate(path)};
  const openNotification=(notification:NotificationItem)=>{setReadNotifications(current=>current.includes(notification.id)?current:[...current,notification.id]);setNotificationsOpen(false);navigate(notification.to)};

@@ -22,15 +22,25 @@ export type LoginResult=LoginChallenge|Session;
 export async function login(email:string,password:string):Promise<LoginResult>{if(!email||!password)throw new Error('Email and password are required.');const result=await edgePost<LoginResult>('auth-login',{email,password});if('token' in result){write('session:token',result.token);write('session:user',result.user)}return result}
 export async function verifyOtp(employeeId:string,code:string,challengeId:string):Promise<Session>{if(!employeeId)throw new Error('Your login challenge is missing. Please start again.');if(code.length!==6)throw new Error('Enter the 6-digit code.');const s=await edgePost<Session>('auth-verify-otp',{employee_id:employeeId,code,challenge_id:challengeId});write('session:token',s.token);write('session:user',s.user);return s}
 export const getCurrentUser=()=>read<Session['user']|null>('session:user',null); export const logout=()=>{remove('session:token');remove('session:user')};
+/** The name shown in the header profile button: the display name, or the full name when none is set. */
+export const profileName=(user:Session['user']|null)=>user?.displayName?.trim()||user?.name||'';
+export const CURRENT_USER_EVENT='pbms:current-user';
+/** Updates the signed-in user's stored details and tells the header to re-render. */
+export function updateCurrentUser(patch:Partial<Session['user']>){
+ const current=getCurrentUser();if(!current)return;
+ write('session:user',{...current,...patch});
+ window.dispatchEvent(new Event(CURRENT_USER_EVENT));
+}
 
-/** Re-reads the signed-in user's role and name from the server; returns true when they changed. */
+/** Re-reads the signed-in user's role, name and display name from the server; returns true when they changed. */
 export async function refreshCurrentUser():Promise<boolean>{
  const current=getCurrentUser();if(!current)return false;
- const response=await apiClient.get<{data:Array<{id:string;name?:string|null;email?:string|null;employee_id:string;role:string}>}>('/current-user');
+ const response=await apiClient.get<{data:Array<{id:string;name?:string|null;display_name?:string|null;email?:string|null;employee_id:string;role:string}>}>('/current-user');
  const row=response.data[0];if(!row)return false;
  const role=row.role.toLowerCase()==='admin'?'Admin':'HR Staff';
  const name=row.name||row.email||current.name;
- if(role===current.role&&name===current.name)return false;
- write('session:user',{...current,role,name});
+ const displayName=row.display_name===undefined?current.displayName??null:row.display_name;
+ if(role===current.role&&name===current.name&&displayName===(current.displayName??null))return false;
+ write('session:user',{...current,role,name,displayName});
  return true;
 }

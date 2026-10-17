@@ -38,6 +38,7 @@ export const accountService={
   throw cause;
  }),
  revokeOtherSessions:(currentPassword:string)=>post({action:'revoke_other_sessions',current_password:currentPassword}),
+ setDisplayName:(displayName:string)=>apiClient.post<Record<string,unknown>,{data:{display_name:string}}>('/account',{action:'set_display_name',display_name:displayName}).then(response=>response.data.display_name),
  // keepalive lets the request finish while the page navigates to sign-in.
  signOut:()=>apiClient.post<Record<string,unknown>,unknown>('/account',{action:'sign_out'},{keepalive:true}),
 };
