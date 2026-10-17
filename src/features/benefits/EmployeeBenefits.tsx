@@ -4,7 +4,7 @@ import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,Page
 import {ViewToggle,cell,flushCard,formatDate,localToday,rowHeader,tableHead} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
-import {getCurrentUser} from '../auth/authService';
+import {can} from '../auth/permissions';
 import {recordAudit} from '../audit/auditService';
 import {benefitCategories,benefitTemplates,defaultValueType,hasAmount,eligibilityProblems,eligibleStatusOptions,enrollmentState,hasOpenEnrollment,loadEnrollments,loadPrograms,programEligibility,programValue,saveEnrollments,savePrograms,valueTypeLabels} from './benefitTypes';
 import type {BenefitCategory,BenefitEnrollment,BenefitProgram,BenefitValueType} from './benefitTypes';
@@ -16,7 +16,8 @@ const stateClass={Active:'bg-emerald-50 text-emerald-700',Scheduled:'bg-blue-50 
 
 export default function EmployeeBenefits(){
  const today=localToday();
- const isAdmin=getCurrentUser()?.role==='Admin';
+ // HR Staff manage benefit programs and enrollments; an Admin views them.
+ const canManage=can('hmo.manage');
  const[employees,setEmployees]=useState<Employee[]>([]);
  const[programs,setPrograms]=useState<BenefitProgram[]>(loadPrograms);
  const[enrollments,setEnrollments]=useState<BenefitEnrollment[]>(loadEnrollments);
@@ -61,8 +62,8 @@ export default function EmployeeBenefits(){
 
  return <div className="space-y-5">
   <PageHeader title="Employee Benefits" description="Company benefit programs and the employees enrolled in each." actions={<>
-   {isAdmin&&<button type="button" className={ghost} onClick={()=>setEditing('new')}><Plus size={15}/>Add Program</button>}
-   <Button disabled={!activePrograms.length} title={activePrograms.length?undefined:'Add an active benefit program first.'} onClick={()=>setEnrolling(true)}><UserPlus size={15}/>Enroll Employee</Button>
+   {canManage&&<button type="button" className={ghost} onClick={()=>setEditing('new')}><Plus size={15}/>Add Program</button>}
+   {canManage&&<Button disabled={!activePrograms.length} title={activePrograms.length?undefined:'Add an active benefit program first.'} onClick={()=>setEnrolling(true)}><UserPlus size={15}/>Enroll Employee</Button>}
   </>}/>
   {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}
   <Card className={flushCard}>
@@ -76,7 +77,7 @@ export default function EmployeeBenefits(){
    <section role="tabpanel" aria-label={view==='enrollments'?'Employee enrollments':'Benefit programs'} className="min-w-0">
     {loading?<LoadingState>Loading employee benefits…</LoadingState>:view==='enrollments'
      ?<EnrollmentsTable enrollments={enrollments} employees={employees} programs={programs} programById={programById} today={today} onEnd={setEnding}/>
-     :<ProgramsTable programs={programs} isAdmin={isAdmin} openCount={openCount} onEdit={setEditing} onActivate={program=>setProgramStatus(program,'Active')} onDeactivate={setDeactivating}/>}
+     :<ProgramsTable programs={programs} canManage={canManage} openCount={openCount} onEdit={setEditing} onActivate={program=>setProgramStatus(program,'Active')} onDeactivate={setDeactivating}/>}
    </section>
   </Card>
   {editing&&<ProgramModal program={editing==='new'?null:editing} programs={programs} onClose={()=>setEditing(null)} onSave={saveProgram}/>}
@@ -118,23 +119,23 @@ function EnrollmentsTable({enrollments,employees,programs,programById,today,onEn
      <td className={`${cell} whitespace-nowrap text-slate-600`}>{formatDate(item.effectiveDate)}</td>
      <td className={`${cell} whitespace-nowrap text-slate-600`}>{item.endDate?formatDate(item.endDate):'—'}</td>
      <td className={cell}><span className={`${badge} ${stateClass[current]}`}>{current}</span></td>
-     <td className={cell}>{item.status==='Active'?<button type="button" className={ghost} onClick={()=>onEnd(item)}>End</button>:<span className="text-[12px] text-slate-400">—</span>}</td>
+     <td className={cell}>{item.status==='Active'&&can('hmo.manage')?<button type="button" className={ghost} onClick={()=>onEnd(item)}>End</button>:<span className="text-[12px] text-slate-400">—</span>}</td>
     </tr>})}</tbody></table></div>
  </>;
 }
 
-function ProgramsTable({programs,isAdmin,openCount,onEdit,onActivate,onDeactivate}:{programs:BenefitProgram[];isAdmin:boolean;openCount:(id:string)=>number;onEdit:(program:BenefitProgram)=>void;onActivate:(program:BenefitProgram)=>void;onDeactivate:(program:BenefitProgram)=>void}){
+function ProgramsTable({programs,canManage,openCount,onEdit,onActivate,onDeactivate}:{programs:BenefitProgram[];canManage:boolean;openCount:(id:string)=>number;onEdit:(program:BenefitProgram)=>void;onActivate:(program:BenefitProgram)=>void;onDeactivate:(program:BenefitProgram)=>void}){
  const rows=[...programs].sort((a,b)=>(a.status===b.status?0:a.status==='Active'?-1:1)||a.name.localeCompare(b.name));
  return <div role="region" aria-label="Benefit programs table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[860px] text-left text-[13px]"><caption className="sr-only">Benefit programs with category, value, eligibility, active enrollments, status and actions.</caption>
-  <thead><tr className={tableHead}>{['Program','Category','Value','Eligibility','Enrolled','Status',...(isAdmin?['Actions']:[])].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Enrolled'?'text-right':''}`}>{header}</th>)}</tr></thead>
-  <tbody>{rows.length===0?<tr><td colSpan={isAdmin?7:6}><Empty>{isAdmin?'No benefit programs yet. Use Add Program to create the first one.':'No benefit programs yet. An Admin can add them.'}</Empty></td></tr>:rows.map(program=><tr key={program.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
+  <thead><tr className={tableHead}>{['Program','Category','Value','Eligibility','Enrolled','Status',...(canManage?['Actions']:[])].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Enrolled'?'text-right':''}`}>{header}</th>)}</tr></thead>
+  <tbody>{rows.length===0?<tr><td colSpan={canManage?7:6}><Empty>{canManage?'No benefit programs yet. Use Add Program to create the first one.':'No benefit programs yet.'}</Empty></td></tr>:rows.map(program=><tr key={program.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
    <th scope="row" className={rowHeader}><div>{program.name}</div>{(program.provider||program.coverage)&&<div className="mt-0.5 max-w-[210px] truncate text-[12px] font-normal text-slate-500" title={[program.provider,program.coverage].filter(Boolean).join(' · ')}>{[program.provider,program.coverage].filter(Boolean).join(' · ')}</div>}</th>
    <td className={`${cell} whitespace-nowrap text-slate-700`}>{program.category}</td>
    <td className={`${cell} whitespace-nowrap tabular-nums text-slate-700`}>{programValue(program)}</td>
    <td className={`${cell} min-w-[150px] max-w-[240px] text-slate-600`}>{programEligibility(program)}</td>
    <td className={`${cell} text-right tabular-nums text-slate-700`}>{openCount(program.id)}</td>
    <td className={cell}><span className={`${badge} ${stateClass[program.status]}`}>{program.status}</span></td>
-   {isAdmin&&<td className={cell}><div className="flex flex-nowrap items-center gap-2"><button type="button" aria-label={`Edit ${program.name}`} title="Edit" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" onClick={()=>onEdit(program)}><Pencil size={15}/></button>{program.status==='Active'?<button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} onClick={()=>onDeactivate(program)}>Deactivate</button>:<button type="button" className={ghost} onClick={()=>onActivate(program)}>Activate</button>}</div></td>}
+   {canManage&&<td className={cell}><div className="flex flex-nowrap items-center gap-2"><button type="button" aria-label={`Edit ${program.name}`} title="Edit" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" onClick={()=>onEdit(program)}><Pencil size={15}/></button>{program.status==='Active'?<button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} onClick={()=>onDeactivate(program)}>Deactivate</button>:<button type="button" className={ghost} onClick={()=>onActivate(program)}>Activate</button>}</div></td>}
   </tr>)}</tbody></table></div>;
 }
 

@@ -4,6 +4,7 @@ import {ChevronDown,ChevronRight} from 'lucide-react';
 import {overview,modules,type NavItem} from './navConfig';
 import {SlidersHorizontal} from 'lucide-react';
 import {getCurrentUser} from '../../features/auth/authService';
+import {can,canOpen} from '../../features/auth/permissions';
 
 const base='flex w-full items-center gap-3 rounded-xl px-3 py-3 text-[13px] font-medium text-[#c5d0e3] transition-colors hover:bg-white/7 hover:text-white';
 const active='bg-[#203f69] text-white shadow-[inset_3px_0_0_#60a5fa]';
@@ -33,8 +34,12 @@ function Group({item,collapsed}:{item:NavItem;collapsed:boolean}){
   </>;
 }
 
+// Menu items the signed-in role cannot open are hidden.
+const visible=(items:NavItem[]):NavItem[]=>items.filter(item=>canOpen(item.to)).map(item=>item.children?{...item,children:item.children.filter(child=>canOpen(child.to))}:item);
+
 export function Sidebar({onNavigate}:{onNavigate?:()=>void}){
   const[collapsed,setCollapsed]=useState(false);
+  const user=getCurrentUser();
   return <aside className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-y-auto bg-[#10243f] px-4 py-5 text-white transition-[width] duration-200 ${collapsed?'w-[84px]':'w-[248px]'}`}>
     <div className={`flex items-center gap-2.5 pb-4 pt-1 ${collapsed?'justify-center px-0':'px-1.5'}`}>
       <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-white p-0.5"><img src="/logo.png" alt="" className="h-full w-full object-contain"/></div>
@@ -42,17 +47,17 @@ export function Sidebar({onNavigate}:{onNavigate?:()=>void}){
     </div>
     <nav onClick={event=>{if((event.target as HTMLElement).closest('a'))onNavigate?.()}} className="flex-1 overflow-y-auto">
       {!collapsed&&<div className="mx-2 mb-1.5 mt-3.5 text-[10px] font-semibold tracking-[0.16em] text-[#8e9bbd]">OVERVIEW</div>}
-      {overview.map(item=><Link key={item.to} item={item} collapsed={collapsed}/>)}
+      {visible(overview).map(item=><Link key={item.to} item={item} collapsed={collapsed}/>)}
       {!collapsed&&<div className="mx-2 mb-1.5 mt-3.5 text-[10px] font-semibold tracking-[0.16em] text-[#8e9bbd]">MODULES</div>}
-      {modules.map(item=>item.children?<Group key={item.label} item={item} collapsed={collapsed}/>:<Link key={item.to} item={item} collapsed={collapsed}/>)}
-      {(getCurrentUser()?.role==='Admin'||getCurrentUser()?.role==='HR Staff')&&<>
+      {visible(modules).map(item=>item.children?<Group key={item.label} item={item} collapsed={collapsed}/>:<Link key={item.to} item={item} collapsed={collapsed}/>)}
+      {can('settings.view')&&<>
   <div className="mx-2 my-3 border-t border-white/20"/>
   <Link item={{label:'Payroll Settings',to:'/payroll-settings',icon:SlidersHorizontal}} collapsed={collapsed}/>
 </>}
     </nav>
     <div className={`mt-4 flex items-center rounded-xl border border-white/10 bg-[#10243f] p-1.5 ${collapsed?'justify-center':'gap-2'}`}>
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white shadow-lg">A</div>
-      {!collapsed&&<div className="min-w-0 flex-1"><div className="truncate text-[12px] font-semibold text-white">Admin</div><div className="truncate text-[10px] text-blue-100/80">Admin</div></div>}
+      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white shadow-lg">{(user?.name||'U').charAt(0).toUpperCase()}</div>
+      {!collapsed&&<div className="min-w-0 flex-1"><div className="truncate text-[12px] font-semibold text-white">{user?.name}</div><div className="truncate text-[10px] text-blue-100/80">{user?.role}</div></div>}
       <button type="button" aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'} onClick={()=>setCollapsed(value=>!value)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/15 bg-[#10243f] text-lg leading-none text-blue-50 transition hover:bg-[#17345b]">{collapsed?'»':'«'}</button>
     </div>
   </aside>;

@@ -46,7 +46,7 @@ async function request<T>(
         'Your session is invalid or expired. Please sign out and sign in again, then complete OTP verification.';
     }
 
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: response.status });
   }
 
   return response.status === 204

@@ -1,4 +1,5 @@
 import {read,write} from '../../utils/storage';
+import {can} from '../auth/permissions';
 import type {BonusIncentive} from './compensationState';
 
 export interface AllowanceType{id:string;name:string}
@@ -8,7 +9,7 @@ const DEFAULT_ALLOWANCE_TYPES:AllowanceType[]=['Transportation','Rice Subsidy','
 export const loadAllowanceTypes=():AllowanceType[]=>{
  const saved=read<Array<AllowanceType&{deMinimisCapId?:string}>|null>(ALLOWANCE_TYPES_KEY,null);
  if(!saved)return DEFAULT_ALLOWANCE_TYPES;
- if(saved.some(type=>'deMinimisCapId' in type)){const cleaned=saved.map(({id,name})=>({id,name}));write(ALLOWANCE_TYPES_KEY,cleaned);return cleaned}
+ if(saved.some(type=>'deMinimisCapId' in type)){const cleaned=saved.map(({id,name})=>({id,name}));if(can('compensation.manage'))write(ALLOWANCE_TYPES_KEY,cleaned);return cleaned}
  return saved;
 };
 export const saveAllowanceTypes=(types:AllowanceType[])=>write(ALLOWANCE_TYPES_KEY,types);

@@ -9,10 +9,10 @@ import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFo
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
-import {recordAudit} from '../audit/auditService';
 import {confirmWithPasskey} from '../auth/passkeyGate';
+import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
-import {RUNS_KEY,decideRun,isThirteenthMonthRun,payRun,periodLabel,runLabel,runTaxPeriod} from './payrollRuns';
+import {RUNS_KEY,decideRun,isThirteenthMonthRun,payRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,PayrollRunType,RunRow,PaymentMethod} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
@@ -50,7 +50,7 @@ export default function ReviewPayroll(){
  const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
  const[paying,setPaying]=useState(false),[paymentBusy,setPaymentBusy]=useState(false),[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
  const[loanError,setLoanError]=useState('');
- const pay=async()=>{if(!saved)return;if(!await confirmWithPasskey('release',`Release ${runLabel(saved)} to Finance`))return;setPaymentBusy(true);setError('');try{const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');recordAudit({action:'Released payroll to Finance',module:'Payroll',description:`Released ${runLabel(saved)} to Finance (${method}) after passkey confirmation.`});nav('/payroll')}catch(cause){setError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setPaymentBusy(false)}};
+ const pay=async()=>{if(!saved)return;if(!await confirmWithPasskey('release',`Release ${runLabel(saved)} to Finance`))return;setPaymentBusy(true);setError('');try{const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.');nav('/payroll')}catch(cause){setError(cause instanceof Error?cause.message:'Payroll payment could not be recorded.')}finally{setPaymentBusy(false)}};
  const priorHistory=(employeeId:string):AnnualTaxHistory=>{
   const year=from.slice(0,4);const priorRuns=read<PayrollRun[]>(RUNS_KEY,[]).filter(run=>run.status==='Approved'&&run.from.slice(0,4)===year&&run.to<from);
   return priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===employeeId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{
@@ -161,7 +161,6 @@ const built:RunRow[]=[];
   }
   const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,payDate,settings:payrollSettingsSnapshot(to),status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
   write(RUNS_KEY,[...runs,run]);
-  recordAudit({action:'Submitted payroll for approval',module:'Payroll',description:`Submitted payroll for ${title} (${rows.length} employees).`});
   nav('/payroll');
  };
  const decide=(status:'Approved'|'Rejected')=>{
@@ -173,19 +172,19 @@ const built:RunRow[]=[];
  return <div className="space-y-4">
   <style>{`.paper table{border-collapse:collapse;width:100%}.paper th,.paper td{border:1px solid #d7e0ed;padding:7px 8px;font-size:11px;color:#0f172a}.paper th{background:#f1f6fc;text-align:center;font-weight:600}.paper td.n{text-align:right;font-variant-numeric:tabular-nums}.paper-input{width:72px;border:1px solid #cbd5e1;border-radius:6px;padding:4px 5px;text-align:right;font-size:11px}.paper tbody tr:hover{background:#f8fbff}@media print{@page{size:landscape;margin:8mm}aside,header,.no-print{display:none!important}.paper{box-shadow:none!important;border:0!important;padding:0!important}.paper th,.paper td{padding:3px 4px;font-size:8px}.paper-input{width:52px;border:0!important;padding:0!important;background:transparent!important;font-size:8px}}`}</style>
   <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
-   <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title||'Payroll entry'}</div></div>{saved&&<span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${saved.status==='Approved'?'bg-emerald-100 text-emerald-800':saved.status==='Rejected'?'bg-rose-100 text-rose-800':'bg-amber-100 text-amber-800'}`}>{saved.status}</span>}</div>
+   <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title||'Payroll entry'}</div></div>{saved&&<span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${saved.status==='Approved'?'bg-emerald-100 text-emerald-800':saved.status==='Rejected'?'bg-rose-100 text-rose-800':'bg-amber-100 text-amber-800'}`}>{runStatusLabel(saved)}</span>}</div>
    <div className="flex flex-wrap gap-2">
     <button className={ghost} onClick={()=>window.print()}>Print</button>
-    {!saved&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
-    {saved&&saved.status==='Pending Approval'&&user?.role==='Admin'&&<><button className={ghost} onClick={()=>decide('Rejected')}>Reject</button><Button onClick={()=>decide('Approved')}>Approve</Button></>}
-   {saved&&saved.status==='Approved'&&!saved.paidAt&&user?.role==='Admin'&&<Button onClick={()=>setPaying(true)}>Proceed to Payment</Button>}
+    {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
+    {saved&&saved.status==='Pending Approval'&&can('payroll.approve')&&<><button className={ghost} onClick={()=>decide('Rejected')}>Reject</button><Button onClick={()=>decide('Approved')}>Approve</Button></>}
+   {saved&&saved.status==='Approved'&&!saved.paidAt&&can('payroll.release')&&<Button onClick={()=>setPaying(true)}>Proceed to Payment</Button>}
    </div>
   </div>
   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
   {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
   {!loading&&rows.length>0&&<div className="no-print grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Employees</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{rows.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gross compensation</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{peso(totals.gross)}</div></div><div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Net pay</div><div className="mt-1 text-[22px] font-semibold text-blue-800">{peso(totals.net)}</div><div className="mt-1 text-[10px] text-slate-500">Total deductions · {peso(totals.deductions)}</div></div></div>}
   {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_28px_rgba(23,52,91,0.06)]">
-   <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title||'-'}</div>{payDate&&!thirteenth&&<div className="text-[11px]">Pay Date: {periodLabel(payDate,payDate).split(' - ')[0]}</div>}{saved&&<div className="text-[11px]">Status: {saved.status}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
+   <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title||'-'}</div>{payDate&&!thirteenth&&<div className="text-[11px]">Pay Date: {periodLabel(payDate,payDate).split(' - ')[0]}</div>}{saved&&<div className="text-[11px]">Status: {runStatusLabel(saved)}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
    {!saved&&<p className="no-print mb-3 text-[10px] leading-relaxed text-slate-600">For new hires with another employer this calendar year, enter that employer’s taxable compensation (after mandatory contributions and eligible exemptions), 13th-month/other-benefits paid, tax withheld, and related payroll-period count in the prior-employer columns. Use verified year-to-date amounts; leave at zero when not applicable. These figures are used only for cumulative/annualized withholding, not added to this payroll’s gross pay. HR-approved employee loans and cash advances are loaded from the database into the four loan deduction columns; those amounts are locked so they cannot be double-entered.</p>}
    {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>{thirteenth?'No eligible employees with 13th month pay due.':'No employees with an assigned salary for this cutoff.'}</Empty>:<>
     <div className="overflow-x-auto rounded-xl border border-slate-200"><table>

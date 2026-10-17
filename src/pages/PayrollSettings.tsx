@@ -3,8 +3,7 @@ import type {ReactNode} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {Pencil,Plus,Trash2} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,Field,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../components/common/ui';
-import {getCurrentUser} from '../features/auth/authService';
-import {recordAudit} from '../features/audit/auditService';
+import {can} from '../features/auth/permissions';
 import {confirmWithPasskey} from '../features/auth/passkeyGate';
 import {employeeService} from '../features/employees/employeeService';
 import {employeePositionOptions} from '../features/employees/positionOptions';
@@ -24,19 +23,12 @@ const SECTIONS:Array<{id:SectionId;label:string}>=[
 ];
 type SectionProps={editing:boolean;canEdit:boolean;onEdit:()=>void;onDone:(message?:string)=>void;onDirty:(dirty:boolean)=>void};
 type RateDraft=Record<keyof PayrollRates,string>;
-type Change=[string,unknown,unknown];
 
 const today=()=>new Date().toISOString().slice(0,10);
 const num=(text:string)=>text.trim()===''?Number.NaN:Number(text);
 const toRateDraft=(rates:PayrollRates)=>Object.fromEntries(Object.entries(rates).map(([key,value])=>[key,String(value)])) as RateDraft;
 const fromRateDraft=(draft:RateDraft,keys:Array<keyof PayrollRates>)=>({...loadRates(),...Object.fromEntries(keys.map(key=>[key,num(draft[key])]))}) as PayrollRates;
-const show=(value:unknown)=>Array.isArray(value)?(value.join(', ')||'none'):typeof value==='boolean'?(value?'Yes':'No'):String(value);
-/** Every save is written to the activity log with the section and each changed value before and after. */
-function logChanges(section:string,changes:Change[]){
- const changed=changes.filter(([,before,after])=>JSON.stringify(before)!==JSON.stringify(after));
- recordAudit({action:'Updated payroll settings',module:'Payroll Settings',description:`${section}: ${changed.length?changed.map(([label,before,after])=>`${label} ${show(before)} → ${show(after)}`).join('; '):'saved without changes'}.`});
-}
-const rateChanges=(fields:RateField[],before:PayrollRates,after:PayrollRates):Change[]=>fields.map(field=>[field.label,before[field.key],after[field.key]]);
+// Each saved change is logged by the server (Logs & Audit) with the user, role and time.
 
 /** Draft state for a section: refreshed from saved settings whenever editing starts or ends. */
 function useDraft<T>(load:()=>T,editing:boolean,onDirty:(dirty:boolean)=>void){
@@ -67,12 +59,11 @@ function RateInput({field,draft,setDraft,editing}:{field:RateField;draft:RateDra
 const fieldOf=(group:keyof typeof RATE_FIELDS,key:keyof PayrollRates)=>RATE_FIELDS[group].find(field=>field.key===key)!;
 
 function WorkingTimeSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){
- const {saved,draft,setDraft}=useDraft(()=>({rates:toRateDraft(loadRates()),time:loadTimeSettings()}),editing,onDirty);
+ const {draft,setDraft}=useDraft(()=>({rates:toRateDraft(loadRates()),time:loadTimeSettings()}),editing,onDirty);
  const keys=RATE_FIELDS.time.map(field=>field.key);
  const save=useSave(()=>[...validateRates(fromRateDraft(draft.rates,keys)),...validateTimeSettings(draft.time)],()=>{
-  const before=loadRates(),after=fromRateDraft(draft.rates,keys);
+  const after=fromRateDraft(draft.rates,keys);
   saveRates(after);saveTimeSettings(draft.time);
-  logChanges('Working Time & Overtime',[...rateChanges(RATE_FIELDS.time,before,after),['Shift start',saved.time.shiftStart,draft.time.shiftStart],['Shift end',saved.time.shiftEnd,draft.time.shiftEnd],['Night differential start',saved.time.ndStart,draft.time.ndStart],['Night differential end',saved.time.ndEnd,draft.time.ndEnd],['Rounding rule',saved.time.otRounding,draft.time.otRounding]]);
   onDone('Working Time & Overtime saved.');
  });
  const rate=(key:keyof PayrollRates)=><RateInput field={fieldOf('time',key)} draft={draft.rates} setDraft={rates=>setDraft({...draft,rates})} editing={editing}/>;
@@ -87,8 +78,8 @@ function PayScheduleSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps
  const {draft,setDraft}=useDraft(()=>toRateDraft(loadRates()),editing,onDirty);
  const keys=RATE_FIELDS.schedule.map(field=>field.key);
  const save=useSave(()=>validateRates(fromRateDraft(draft,keys)),()=>{
-  const before=loadRates(),after=fromRateDraft(draft,keys);
-  saveRates(after);logChanges('Pay Schedule',rateChanges(RATE_FIELDS.schedule,before,after));onDone('Pay Schedule saved.');
+  const after=fromRateDraft(draft,keys);
+  saveRates(after);onDone('Pay Schedule saved.');
  });
  const semiMonthly=draft.payPeriodsPerMonth==='2',endDay=Number(draft.firstCutoffEndDay);
  const cutoffs=semiMonthly?`1st: 1 – ${Number.isFinite(endDay)?endDay:'?'} · 2nd: ${Number.isFinite(endDay)?endDay+1:'?'} – end of month`:'1 – end of month';
@@ -106,12 +97,11 @@ function HolidaySection({editing,canEdit,onEdit,onDone,onDirty,calendarLocked}:S
  const {draft,setDraft}=useDraft(()=>toRateDraft(loadRates()),editing,onDirty);
  const keys=RATE_FIELDS.holiday.map(field=>field.key);
  const save=useSave(()=>validateRates(fromRateDraft(draft,keys)),()=>{
-  const before=loadRates(),after=fromRateDraft(draft,keys);
-  saveRates(after);logChanges('Holiday Pay',rateChanges(RATE_FIELDS.holiday,before,after));onDone('Holiday Pay saved.');
+  const after=fromRateDraft(draft,keys);
+  saveRates(after);onDone('Holiday Pay saved.');
  });
  const [holidays,setHolidays]=useState<Holiday[]>(loadHolidays);
  const [form,setForm]=useState<Holiday|null>(null),[pending,setPending]=useState<{kind:'save'|'delete';holiday:Holiday}|null>(null),[formError,setFormError]=useState('');
- const describe=(holiday:Holiday)=>`${holiday.date} ${holiday.name} (${holiday.type})`;
  // A verified passkey saves the holiday change; Cancel returns to the holiday form with its values.
  const requestChange=async(change:{kind:'save'|'delete';holiday:Holiday})=>{
   setPending(change);
@@ -120,10 +110,8 @@ function HolidaySection({editing,canEdit,onEdit,onDone,onDirty,calendarLocked}:S
   else setPending(null);
  };
  const apply=({kind,holiday}:{kind:'save'|'delete';holiday:Holiday})=>{
-  const previous=holidays.find(item=>item.id===holiday.id);
   const next=kind==='delete'?holidays.filter(item=>item.id!==holiday.id):[...holidays.filter(item=>item.id!==holiday.id),holiday];
   saveHolidays(next);setHolidays(loadHolidays());
-  recordAudit({action:'Updated payroll settings',module:'Payroll Settings',description:kind==='delete'?`Holiday Calendar: deleted ${describe(holiday)}.`:previous?`Holiday Calendar: ${describe(previous)} → ${describe(holiday)}.`:`Holiday Calendar: added ${describe(holiday)}.`});
   setPending(null);setForm(null);
  };
  const submitForm=()=>{
@@ -153,9 +141,8 @@ function ContributionsSection({editing,canEdit,onEdit,onDone,onDirty}:SectionPro
  const [agency,setAgency]=useState<'sss'|'philhealth'|'pagibig'>('sss');
  const fields=[...RATE_FIELDS.sss,...RATE_FIELDS.philhealth,...RATE_FIELDS.pagibig];
  const save=useSave(()=>validateRates(fromRateDraft(draft,fields.map(field=>field.key))),()=>{
-  const before=loadRates(),after=fromRateDraft(draft,fields.map(field=>field.key));
+  const after=fromRateDraft(draft,fields.map(field=>field.key));
   saveRates(after);
-  logChanges('Government Contributions',[...rateChanges(RATE_FIELDS.sss,before,after).map(([label,a,b]):Change=>[`SSS ${label}`,a,b]),...rateChanges(RATE_FIELDS.philhealth,before,after).map(([label,a,b]):Change=>[`PhilHealth ${label}`,a,b]),...rateChanges(RATE_FIELDS.pagibig,before,after).map(([label,a,b]):Change=>[`Pag-IBIG ${label}`,a,b])]);
   onDone('Government Contributions saved.');
  });
  return <SectionShell title="Government Contributions" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}>
@@ -169,7 +156,6 @@ const TABLE_PERIODS:Array<{id:TablePeriod;label:string}>=[{id:'daily',label:'Dai
 const tableOf=(rule:WithholdingTaxRuleSet,period:TablePeriod)=>period==='annual'?rule.annualTable:rule.tables[period];
 const withTable=(rule:WithholdingTaxRuleSet,period:TablePeriod,table:TaxBracket[]):WithholdingTaxRuleSet=>period==='annual'?{...rule,annualTable:table}:{...rule,tables:{...rule.tables,[period]:table}};
 const versionLabel=(rule:WithholdingTaxRuleSet)=>`${rule.effectiveFrom}${rule.effectiveTo?` – ${rule.effectiveTo}`:' onward'}`;
-const tableText=(table:TaxBracket[])=>table.map(row=>`${row.over}/${row.base}/${row.rate}%`).join(', ');
 const numberInput=(value:number)=>Number.isFinite(value)?String(value):'';
 
 function WithholdingSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){
@@ -187,8 +173,6 @@ function WithholdingSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps
   const closed=rules.map(item=>prior.some(old=>old.id===item.id)?{...item,effectiveTo:cutOff.toISOString().slice(0,10)}:item);
   const next=[...closed.filter(item=>item.id!==draft.id&&item.effectiveFrom!==draft.effectiveFrom),draft].sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
   saveWithholdingRules(next);
-  const before=rules.find(item=>item.id===draft.id);
-  logChanges(`Withholding Tax (${newVersion||!before?'new version':'version'} effective ${draft.effectiveFrom})`,[['Effective from',before?.effectiveFrom??'none',draft.effectiveFrom],['Annual 13th month and other benefits exemption',before?.annualBenefitsExemption??'none',draft.annualBenefitsExemption],...TABLE_PERIODS.map(({id,label}):Change=>[`${label} table`,before?tableText(tableOf(before,id)):'none',tableText(tableOf(draft,id))])]);
   setRules(loadWithholdingRules());setSelectedId(draft.id);setNewVersion(false);onDone('Withholding Tax saved.');
  });
  const table=tableOf(rule,period);
@@ -210,12 +194,11 @@ type ThirteenthDraft=Omit<ThirteenthMonthRules,'minimumServiceMonths'|'installme
 const EXCLUSIONS:Array<[keyof Pick<ThirteenthMonthRules,'excludeAllowances'|'excludeOvertime'|'excludeHolidayPay'|'excludeNightDifferential'>,string]>=[['excludeAllowances','Allowances'],['excludeOvertime','Overtime'],['excludeHolidayPay','Holiday pay'],['excludeNightDifferential','Night differential']];
 const checkbox='h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-60';
 function ThirteenthMonthSection({editing,canEdit,onEdit,onDone,onDirty,positions}:SectionProps&{positions:string[]}){
- const {saved,draft,setDraft}=useDraft(():ThirteenthDraft=>{const rules=loadThirteenthMonthRules();return {...rules,minimumServiceMonths:String(rules.minimumServiceMonths),installments:String(rules.installments)}},editing,onDirty);
+ const {draft,setDraft}=useDraft(():ThirteenthDraft=>{const rules=loadThirteenthMonthRules();return {...rules,minimumServiceMonths:String(rules.minimumServiceMonths),installments:String(rules.installments)}},editing,onDirty);
  const parse=(value:ThirteenthDraft):ThirteenthMonthRules=>({...value,minimumServiceMonths:num(value.minimumServiceMonths),installments:num(value.installments)});
  const save=useSave(()=>validateThirteenthMonthRules(parse(draft)),()=>{
-  const before=parse(saved),after=parse(draft);
+  const after=parse(draft);
   saveThirteenthMonthRules(after);
-  logChanges('13th Month Rules',[...EXCLUSIONS.map(([key,label]):Change=>[`${label} excluded`,before[key],after[key]]),['Minimum service (months)',before.minimumServiceMonths,after.minimumServiceMonths],['Managerial positions',before.managerialPositions,after.managerialPositions],['Release deadline',before.releaseDeadline,after.releaseDeadline],['Installments',before.allowInstallments?before.installments:'off',after.allowInstallments?after.installments:'off']]);
   onDone('13th Month Rules saved.');
  });
  const year=new Date().getFullYear();
@@ -237,7 +220,7 @@ function ThirteenthMonthSection({editing,canEdit,onEdit,onDone,onDirty,positions
 
 export default function PayrollSettings(){
  const navigate=useNavigate();
- const canEdit=getCurrentUser()?.role==='Admin';
+ const canEdit=can('settings.edit');
  const [section,setSection]=useState<SectionId>('time');
  const [editing,setEditing]=useState<SectionId|null>(null);
  const [dirty,setDirty]=useState(false);

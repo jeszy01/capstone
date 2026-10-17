@@ -25,6 +25,7 @@ import { hasOpenHmoEnrollment, hmoEligibilityDate, isHmoEmployeeEligible } from 
 import { recordAudit } from "../audit/auditService";
 import { localToday } from "../../components/common/tableUi";
 import { cutoffRange } from "../payroll/payrollRuns";
+import { can } from "../auth/permissions";
 import type {
   HmoDependent,
   HmoEnrollment,
@@ -145,7 +146,7 @@ export default function HmoBenefits({
         }
         description="Manage the company HMO plan, employee enrollment, and dependents."
         actions={
-          !loading && !loadError ? (
+          !loading && !loadError && can("hmo.manage") ? (
             <>
               {tab === "plan" && !plans.length && (
                 <Button onClick={() => setPlanModal(true)}>
@@ -349,7 +350,7 @@ function PlanSection({
             Not configured
           </span>
         </div>
-        {!hasAnyPlan && onCreate && (
+        {!hasAnyPlan && onCreate && can("hmo.manage") && (
           <div className="mt-4">
             <Button onClick={onCreate}>
               <Plus size={15} />
@@ -393,12 +394,14 @@ function PlanSection({
   return (
     <div className="mt-4 space-y-4">
       {" "}
-      <div className="flex justify-end">
-        <Button onClick={onEdit}>
-          <Pencil size={15} />
-          Edit Plan
-        </Button>
-      </div>{" "}
+      {can("hmo.manage") && (
+        <div className="flex justify-end">
+          <Button onClick={onEdit}>
+            <Pencil size={15} />
+            Edit Plan
+          </Button>
+        </div>
+      )}{" "}
       <Card className="overflow-hidden border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 sm:p-5">
         {" "}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1.35fr)_minmax(260px,1fr)] md:items-center">
@@ -1057,7 +1060,7 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
         </div>
       ) : (
         <div className="mt-6 flex flex-wrap justify-end gap-2">
-          {steps.map((step) => step.danger
+          {can("hmo.manage") && steps.map((step) => step.danger
             ? <button key={step.key} type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving} onClick={() => open(step)}>{step.label}</button>
             : <Button key={step.key} disabled={saving} onClick={() => open(step)}>{saving ? "Saving…" : step.label}</Button>)}
           <button type="button" className={ghost} disabled={saving} onClick={onClose}>Close</button>
@@ -1125,7 +1128,7 @@ function PayrollDeductionSection({ enrollments, dependents, employeeMap }: { enr
         <div className="flex flex-wrap items-end gap-2">
           <Field label="From"><TextInput type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></Field>
           <Field label="To"><TextInput type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></Field>
-          <Button disabled={!due.length || Boolean(busy)} onClick={() => void generate()}>{busy === "generate" ? "Creating…" : `Create deductions${due.length ? ` (${due.length})` : ""}`}</Button>
+          {can("hmo.manage") && <Button disabled={!due.length || Boolean(busy)} onClick={() => void generate()}>{busy === "generate" ? "Creating…" : `Create deductions${due.length ? ` (${due.length})` : ""}`}</Button>}
         </div>
       </div>
       {!validRange && <p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">Enter a cutoff whose end date is on or after its start date.</p>}
@@ -1143,7 +1146,7 @@ function PayrollDeductionSection({ enrollments, dependents, employeeMap }: { enr
                   <td className="whitespace-nowrap px-4 py-3">{formatHmoDate(item.periodStart)} – {formatHmoDate(item.periodEnd)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(item.amount)}</td>
                   <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${item.verificationStatus === "Verified" ? "bg-emerald-50 text-emerald-700" : item.verificationStatus === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800"}`}>{item.verificationStatus}</span></td>
-                  <td className="px-4 py-3">{item.verificationStatus === "Pending" ? <Button disabled={Boolean(busy)} onClick={() => void verify(item)}>{busy === item.id ? "Verifying…" : "Verify"}</Button> : <span className="text-[12px] text-[#6b7794]">{item.verifiedAt ? formatHmoDate(item.verifiedAt) : "—"}</span>}</td>
+                  <td className="px-4 py-3">{item.verificationStatus === "Pending" && can("hmo.manage") ? <Button disabled={Boolean(busy)} onClick={() => void verify(item)}>{busy === item.id ? "Verifying…" : "Verify"}</Button> : <span className="text-[12px] text-[#6b7794]">{item.verifiedAt ? formatHmoDate(item.verifiedAt) : "—"}</span>}</td>
                 </tr>
               ))}
           </tbody>

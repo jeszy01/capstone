@@ -4,7 +4,7 @@ import {Button,Card,ConfirmDialog,Empty,ErrorAlert,LoadingState} from '../compon
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {normalizeClaims,saveClaims} from '../features/claims/claimsTypes';
-import {recordAudit} from '../features/audit/auditService';
+import {can} from '../features/auth/permissions';
 import type {ExpenseClaim} from '../features/claims/claimsTypes';
 import {ClaimStatusBadge,EmployeeCell,ViewToggle,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
@@ -24,7 +24,8 @@ export default function Reimbursement(){
   const forReimbursement=claims.filter(item=>item.approvalStatus==='Approved'&&item.paymentStatus==='Unpaid');
   const history=claims.filter(item=>item.paymentStatus!=='Unpaid').sort((a,b)=>b.paymentDate.localeCompare(a.paymentDate));
   const outstanding=forReimbursement.reduce((sum,claim)=>sum+claim.amount,0);
-  const process=(claim:ExpenseClaim)=>{setConfirming(null);if(claim.approvalStatus!=='Approved'||claim.paymentStatus!=='Unpaid')return;update(claim.id,{paymentStatus:'Paid',paymentMethod:'',paymentDate:localToday()});recordAudit({action:'Processed reimbursement',module:'Reimbursement',description:`Processed reimbursement for claim ${claim.claimNumber} (${peso(claim.amount)}).`})};
+  // Marking a claim Paid is logged by the server when the claims are saved; Paid claims are locked.
+  const process=(claim:ExpenseClaim)=>{setConfirming(null);if(claim.approvalStatus!=='Approved'||claim.paymentStatus!=='Unpaid')return;update(claim.id,{paymentStatus:'Paid',paymentMethod:'',paymentDate:localToday()})};
   const list=view==='forReimbursement'?forReimbursement:history;
   return <div className="space-y-5">
     {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}
@@ -54,7 +55,7 @@ function ForReimbursement({claims,employees,onProcess}:{claims:ExpenseClaim[];em
       <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.date)}</td>
       <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
       <td className={cell}><ClaimStatusBadge claim={claim}/></td>
-      <td className={cell}><Button onClick={()=>onProcess(claim)}><Check size={14}/>Process</Button></td>
+      <td className={cell}>{can('claims.pay')&&<Button onClick={()=>onProcess(claim)}><Check size={14}/>Process</Button>}</td>
     </tr>)}</tbody></table></div>;
 }
 

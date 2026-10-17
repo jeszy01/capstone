@@ -1,4 +1,5 @@
 import {read,write} from '../../utils/storage';
+import {can} from '../auth/permissions';
 
 export type PayrollPeriod='daily'|'weekly'|'semi-monthly'|'monthly';
 export interface TaxBracket{over:number;base:number;rate:number}
@@ -35,7 +36,8 @@ export function loadWithholdingRules():WithholdingTaxRuleSet[]{
  // De minimis ceilings are no longer part of Payroll Settings; remove them from saved rule sets.
  if(saved.some(rule=>RETIRED_RULE_FIELDS.some(field=>field in rule))){
   saved=saved.map(rule=>Object.fromEntries(Object.entries(rule).filter(([field])=>!RETIRED_RULE_FIELDS.includes(field))) as unknown as WithholdingTaxRuleSet);
-  write(WITHHOLDING_RULES_KEY,saved);
+  // Only a role that may edit Payroll Settings saves the cleaned rules.
+  if(can('settings.edit'))write(WITHHOLDING_RULES_KEY,saved);
  }
  if(saved.length)return saved.map(rule=>({...DEFAULT_WITHHOLDING_RULES,...rule,tables:{...DEFAULT_WITHHOLDING_RULES.tables,...rule.tables}})).sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
  const legacy=read<TaxBracket[]>('payroll:tax-brackets',[]);

@@ -4,6 +4,7 @@ import {Button,Card,Field,Modal,TextInput,ghost,input} from '../../components/co
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
 import {recordAudit} from '../audit/auditService';
+import {can} from '../auth/permissions';
 import {periodLabel} from '../payroll/payrollRuns';
 import {cutoffFor,cutoffNumberFor,loadRates} from '../settings/payrollSettings';
 import {loadAllowanceTypes,saveAllowanceTypes} from './allowanceRules';
@@ -164,8 +165,8 @@ export function IncentivesPanel({employees,rewards,loading,loadError,canManage,e
  const review=async()=>{
   if(!reviewing)return;const {item,decision}=reviewing;
   const done=await run(async()=>{
+   // The decision is logged by the server.
    await compensationService.reviewReward(item.id,decision);
-   recordAudit({action:`${decision==='approve'?'Approved':'Rejected'} ${item.type.toLowerCase()}`,module:MODULE,description:`${decision==='approve'?'Approved':'Rejected'} ${describe(item)}.`});
   },'The decision could not be saved.');
   if(done){setReviewing(null);onSuccess(`${item.type} ${decision==='approve'?'approved':'rejected'}.`)}
  };
@@ -176,7 +177,7 @@ export function IncentivesPanel({employees,rewards,loading,loadError,canManage,e
   <Card className="mt-3 overflow-hidden !p-0"><div className="overflow-x-auto"><table className={`${tableClass} min-w-[1080px]`}><thead><tr className={headerClass}>{['Employee','Type','Amount','Cutoff','Reason','Taxable','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
    {loading?<TableMessage colSpan={8} loading>Loading incentives and bonuses…</TableMessage>:loadError?<TableMessage colSpan={8}>Incentives and bonuses could not be loaded.</TableMessage>:!shown.length?<TableMessage colSpan={8}>{entries.length?'No entries match this search.':'No incentives or bonuses yet.'}</TableMessage>:shown.map(item=><tr key={item.id} className={rowClass}>
     <td className="px-4 py-3.5 font-semibold text-slate-800">{employeeLabelFor(item.employeeId)}</td><td className="px-4 py-3.5">{item.type}</td><td className="px-4 py-3.5 font-semibold">{peso(item.amount)}</td><td className="px-4 py-3.5 whitespace-nowrap">{periodLabel(item.cutoffStart,item.cutoffEnd)}</td><td className="max-w-[260px] px-4 py-3.5"><span className="line-clamp-2">{item.notes||'Not recorded'}</span></td><td className="px-4 py-3.5">{yesNo(item.taxable)}</td><td className="px-4 py-3.5"><StatusBadge status={item.status}/></td>
-    <td className={actionCell}><RowActions canEdit={canManage} label={item.type} saving={saving} onEdit={()=>{setError('');setConfirmingEdit(false);setEditing({id:item.id,draft:{...item}})}} onDelete={()=>{setError('');setDeleting(item)}}>{canManage&&item.status==='Pending'&&<><Button disabled={saving} aria-label={`Approve ${item.type}`} onClick={()=>{setError('');setReviewing({item,decision:'approve'})}}><CheckCircle2 size={14}/><span className={actionLabel}>Approve</span></Button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Reject ${item.type}`} disabled={saving} onClick={()=>{setError('');setReviewing({item,decision:'reject'})}}><XCircle size={14}/><span className={actionLabel}>Reject</span></button></>}</RowActions></td>
+    <td className={actionCell}><RowActions canEdit={canManage} label={item.type} saving={saving} onEdit={()=>{setError('');setConfirmingEdit(false);setEditing({id:item.id,draft:{...item}})}} onDelete={()=>{setError('');setDeleting(item)}}>{can('compensation.approve')&&item.status==='Pending'&&<><Button disabled={saving} aria-label={`Approve ${item.type}`} onClick={()=>{setError('');setReviewing({item,decision:'approve'})}}><CheckCircle2 size={14}/><span className={actionLabel}>Approve</span></Button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Reject ${item.type}`} disabled={saving} onClick={()=>{setError('');setReviewing({item,decision:'reject'})}}><XCircle size={14}/><span className={actionLabel}>Reject</span></button></>}</RowActions></td>
    </tr>)}
   </tbody></table></div></Card>
   {editing&&!confirmingEdit&&<IncentiveModal key={editing.id??'new'} editing={Boolean(editing.id)} draft={editing.draft} employees={employees} error={error} saving={saving} onClose={()=>{if(!saving)setEditing(null)}} onSave={draft=>{setError('');setEditing({...editing,draft});if(editing.id)setConfirmingEdit(true);else void save(undefined,draft)}}/>}

@@ -3,6 +3,7 @@ import cors from 'cors';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import { AccessError, FORBIDDEN_MESSAGE, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey } from './accessRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -19,6 +20,9 @@ const verify = (pw, stored) => {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
 const fail = (res, status, code, message) => res.status(status).json({ error: { code, message } });
+
+// Route guard backed by the shared permissions map (backend-render/permissions.json).
+const allow = permission => (req, res, next) => can(req.user.role, permission) ? next() : fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE);
 
 await pool.query(`
   create table if not exists users(
@@ -58,7 +62,7 @@ app.post('/auth-login', async (req, res) => {
     return fail(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
   const token = jwt.sign({ sub: u.id, employee_id: u.employee_id, role: u.role }, JWT_SECRET, { expiresIn: '8h' });
   res.json({ data: { token, user: { id: u.id, employeeId: u.employee_id, name: u.name || u.email,
-    role: u.role.toLowerCase() === 'admin' ? 'Admin' : 'HR Staff' } } });
+    role: ROLE_LABELS[roleKey(u.role)] ?? 'HR Staff' } } });
 });
 
 app.get('/current-user', auth, (req, res) => {
@@ -75,37 +79,57 @@ const appValue = v => {
   return v;
 };
 
-app.get('/app-data', auth, async (_req, res) => {
+app.get('/app-data', auth, async (req, res) => {
   const { rows } = await pool.query('select key,value,deleted from app_data');
-  res.json({ data: rows.map(({ key, value, deleted }) => ({ key, value: appValue(value), deleted })) });
+  res.json({ data: rows.filter(({ key }) => readableKey(req.user, key)).map(({ key, value, deleted }) => ({ key, value: appValue(value), deleted })) });
 });
+
+// Every write is checked against the role rules in appDataEvents before it is stored; allowed state changes are logged.
+async function saveAppData(req, key, isDel, value) {
+  const next = isDel ? null : value ?? null;
+  const client = await pool.connect();
+  let events;
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', [`app_data:${key}`]);
+    const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [key]);
+    const existed = Boolean(row && !row.deleted);
+    events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed, releasedRecentlyBy);
+    await client.query(
+      `insert into app_data(key,value,deleted,updated_by) values($1,$2,$3,$4)
+       on conflict(key) do update set value=$2, deleted=$3, updated_at=now(), updated_by=$4`,
+      [key, JSON.stringify(isDel ? {} : next), isDel, req.user.id]);
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  for (const [action, module, entityId, description] of events) await audit(action, req.user.id, module, entityId, { description }, ipDevice(req));
+}
 
 app.post('/app-data', auth, async (req, res) => {
   const { key, value, deleted } = req.body;
   if (!okKey(key)) return fail(res, 400, 'INVALID_DATA_KEY', 'This data key cannot be synchronized');
   const isDel = deleted === true;
-  await pool.query(
-    `insert into app_data(key,value,deleted,updated_by) values($1,$2,$3,$4)
-     on conflict(key) do update set value=$2, deleted=$3, updated_at=now(), updated_by=$4`,
-    [key, JSON.stringify(isDel ? {} : value ?? null), isDel, req.user.id]);
+  await saveAppData(req, key, isDel, value);
   res.json({ data: { key, value: isDel ? null : value, deleted: isDel } });
 });
 
 app.delete('/app-data', auth, async (req, res) => {
   if (!okKey(req.query.key)) return fail(res, 400, 'INVALID_DATA_KEY', 'This data key cannot be synchronized');
-  await pool.query(`update app_data set value='{}', deleted=true, updated_at=now() where key=$1`, [req.query.key]);
+  await saveAppData(req, req.query.key, true, null);
   res.status(204).end();
 });
 
 const empVals = b => [b.employee_number, b.first_name, b.middle_name ?? null, b.last_name, b.email ?? null,
   b.position ?? null, b.department ?? null, b.hire_date ?? null, b.employment_status ?? null, b.status || 'Active'];
 
-app.get('/employees', auth, async (_req, res) => {
+app.get('/employees', auth, allow('employees.view'), async (_req, res) => {
   const { rows } = await pool.query('select * from employees order by employee_number');
   res.json({ data: rows });
 });
 
-app.post('/employees', auth, async (req, res) => {
+app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
   const b = req.body;
   if (!b.employee_number || !b.first_name || !b.last_name)
     return fail(res, 400, 'VALIDATION_ERROR', 'Employee number and name are required');
@@ -120,7 +144,7 @@ app.post('/employees', auth, async (req, res) => {
   }
 });
 
-app.put('/employees/:id', auth, async (req, res) => {
+app.put('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
   const { rows: [r] } = await pool.query(
     `update employees set employee_number=$1,first_name=$2,middle_name=$3,last_name=$4,email=$5,position=$6,
      department=$7,hire_date=$8,employment_status=$9,status=$10 where id=$11 returning id`,
@@ -129,7 +153,7 @@ app.put('/employees/:id', auth, async (req, res) => {
   res.json({ data: { id: r.id } });
 });
 
-app.delete('/employees/:id', auth, async (req, res) => {
+app.delete('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
   await pool.query('delete from employees where id=$1', [req.params.id]);
   res.status(204).end();
 });
@@ -152,6 +176,9 @@ await pool.query(`
   create table if not exists audit_logs(
     id uuid primary key default gen_random_uuid(), action text not null, actor_id uuid, entity text not null,
     entity_id text, metadata jsonb not null default '{}'::jsonb, created_at timestamptz not null default now());
+  alter table audit_logs add column if not exists actor_name text;
+  alter table audit_logs add column if not exists actor_role text;
+  alter table audit_logs add column if not exists ip_device text;
 
   create table if not exists user_sessions(
     id uuid primary key default gen_random_uuid(), user_id uuid not null references users(id) on delete cascade,
@@ -386,19 +413,67 @@ const updateRows = async (table, pk, values) => {
 };
 const deleteRows = async (table, pk) => { const w = where(pk); return { count: (await run(`delete from ${ident(table)}${w.sql}`, w.values)).rowCount }; };
 const first = async (table, filter) => (await listRows(table, filter))[0];
-const audit = (action, actorId, entity, entityId, metadata = {}) =>
-  insertRow('audit_logs', { action, actor_id: actorId ?? null, entity, entity_id: entityId ?? null, metadata, created_at: new Date().toISOString() });
+// The actor's name and role are stored with each entry, so Logs & Audit shows the role held at the time of the action.
+const audit = async (action, actorId, entity, entityId, metadata = {}, device = null) => {
+  const actor = actorId ? await first('users', { id: actorId }).catch(() => undefined) : undefined;
+  return insertRow('audit_logs', { action, actor_id: actorId ?? null, actor_name: actor ? actor.name || actor.email : null, actor_role: actor ? roleKey(actor.role) : null,
+    entity, entity_id: entityId ?? null, metadata, ip_device: device, created_at: new Date().toISOString() });
+};
+const browserOf = agent => /Edg\//.test(agent) ? 'Edge' : /OPR\//.test(agent) ? 'Opera' : /Chrome\//.test(agent) ? 'Chrome' : /Firefox\//.test(agent) ? 'Firefox' : /Safari\//.test(agent) ? 'Safari' : '';
+const ipDevice = req => [String(req.headers['x-forwarded-for'] ?? req.ip ?? '').split(',')[0].trim(), browserOf(String(req.headers['user-agent'] ?? ''))].filter(Boolean).join(' · ') || null;
 const required = (value, name) => {
   if (typeof value !== 'string' || !value.trim()) throw new HttpError(400, 'VALIDATION_ERROR', `${name} is required`);
   return value.trim();
 };
 const ok = (res, data) => res.json({ data });
 const created = (res, data) => res.status(201).json({ data });
-const role = (...roles) => (req, res, next) =>
-  roles.includes(String(req.user.role ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_'))
-    ? next() : fail(res, 403, 'FORBIDDEN', 'Insufficient permissions');
 const ctxOf = req => ({ userId: req.user.id, sessionId: null });
 const input = req => (req.body && typeof req.body === 'object' ? req.body : {});
+
+// A release may be undone only by the HR user who made it, within minutes, when posting its loan deductions failed.
+async function releasedRecentlyBy(user, runId) {
+  const { rows: [last] } = await run(`select actor_id, created_at from audit_logs where action='payroll.released' and entity_id=$1 order by created_at desc limit 1`, [runId]);
+  return Boolean(last && String(last.actor_id) === String(user.id) && Date.now() - Date.parse(last.created_at) < 10 * 60_000);
+}
+
+// ---- /audit-logs (Logs & Audit) ----
+// Entries with a description are listed: decisions the server records itself and activity the app reports.
+const ACTION_LABELS = {
+  'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
+  'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
+  'claim.approved': 'Approved claim', 'claim.rejected': 'Rejected claim', 'claim.returned': 'Returned claim', 'claim.paid': 'Marked claim as Paid',
+  'settings.updated': 'Updated payroll settings', 'user.created': 'Created user account', 'user.updated': 'Updated user account',
+  'user.role.changed': 'Changed user role', 'user.activated': 'Activated user account', 'user.deactivated': 'Deactivated user account',
+  'user.deleted': 'Deleted user account', 'compensation.proposal.approved': 'Approved salary adjustment',
+  'compensation.proposal.rejected': 'Rejected salary adjustment', 'compensation.reward.approved': 'Approved incentive or bonus',
+  'compensation.reward.rejected': 'Rejected incentive or bonus' };
+const AUDIT_MODULES = { compensation_proposals: 'Compensation Planning', compensation_rewards: 'Compensation Planning', users: 'User Accounts' };
+
+app.get('/audit-logs', auth, allow('audit.view'), async (_req, res) => {
+  const [{ rows }, users, legacy] = await Promise.all([
+    run(`select * from audit_logs where metadata ? 'description' order by created_at desc limit 2000`),
+    listRows('users'), first('app_data', { key: 'audit:events' })]);
+  const userById = new Map(users.map(u => [String(u.id), u]));
+  const events = rows.map(r => {
+    const u = userById.get(String(r.actor_id));
+    return { id: String(r.id), timestamp: r.created_at, user: r.actor_name || u?.name || u?.email || 'System', role: ROLE_LABELS[r.actor_role ?? roleKey(u?.role)] ?? '—',
+      action: r.metadata?.label || ACTION_LABELS[r.action] || r.action, module: AUDIT_MODULES[r.entity] ?? r.entity ?? '—', description: r.metadata?.description || '—', ipDevice: r.ip_device || '—' };
+  });
+  // Activity recorded in the browser before Logs & Audit moved to the server.
+  const older = legacy && !legacy.deleted ? appValue(legacy.value) : [];
+  for (const e of Array.isArray(older) ? older : [])
+    events.push({ id: String(e.id), timestamp: String(e.timestamp ?? ''), user: e.user || '—', role: '—', action: e.action || '—', module: e.module || '—', description: e.description || '—', ipDevice: e.ipDevice || '—' });
+  events.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  ok(res, events);
+});
+
+app.post('/audit-logs', auth, async (req, res) => {
+  const b = input(req);
+  const label = required(b.action, 'action').slice(0, 120);
+  await audit('client.event', req.user.id, String(b.module ?? '').trim().slice(0, 80) || '—', null,
+    { label, description: String(b.description ?? '').trim().slice(0, 1000) || '—' }, ipDevice(req));
+  created(res, { recorded: true });
+});
 
 // ---- /account (Settings & Privacy) ----
 const PASSKEY_MAX_ATTEMPTS = 5, PASSKEY_LOCK_MINUTES = 15;
@@ -554,43 +629,76 @@ async function createAccount(values) {
     throw e;
   } finally { client.release(); }
 }
-const publicUser = u => ({ id: u.id, employee_id: u.employee_id, name: u.name ?? null, email: u.email, role: u.role, status: u.status });
+const publicUser = u => ({ id: u.id, employee_id: u.employee_id, name: u.name ?? null, email: u.email, role: roleKey(u.role), status: String(u.status).toLowerCase() });
+const isActive = u => String(u.status).toLowerCase() === 'active';
+const accountLabel = u => `${u.name || u.email} (${u.email})`;
+const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const accountRole = value => {
+  const r = roleKey(value);
+  if (r !== 'admin' && r !== 'hr_staff') throw new HttpError(400, 'INVALID_ROLE', 'Unsupported user role.');
+  return r;
+};
+async function findAccount(id) {
+  const target = await first('users', { id: required(id, 'id') });
+  if (!target) throw new HttpError(404, 'USER_NOT_FOUND', 'User account was not found.');
+  return target;
+}
+// True when the account is the only active Admin left.
+const lastActiveAdmin = async account => roleKey(account.role) === 'admin' && isActive(account)
+  && (await listRows('users')).filter(u => roleKey(u.role) === 'admin' && isActive(u)).every(u => u.id === account.id);
 
-app.get('/users', auth, role('admin'), async (_req, res) => ok(res, (await listRows('users')).map(publicUser)));
+app.get('/users', auth, allow('users.manage'), async (_req, res) => ok(res, (await listRows('users')).map(publicUser)));
 
-app.post('/users', auth, role('admin'), async (req, res) => {
-  const ctx = ctxOf(req), body = input(req);
-  if (body.action === 'update_role') {
-    const id = required(body.id, 'id');
-    const nextRole = String(body.role ?? '').toLowerCase();
-    if (nextRole !== 'admin' && nextRole !== 'hr_staff') throw new HttpError(400, 'INVALID_ROLE', 'Unsupported user role.');
-    const target = await first('users', { id });
-    if (!target) throw new HttpError(404, 'USER_NOT_FOUND', 'User account was not found.');
-    const previous = String(target.role).toLowerCase();
-    if (previous === nextRole) return ok(res, { user: publicUser(target) });
-    const admins = (await listRows('users')).filter(u => String(u.role).toLowerCase() === 'admin' && String(u.status).toLowerCase() === 'active');
-    if (previous === 'admin' && admins.every(u => u.id === id)) throw new HttpError(409, 'LAST_ADMIN', 'The last Admin cannot be changed to HR.');
-    await updateRows('users', { id }, { role: nextRole, updated_at: new Date().toISOString() });
-    await audit('user.role.changed', ctx.userId, 'users', id, { from: previous, to: nextRole });
-    return ok(res, { user: publicUser({ ...target, role: nextRole }) });
+app.post('/users', auth, allow('users.manage'), async (req, res) => {
+  const ctx = ctxOf(req), body = input(req), device = ipDevice(req);
+  const log = (action, id, description) => audit(action, ctx.userId, 'User Accounts', id, { description }, device);
+  if (body.action === 'update_role' || body.action === 'update') {
+    const target = await findAccount(body.id);
+    const previousRole = roleKey(target.role);
+    const nextRole = accountRole(body.role ?? previousRole);
+    const name = body.action === 'update' ? required(body.name, 'name') : target.name;
+    const email = body.action === 'update' ? required(body.email, 'email').toLowerCase() : target.email;
+    if (!VALID_EMAIL.test(email)) throw new HttpError(400, 'INVALID_EMAIL', 'Enter a valid email address.');
+    if (email !== target.email && await first('users', { email })) throw new HttpError(409, 'DUPLICATE_EMAIL', 'A user with this email already exists.');
+    if (previousRole === 'admin' && nextRole !== 'admin' && await lastActiveAdmin(target)) throw new HttpError(409, 'LAST_ADMIN', 'The last active Admin cannot be changed to HR Staff.');
+    const changes = [[name !== target.name, `name ${target.name || '—'} → ${name}`], [email !== target.email, `email ${target.email} → ${email}`],
+      [nextRole !== previousRole, `role ${ROLE_LABELS[previousRole] ?? previousRole} → ${ROLE_LABELS[nextRole]}`]].filter(([changed]) => changed).map(([, text]) => text);
+    if (!changes.length) return ok(res, { user: publicUser(target) });
+    const next = { name, email, role: nextRole, updated_at: new Date().toISOString() };
+    await updateRows('users', { id: target.id }, next);
+    await log(nextRole !== previousRole && changes.length === 1 ? 'user.role.changed' : 'user.updated', target.id, `Updated ${accountLabel(target)}: ${changes.join('; ')}.`);
+    return ok(res, { user: publicUser({ ...target, ...next }) });
+  }
+  if (body.action === 'set_status') {
+    const target = await findAccount(body.id);
+    const status = String(body.status ?? '').toLowerCase();
+    if (status !== 'active' && status !== 'inactive') throw new HttpError(400, 'INVALID_STATUS', 'Status must be active or inactive.');
+    if (status === String(target.status).toLowerCase()) return ok(res, { user: publicUser(target) });
+    if (status === 'inactive') {
+      if (target.id === ctx.userId) throw new HttpError(400, 'CANNOT_DEACTIVATE_SELF', 'You cannot deactivate your own account.');
+      if (await lastActiveAdmin(target)) throw new HttpError(409, 'LAST_ADMIN', 'The last active Admin cannot be deactivated.');
+    }
+    await updateRows('users', { id: target.id }, { status, updated_at: new Date().toISOString() });
+    await log(status === 'active' ? 'user.activated' : 'user.deactivated', target.id, `${status === 'active' ? 'Activated' : 'Deactivated'} ${ROLE_LABELS[roleKey(target.role)] ?? ''} account ${accountLabel(target)}.`);
+    return ok(res, { user: publicUser({ ...target, status }) });
   }
   if (body.action === 'delete') {
-    const id = required(body.id, 'id');
-    if (id === ctx.userId) throw new HttpError(400, 'CANNOT_DELETE_SELF', 'You cannot delete your own account.');
-    await deleteRows('users', { id });
-    await audit('user.deleted', ctx.userId, 'users', id);
-    return ok(res, { deleted: true, id });
+    const target = await findAccount(body.id);
+    if (target.id === ctx.userId) throw new HttpError(400, 'CANNOT_DELETE_SELF', 'You cannot delete your own account.');
+    if (await lastActiveAdmin(target)) throw new HttpError(409, 'LAST_ADMIN', 'The last active Admin cannot be deleted.');
+    await deleteRows('users', { id: target.id });
+    await log('user.deleted', target.id, `Deleted ${ROLE_LABELS[roleKey(target.role)] ?? ''} account ${accountLabel(target)}.`);
+    return ok(res, { deleted: true, id: target.id });
   }
   const name = required(body.name, 'name');
   const email = required(body.email, 'email').toLowerCase();
   const password = required(body.password, 'password');
-  const newRole = String(body.role ?? 'hr_staff').toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'INVALID_EMAIL', 'Enter a valid email address.');
+  const newRole = accountRole(body.role ?? 'hr_staff');
+  if (!VALID_EMAIL.test(email)) throw new HttpError(400, 'INVALID_EMAIL', 'Enter a valid email address.');
   if (password.length < 8) throw new HttpError(400, 'WEAK_PASSWORD', 'Password must be at least 8 characters.');
-  if (newRole !== 'admin' && newRole !== 'hr_staff') throw new HttpError(400, 'INVALID_ROLE', 'Unsupported user role.');
   if (await first('users', { email })) throw new HttpError(409, 'DUPLICATE_EMAIL', 'A user with this email already exists.');
   const row = await createAccount({ name, email, role: newRole, password_hash: hash(password) });
-  await audit('user.created', ctx.userId, 'users', row.id);
+  await log('user.created', row.id, `Created ${ROLE_LABELS[newRole]} account for ${accountLabel(row)}.`);
   // OTP is disabled on this backup, so no verification email is sent.
   created(res, { user: publicUser(row), otp_sent: false, otp_disabled: true, challenge_id: null, emailId: null });
 });
@@ -752,6 +860,9 @@ async function reviewProposal(b, ctx) {
   const proposal = await first('compensation_proposals', { id });
   if (!proposal) throw new HttpError(404, 'PROPOSAL_NOT_FOUND', 'Compensation proposal was not found.');
   if (proposal.status !== 'Pending HR Review') throw new HttpError(409, 'PROPOSAL_ALREADY_REVIEWED', 'Only pending proposals can be reviewed.');
+  if (String(proposal.created_by ?? '') === String(ctx.userId)) throw new HttpError(403, 'FORBIDDEN', 'You cannot approve or reject your own salary adjustment.');
+  const proposalEmployee = await first('employees', { id: proposal.employee_id });
+  const proposalText = `${proposal.proposal_type} for ${proposalEmployee ? employeeName(proposalEmployee) : 'an employee'}: ${pesoText(proposal.previous_salary)} → ${pesoText(proposal.new_salary)}, effective ${proposal.effective_date}`;
   const reviewedAt = new Date().toISOString();
   const asOf = reviewedAt.slice(0, 10);
   const actor = await actorName(ctx.userId ?? '');
@@ -762,7 +873,7 @@ async function reviewProposal(b, ctx) {
     await updateRows('compensation_proposals', { id }, next);
     await recordHistory({ employee_id: proposal.employee_id, source: 'Compensation Proposal', event_type: 'Rejected', previous_salary: Number(proposal.previous_salary), new_salary: Number(proposal.new_salary),
       adjustment_amount: delta, reason, effective_date: proposal.effective_date, status: 'Rejected', recorded_at: reviewedAt, actor_id: ctx.userId, actor_name: actor, proposal_id: id });
-    await audit('compensation.proposal.rejected', ctx.userId, 'compensation_proposals', id);
+    await audit('compensation.proposal.rejected', ctx.userId, 'compensation_proposals', id, { description: `Rejected ${proposalText}. Reason: ${reason}` });
     return { id, ...next };
   }
   const allAssignments = await listRows('employee_compensation', { employee_id: proposal.employee_id });
@@ -785,7 +896,7 @@ async function reviewProposal(b, ctx) {
     adjustment_amount: delta, reason: String(proposal.notes ?? ''), effective_date: proposal.effective_date, status: applied ? 'Applied' : 'Scheduled', recorded_at: reviewedAt,
     applied_at: applied ? proposal.effective_date : null, actor_id: ctx.userId, actor_name: actor, proposal_id: id, assignment_id: assignment.id });
   if (applied) await updateRows('employees', { id: proposal.employee_id }, { basic_salary: Number(proposal.new_salary), position_rate: Number(assignment.daily_rate), salary_grade_id: assignment.salary_grade_id ?? null, updated_at: reviewedAt });
-  await audit('compensation.proposal.approved', ctx.userId, 'compensation_proposals', id, { effective_date: proposal.effective_date });
+  await audit('compensation.proposal.approved', ctx.userId, 'compensation_proposals', id, { effective_date: proposal.effective_date, description: `Approved ${proposalText}.` });
   return { id, ...next, assignment };
 }
 const isBonusType = type => type === 'Bonus' || type === 'Incentive';
@@ -846,9 +957,12 @@ async function reviewReward(b, ctx) {
   const reward = await findReward(id);
   if (!isBonusType(reward.reward_type)) throw new HttpError(400, 'REWARD_NOT_REVIEWABLE', 'Only incentives and bonuses are approved or rejected.');
   if (reward.status !== 'Pending' && reward.status !== 'Planned') throw new HttpError(409, 'REWARD_ALREADY_REVIEWED', 'Only pending incentives and bonuses can be reviewed.');
+  if (String(reward.created_by ?? '') === String(ctx.userId)) throw new HttpError(403, 'FORBIDDEN', 'You cannot approve or reject your own entry.');
   const next = { status: decision === 'approve' ? 'Approved' : 'Rejected', approved_by: ctx.userId, approved_at: new Date().toISOString() };
   await updateRows('compensation_rewards', { id }, next);
-  await audit(`compensation.reward.${decision === 'approve' ? 'approved' : 'rejected'}`, ctx.userId, 'compensation_rewards', id);
+  const rewardEmployee = await first('employees', { id: reward.employee_id });
+  await audit(`compensation.reward.${decision === 'approve' ? 'approved' : 'rejected'}`, ctx.userId, 'compensation_rewards', id,
+    { description: `${next.status} ${String(reward.reward_type).toLowerCase()} of ${pesoText(reward.amount)} for ${rewardEmployee ? employeeName(rewardEmployee) : 'an employee'}.` });
   return { id, ...next };
 }
 const legacyRows = (data, key) => Array.isArray(data[key]) ? data[key].filter(v => Boolean(v) && typeof v === 'object') : [];
@@ -994,12 +1108,17 @@ const compensationActions = {
   delete_reward: deleteReward, review_reward: reviewReward, approve_reward: (b, ctx) => reviewReward({ ...b, decision: 'approve' }, ctx),
   import_legacy: importLegacy };
 
-app.get('/compensation', auth, role('admin', 'hr_staff'), async (_req, res) => ok(res, await loadCompensation()));
+// Admin approves salary adjustments and rewards; HR Staff manage everything else in Compensation Planning.
+const COMPENSATION_APPROVALS = new Set(['review_proposal', 'review_reward', 'approve_reward']);
 
-app.post('/compensation', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.get('/compensation', auth, allow('compensation.view'), async (_req, res) => ok(res, await loadCompensation()));
+
+app.post('/compensation', auth, async (req, res) => {
   const body = input(req);
-  const handler = compensationActions[required(body.action, 'action')];
+  const name = required(body.action, 'action');
+  const handler = compensationActions[name];
   if (!handler) throw new HttpError(400, 'UNKNOWN_ACTION', 'Unsupported compensation action.');
+  if (!can(req.user.role, COMPENSATION_APPROVALS.has(name) ? 'compensation.approve' : 'compensation.manage')) return fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE);
   ok(res, await handler(body, ctxOf(req)));
 });
 
@@ -1360,7 +1479,7 @@ async function hmoHandler(req, res) {
   }
   fail(res, 405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
 }
-app.all(['/hmo/:resource', '/hmo/:resource/:id'], auth, role('admin', 'hr_staff'), hmoHandler);
+app.all(['/hmo/:resource', '/hmo/:resource/:id'], auth, (req, res, next) => allow(req.method === 'GET' ? 'hmo.view' : 'hmo.manage')(req, res, next), hmoHandler);
 
 // ---- /loans (employee loans and cash advances) ----
 const loanMoney = (v, field) => { const n = Number(v); if (!Number.isFinite(n) || n <= 0) throw new HttpError(400, 'INVALID_LOAN_AMOUNT', `${field} must be greater than zero.`); return Math.round((n + Number.EPSILON) * 100) / 100; };
@@ -1507,19 +1626,19 @@ async function settlePayroll(payrollRunId, actorId, validateOnly = false) {
   return { posted: true, count: lines.length, totalAmount, idempotent: false };
 }
 
-app.get('/loans', auth, role('admin', 'hr_staff'), async (_req, res) => ok(res, await loadLoanWorkspace()));
+app.get('/loans', auth, allow('deductions.view'), async (_req, res) => ok(res, await loadLoanWorkspace()));
 
-app.get('/loans/schedule', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.get('/loans/schedule', auth, allow('payroll.view'), async (req, res) => {
   const periodStart = loanDate(req.query.period_start, 'period_start'), periodEnd = loanDate(req.query.period_end, 'period_end');
   if (periodEnd < periodStart) throw new HttpError(400, 'INVALID_PAYROLL_PERIOD', 'period_end must be on or after period_start.');
   const [loans, employees, batches] = await Promise.all([listRows('employee_loans'), listRows('employees'), listRows('employee_loan_repayment_batches')]);
   ok(res, dueItems(loans, employees, batches, periodStart, periodEnd));
 });
 
-app.post('/loans/settle', auth, role('admin'), async (req, res) =>
+app.post('/loans/settle', auth, allow('payroll.release'), async (req, res) =>
   ok(res, await settlePayroll(required(input(req).payroll_run_id, 'payroll_run_id'), req.user.id, input(req).validate_only === true)));
 
-app.post('/loans', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.post('/loans', auth, allow('loans.manage'), async (req, res) => {
   const b = input(req), ctx = ctxOf(req);
   const employeeId = required(b.employee_id, 'employee_id');
   const employee = await first('employees', { id: employeeId });
@@ -1547,7 +1666,7 @@ app.post('/loans', auth, role('admin', 'hr_staff'), async (req, res) => {
   created(res, { ...row, employee_id: employeeId, employee_number: employee.employee_number, employee_name: employeeName(employee), department: employee.department ?? null, outstanding_balance: principalAmount, repayments_completed: 0 });
 });
 
-app.patch('/loans/:id', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.patch('/loans/:id', auth, allow('loans.manage'), async (req, res) => {
   const id = req.params.id, b = input(req), ctx = ctxOf(req), action = text(b.action);
   const previous = await first('employee_loans', { id });
   if (!previous) throw new HttpError(404, 'LOAN_NOT_FOUND', 'Loan or cash advance record was not found.');
@@ -1640,7 +1759,7 @@ async function saveGovNotice(loanId, notice) {
   else await insertRow('government_loan_notices', { loan_id: loanId, ...values });
 }
 
-app.get('/government-loans', auth, role('admin', 'hr_staff'), async (_req, res) => {
+app.get('/government-loans', auth, allow('hmo.view'), async (_req, res) => {
   const [loans, employees, transactions] = await Promise.all([listRows('government_loans'), listRows('employees'), listRows('government_loan_transactions')]);
   const employeeById = new Map(employees.map(e => [String(e.id), e]));
   ok(res, { loans: loans.map(l => formatGovLoan(l, employeeById.get(String(l.employee_id)))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -1648,7 +1767,7 @@ app.get('/government-loans', auth, role('admin', 'hr_staff'), async (_req, res) 
 });
 
 // Active loans payroll may deduct in the cutoff: start date on or before the cutoff end and a balance left.
-app.get('/government-loans/schedule', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.get('/government-loans/schedule', auth, allow('payroll.view'), async (req, res) => {
   const periodStart = loanDate(req.query.period_start, 'period_start'), periodEnd = loanDate(req.query.period_end, 'period_end');
   if (periodEnd < periodStart) throw new HttpError(400, 'INVALID_PAYROLL_PERIOD', 'period_end must be on or after period_start.');
   const [loans, employees, transactions] = await Promise.all([listRows('government_loans', { status: 'Active' }), listRows('employees'), listRows('government_loan_transactions')]);
@@ -1661,7 +1780,7 @@ app.get('/government-loans/schedule', auth, role('admin', 'hr_staff'), async (re
   }));
 });
 
-app.get('/government-loans/:id/notice', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.get('/government-loans/:id/notice', auth, allow('hmo.view'), async (req, res) => {
   const notice = await first('government_loan_notices', { loan_id: req.params.id });
   if (!notice) throw new HttpError(404, 'NOTICE_NOT_FOUND', 'No notice is attached to this loan.');
   ok(res, { name: notice.file_name, data: notice.data });
@@ -1672,7 +1791,7 @@ const govLedgerBalance = (loan, transactions) => cents(Number(loan.total_amount)
 // Posts the deductions of a released payroll run once; a loan whose balance reaches zero is closed. Every line is checked
 // before anything is written, so a run posts completely or not at all. validate_only stops after the checks. A retry
 // also repairs a loan balance that was not updated after its deduction was recorded.
-app.post('/government-loans/settle', auth, role('admin'), async (req, res) => {
+app.post('/government-loans/settle', auth, allow('payroll.release'), async (req, res) => {
   const payrollRunId = required(input(req).payroll_run_id, 'payroll_run_id'), actorId = req.user.id, validateOnly = input(req).validate_only === true;
   const appData = await first('app_data', { key: 'payroll:runs' });
   if (!appData || appData.deleted === true) throw new HttpError(409, 'PAYROLL_RUN_NOT_FOUND', 'The released payroll run is not synchronized to the database.');
@@ -1723,7 +1842,7 @@ app.post('/government-loans/settle', auth, role('admin'), async (req, res) => {
   ok(res, { posted: true, count: pending.length, totalAmount, idempotent: pending.length === 0 });
 });
 
-app.post('/government-loans', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.post('/government-loans', auth, allow('hmo.manage'), async (req, res) => {
   const b = input(req), ctx = ctxOf(req);
   const notice = govNoticeFields(b, true);
   const values = await govLoanFields(b);
@@ -1734,7 +1853,7 @@ app.post('/government-loans', auth, role('admin', 'hr_staff'), async (req, res) 
   created(res, await govLoanWithEmployee(row));
 });
 
-app.patch('/government-loans/:id', auth, role('admin', 'hr_staff'), async (req, res) => {
+app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) => {
   const id = req.params.id, b = input(req), ctx = ctxOf(req), action = text(b.action);
   const previous = await first('government_loans', { id });
   if (!previous) throw new HttpError(404, 'LOAN_NOT_FOUND', 'Government loan record was not found.');
@@ -1763,8 +1882,8 @@ app.patch('/government-loans/:id', auth, role('admin', 'hr_staff'), async (req, 
 
 // Known errors from the routes above keep their status and code; anything else falls through to the generic handler.
 const PG_CLIENT_ERRORS = { '22P02': 400, '22007': 400, '22008': 400, '23502': 400, '23514': 400, '42703': 400, '23505': 409, '23503': 409 };
-app.use(['/account', '/users', '/compensation', '/hmo', '/loans', '/government-loans'], (err, _req, res, next) => {
-  if (err instanceof HttpError) return fail(res, err.status, err.code, err.message);
+app.use(['/app-data', '/employees', '/audit-logs', '/account', '/users', '/compensation', '/hmo', '/loans', '/government-loans'], (err, _req, res, next) => {
+  if (err instanceof HttpError || err instanceof AccessError) return fail(res, err.status, err.code, err.message);
   if (PG_CLIENT_ERRORS[err?.code]) return fail(res, PG_CLIENT_ERRORS[err.code], 'INVALID_REQUEST', err.message);
   next(err);
 });

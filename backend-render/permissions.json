@@ -1,0 +1,39 @@
+{
+  "admin": [
+    "dashboard.view",
+    "employees.view",
+    "payroll.view",
+    "attendance.view",
+    "deductions.view",
+    "compensation.view",
+    "claims.view",
+    "hmo.view",
+    "settings.view",
+    "payroll.approve",
+    "compensation.approve",
+    "settings.edit",
+    "users.manage",
+    "audit.view"
+  ],
+  "hr_staff": [
+    "dashboard.view",
+    "employees.view",
+    "payroll.view",
+    "attendance.view",
+    "deductions.view",
+    "compensation.view",
+    "claims.view",
+    "hmo.view",
+    "settings.view",
+    "employees.manage",
+    "compensation.manage",
+    "hmo.manage",
+    "loans.manage",
+    "claims.encode",
+    "claims.approve",
+    "claims.pay",
+    "attendance.encode",
+    "payroll.generate",
+    "payroll.release"
+  ]
+}

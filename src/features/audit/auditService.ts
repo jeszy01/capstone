@@ -1,13 +1,9 @@
-import {getCurrentUser} from '../auth/authService';
-import {read,write} from '../../utils/storage';
+import {apiClient} from '../../services/api/apiClient';
 
-export type AuditEvent={id:string;timestamp:string;user:string;action:string;module:string;description:string;ipDevice:string};
-const auditKey='audit:events';
+export type AuditEvent={id:string;timestamp:string;user:string;role:string;action:string;module:string;description:string;ipDevice:string};
 
-export function recordAudit(event:{action:string;module:string;description:string;ipDevice?:string}){
- const current=getCurrentUser();
- const entry:AuditEvent={id:crypto.randomUUID(),timestamp:new Date().toISOString(),user:current?.name||'Admin',action:event.action,module:event.module,description:event.description,ipDevice:event.ipDevice||'Browser'};
- write<AuditEvent[]>(auditKey,[...read<AuditEvent[]>(auditKey,[]),entry]);
- return entry;
+// The server stamps each entry with the signed-in user, role, time and IP/device.
+export function recordAudit(event:{action:string;module:string;description:string}){
+ void apiClient.post<typeof event,unknown>('/audit-logs',event).catch(()=>undefined);
 }
-export const readAuditEvents=()=>read<AuditEvent[]>(auditKey,[]);
+export const readAuditEvents=()=>apiClient.get<{data:AuditEvent[]}>('/audit-logs').then(response=>response.data);

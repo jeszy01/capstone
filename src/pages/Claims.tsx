@@ -3,7 +3,7 @@ import {Check,FileText,MoreVertical,Plus,RotateCcw,ThumbsDown,Trash2,Upload,X} f
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,TextInput,ghost,input} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
-import {getCurrentUser} from '../features/auth/authService';
+import {can} from '../features/auth/permissions';
 import {recordAudit} from '../features/audit/auditService';
 import {claimTypes,employeeName,nextClaimNumber,normalizeClaims,saveClaims} from '../features/claims/claimsTypes';
 import type {ClaimType,ExpenseClaim} from '../features/claims/claimsTypes';
@@ -24,11 +24,12 @@ export default function Claims(){
  const[selected,setSelected]=useState<ExpenseClaim|null>(null);
  const[pending,setPending]=useState<Pending|null>(null);
  const[view,setView]=useState<View>('open');
- const financeAuthorized=getCurrentUser()?.role==='Admin';
+ const financeAuthorized=can('claims.approve');
  const openClaims=claims.filter(isOpen);
  const load=()=>{setLoading(true);setLoadError('');employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))}).catch(cause=>{setClaims(normalizeClaims([]));setLoadError(cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded.')}).finally(()=>setLoading(false))};
  useEffect(()=>{load()},[]);
- const update=(id:string,patch:Partial<ExpenseClaim>)=>{setClaims(current=>{const existing=current.find(item=>item.id===id);const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);if(existing&&patch.approvalStatus&&patch.approvalStatus!==existing.approvalStatus)recordAudit({action:`${patch.approvalStatus} claim`,module:'Claims',description:`${patch.approvalStatus} claim ${existing.claimNumber} for ${peso(existing.amount)}.`});return next})};
+ // Claim approvals are logged by the server when the claims are saved.
+ const update=(id:string,patch:Partial<ExpenseClaim>)=>{setClaims(current=>{const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);return next})};
  // Only unpaid claims that are pending or returned can be deleted; the buttons are shown only for those.
  const remove=(claim:ExpenseClaim)=>{if(claim.paymentStatus!=='Unpaid'||!isOpen(claim))return;setClaims(current=>{const next=current.filter(item=>item.id!==claim.id);saveClaims(next);recordAudit({action:'Deleted claim',module:'Claims',description:`Deleted claim ${claim.claimNumber}.`});return next});setSelected(current=>current?.id===claim.id?null:current)};
  const save=(claim:ExpenseClaim)=>{setClaims(current=>{const next=[...current,claim];saveClaims(next);return next});recordAudit({action:'Submitted claim',module:'Claims',description:`Submitted claim ${claim.claimNumber} for ${peso(claim.amount)}.`});setShow(false);setView('open')};
@@ -44,7 +45,7 @@ export default function Claims(){
     </div>
     <div className="flex flex-wrap items-center gap-2">
      <ViewToggle label="Claims views" value={view} options={VIEWS} onChange={setView}/>
-     <Button onClick={()=>setShow(true)}><Plus size={15}/>Submit Expense Claim</Button>
+     {can('claims.encode')&&<Button onClick={()=>setShow(true)}><Plus size={15}/>Submit Expense Claim</Button>}
     </div>
    </div>
    <section role="tabpanel" aria-label={view==='open'?'Claims awaiting review':'Claims history'} className="min-w-0">
@@ -113,7 +114,7 @@ function ClaimsReport({claims,employees,onDelete,onView}:{claims:ExpenseClaim[];
    <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
    <td className={cell}><ClaimStatusBadge claim={claim}/></td>
    <td className={`${cell} whitespace-nowrap`}>{claim.receiptName?<span className="text-slate-600" title={claim.receiptName}>Attached</span>:<span className="font-medium text-red-700">Missing</span>}</td>
-   <td className={cell}><div className="flex flex-nowrap items-center gap-2"><button className={ghost} onClick={()=>onView(claim)}>View</button>{isOpen(claim)&&claim.paymentStatus==='Unpaid'&&<button type="button" aria-label={`Delete ${claim.claimNumber}`} title="Delete" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={()=>onDelete(claim)}><Trash2 size={15}/></button>}</div></td>
+   <td className={cell}><div className="flex flex-nowrap items-center gap-2"><button className={ghost} onClick={()=>onView(claim)}>View</button>{can('claims.encode')&&isOpen(claim)&&claim.paymentStatus==='Unpaid'&&<button type="button" aria-label={`Delete ${claim.claimNumber}`} title="Delete" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={()=>onDelete(claim)}><Trash2 size={15}/></button>}</div></td>
   </tr>)}</tbody></table></div>;
 }
 

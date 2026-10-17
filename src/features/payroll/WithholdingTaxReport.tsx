@@ -3,7 +3,7 @@ import {Calculator,Download,Eye,LoaderCircle,Printer,TriangleAlert} from 'lucide
 import {Button,Card,Empty,Modal,ghost,input} from '../../components/common/ui';
 import type {Employee,PayrollInput,PayrollRates,PayrollResult} from '../../types/domain';
 import {numberValue,peso,read,write} from '../../utils/storage';
-import {getCurrentUser} from '../auth/authService';
+import {can} from '../auth/permissions';
 import {recordAudit} from '../audit/auditService';
 import {employeeService} from '../employees/employeeService';
 import {calculatePayroll} from './payrollCalculator';
@@ -69,10 +69,10 @@ export function WithholdingTaxReport({from,to,query}:{from:string;to:string;quer
  const[periodId,setPeriodId]=useState('');const[department,setDepartment]=useState('');const[runStatus,setRunStatus]=useState('');
  const[computing,setComputing]=useState(false);const[notice,setNotice]=useState('');const[validationErrors,setValidationErrors]=useState<string[]>([]);const[validationByRow,setValidationByRow]=useState<Record<string,string>>({});
  const[estimates,setEstimates]=useState<Record<string,PayrollResult>>({});
- const user=getCurrentUser();const canCompute=user?.role==='Admin'||user?.role==='HR Staff';
+ const canCompute=can('payroll.generate');
  useEffect(()=>{let active=true;employeeService.getAll().then(rows=>{if(active){setEmployees(rows);setEmployeeError('')}}).catch(error=>{if(active)setEmployeeError(error instanceof Error?error.message:'Employee records could not be loaded.')}).finally(()=>{if(active)setEmployeeLoading(false)});return()=>{active=false}},[]);
  // Remove the previously opt-in test row from browser data as the report moves to real payroll-only computation.
- useEffect(()=>{const existing=read<PayrollRun[]>(RUNS_KEY,[]);const clean=existing.filter(run=>!isTestRun(run));if(clean.length!==existing.length){write(RUNS_KEY,clean);setRuns(clean)}},[]);
+ useEffect(()=>{if(!canCompute)return;const existing=read<PayrollRun[]>(RUNS_KEY,[]);const clean=existing.filter(run=>!isTestRun(run));if(clean.length!==existing.length){write(RUNS_KEY,clean);setRuns(clean)}},[]);
  const availableRuns=useMemo(()=>runs.filter(run=>run.from<=to&&run.to>=from).sort((a,b)=>b.from.localeCompare(a.from)),[runs,from,to]);
  useEffect(()=>{if(periodId&&!availableRuns.some(run=>run.id===periodId))setPeriodId('')},[availableRuns,periodId]);
  const periodRuns=useMemo(()=>periodId?availableRuns.filter(run=>run.id===periodId):availableRuns,[availableRuns,periodId]);

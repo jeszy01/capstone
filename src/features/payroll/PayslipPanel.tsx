@@ -4,7 +4,7 @@ import type {Employee} from '../../types/domain';
 import {peso,read} from '../../utils/storage';
 import {RUNS_KEY,runLabel,releaseDepartment} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
-import {getCurrentUser} from '../auth/authService';
+import {can} from '../auth/permissions';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
 
 const when=(iso?:string)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'—';
@@ -15,13 +15,12 @@ const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate
 export function PayslipPanel({employees}:{employees:Employee[]}){
  // Only approved payrolls have generated payslips
 const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null);
-const user=getCurrentUser();
 const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='Approved'&&r.paidAt).sort((a,b)=>(b.paidAt??'').localeCompare(a.paidAt??'')),[tick]);;
  const[runId,setRunId]=useState(''),[dept,setDept]=useState(''),[slip,setSlip]=useState<RunRow|null>(null);
  const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
  const deptsOf=(run:PayrollRun)=>[...new Set(run.rows.map(deptOf))].sort();
  const run=runs.find(r=>r.id===runId);
- const doRelease=()=>{if(!run||!confirm)return;confirm.forEach(d=>releaseDepartment(run.id,d,user?.name??'Admin'));setConfirm(null);setTick(t=>t+1)};
+ const doRelease=()=>{if(!run||!confirm)return;confirm.forEach(d=>releaseDepartment(run.id,d));setConfirm(null);setTick(t=>t+1)};
 
  // Level 3: employees of a department
  if(run&&dept){
@@ -39,9 +38,9 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
  if(run){
   const depts=deptsOf(run);
   return <section className="mt-6 space-y-4">
-  <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setRunId('')}>Back</button>{depts.some(d=>!run.released?.[d])&&<Button onClick={()=>setConfirm(depts.filter(d=>!run.released?.[d]))}>Release All</Button>}</div>
+  <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setRunId('')}>Back</button>{can('payroll.release')&&depts.some(d=>!run.released?.[d])&&<Button onClick={()=>setConfirm(depts.filter(d=>!run.released?.[d]))}>Release All</Button>}</div>
    <Card><h2 className="m-0 text-[16px] font-semibold">Select department</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{runLabel(run)}</p>
-    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release</Button>}</div></td></tr>)}</tbody></table></div>
+    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{can('payroll.release')&&!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release</Button>}</div></td></tr>)}</tbody></table></div>
    </Card>
    {confirm&&<Modal title="Confirm Release" onClose={()=>setConfirm(null)}>
  <p className="text-[13px]">Release payslips of <b>{confirm.join(', ')}</b> for {runLabel(run)} to ESS?</p>

@@ -1,7 +1,8 @@
 import {apiClient} from '../api/apiClient';
 
 type PendingWrite={raw?:string;deleted?:boolean};
-const PREFIXES=['admin:','audit:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
+// Logs & Audit is kept by the server, so 'audit:' keys are no longer synchronized.
+const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
 // Attendance now comes from HR2; purge the retired manually-entered copies.
 const RETIRED_KEYS=['attendance:records','attendance:schedule'];
@@ -24,7 +25,12 @@ function schedulePush(key:string,write:PendingWrite,delay=400){
    ?apiClient.post<{key:string;deleted:boolean},unknown>('/app-data',{key,deleted:true})
    :apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key,value:JSON.parse(write.raw??'null')});
   void request.then(()=>{if(sameWrite(pending.get(key),write))pending.delete(key)})
-   .catch(()=>{if(sameWrite(pending.get(key),write))schedulePush(key,write,2000)});
+   .catch(cause=>{
+    if(!sameWrite(pending.get(key),write))return;
+    // The server refused this change for the signed-in role: drop it and restore the server copy.
+    if((cause as {status?:number}).status===403){pending.delete(key);rawRemove.call(window.localStorage,key);void hydrateFromServer(true);return}
+    schedulePush(key,write,2000);
+   });
  },delay));
 }
 
@@ -46,7 +52,7 @@ export async function hydrateFromServer(reloadOnChange=false){
   for(const item of items){
    // A local edit is newer than this snapshot; do not overwrite it while it is queued.
    if(pending.has(item.key))continue;
-   if(RETIRED_KEYS.includes(item.key)){if(!item.deleted)schedulePush(item.key,{deleted:true});continue}
+   if(RETIRED_KEYS.includes(item.key))continue;
    if(item.deleted){
    if(window.localStorage.getItem(item.key)!==null){console.log('HYDRATE DIFF (deleted)',item.key);changed=true} if(window.localStorage.getItem(item.key)!==null)changed=true;
     rawRemove.call(window.localStorage,item.key);

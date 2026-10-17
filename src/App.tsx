@@ -1,4 +1,4 @@
-import {BrowserRouter,Navigate,Route,Routes,useNavigate} from 'react-router-dom';
+import {BrowserRouter,Navigate,Outlet,Route,Routes,useLocation,useNavigate} from 'react-router-dom';
 import {useEffect,useState} from 'react';
 import {hydrateFromServer} from './services/sync/serverSync';
 import AppLayout from './layouts/AppLayout';
@@ -14,13 +14,16 @@ import ReviewPayroll from './features/payroll/ReviewPayroll';
 import {LogsAudits} from './pages/Admin';
 import SettingsPrivacy from './pages/SettingsPrivacy';
 import PayrollSettings from './pages/PayrollSettings';
+import {canOpen} from './features/auth/permissions';
+/** Pages the signed-in role cannot open redirect to the Dashboard. */
+function RouteGuard(){return canOpen(useLocation().pathname)?<Outlet/>:<Navigate to="/dashboard" replace/>}
 function AuthRoute(){
 const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[ready,setReady]=useState(false);
  useEffect(()=>{if(!user){setReady(false);return}let active=true;void hydrateFromServer().finally(()=>{if(active)setReady(true)});return()=>{active=false}},[user]);
  useEffect(()=>{if(!user||!ready)return;const timer=window.setInterval(()=>{void hydrateFromServer(true);void refreshCurrentUser().then(changed=>{if(changed)window.location.reload()}).catch(()=>undefined)},5000);return()=>window.clearInterval(timer)},[user,ready]);
  if(!user)return <Login onSignedIn={s=>{setUser(s.user);nav('/dashboard')}}/>;
  if(!ready)return null;
- return <Routes><Route element={<AppLayout/>}>
+ return <Routes><Route element={<AppLayout/>}><Route element={<RouteGuard/>}>
   <Route path="/dashboard" element={<Dashboard/>}/>
   <Route path="/settings-privacy" element={<SettingsPrivacy/>}/>
   <Route path="/logs-audits" element={<LogsAudits/>}/>
@@ -48,6 +51,6 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/hmo-benefits/employee-enrollment" element={<Navigate to="/hmo-benefits/hmo/employee-enrollment" replace/>}/>
   <Route path="/hmo-benefits/history" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="*" element={<Navigate to="/dashboard" replace/>}/>
- </Route></Routes>;
+ </Route></Route></Routes>;
 }
 export default function App(){return <BrowserRouter><Routes><Route path="/*" element={<AuthRoute/>}/></Routes></BrowserRouter>}
