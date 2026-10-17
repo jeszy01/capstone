@@ -4,6 +4,7 @@ import {Button,Empty,LoadingState,Modal,ghost} from '../../components/common/ui'
 import type {PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
+import {hmoCutoffDeduction} from '../hmo/hmoPayroll';
 import {fetchAttendance} from '../attendance/attendanceService';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {holidayPay,nightDifferentialPay} from './premiumPay';
@@ -75,12 +76,13 @@ export default function ReviewPayroll(){
   if(active){setRows(built);setLoading(false)}
   return;
  }
- const[employees,records,bundle,scheduledLoans,scheduledGovernmentLoans]=await Promise.all([
+ const[employees,records,bundle,scheduledLoans,scheduledGovernmentLoans,hmoLines]=await Promise.all([
  employeeService.getAllFromServer(),
  fetchAttendance({from,to}),
  compensationService.load(),
  loanService.schedule(from,to),
  governmentLoanService.schedule(from,to),
+ hmoService.cutoffLines(from,to,rates.payPeriodsPerMonth),
 ]);
  const assignments=bundle.assignments;
 const grades=bundle.grades;
@@ -100,7 +102,8 @@ const built:RunRow[]=[];
      const taxableBonus=approvedBonuses.filter(entry=>entry.taxable).reduce((total,entry)=>total+entry.amount,0);
      const nonTaxableBonus=approvedBonuses.filter(entry=>!entry.taxable).reduce((total,entry)=>total+entry.amount,0);
      const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),rates.payPeriodsPerMonth);
-     const hmo=await hmoService.getPayrollDeduction(employee.id,from,to);
+     // The same HMO cutoff deduction shown under Deductions → HMO.
+     const hmo=hmoCutoffDeduction(hmoLines,employee.id);
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
      const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
      // A graded assignment carries the grade's whole-peso daily rate; a manual salary keeps salary ÷ working days.

@@ -1,5 +1,5 @@
 import {apiClient} from '../../services/api/apiClient';
-import {verifiedHmoDeductionTotal} from './hmoPayroll';
+import {hmoCutoffLines,verifiedHmoDeductionTotal} from './hmoPayroll';
 import type {HmoApprovalStatus,HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPayrollDeduction,HmoPlan,HmoProvider,HmoUtilization,MaxicareStatus} from './hmoTypes';
 
 type Envelope<T>={data:T};
@@ -13,9 +13,13 @@ type ServerHistory={id:string;entity_type:string;entity_id:string;action:string;
 
 const get=<T>(resource:string)=>apiClient.get<Envelope<T[]>>(`/hmo/${resource}`).then(r=>r.data);
 
+/** Fired after every saved HMO change, so open pages (such as Deductions) refresh without a reload. */
+export const HMO_CHANGED_EVENT='pbms:hmo-changed';
+const changed=<T>(data:T)=>{window.dispatchEvent(new Event(HMO_CHANGED_EVENT));return data};
+
 async function post<TRequest,TResponse>(resource:string,value:TRequest):Promise<TResponse>{
  const r=await apiClient.post<TRequest,Envelope<TResponse>>(`/hmo/${resource}`,value);
- return r.data;
+ return changed(r.data);
 }
 
 async function patch<TRequest,TResponse>(resource:string,id:string,value:TRequest):Promise<TResponse>{
@@ -23,12 +27,12 @@ async function patch<TRequest,TResponse>(resource:string,id:string,value:TReques
   `/hmo/${resource}/${id}`,
   value
 );
- return r.data;
+ return changed(r.data);
 }
 
 async function postById<TRequest,TResponse>(resource:string,id:string,value:TRequest):Promise<TResponse>{
  const r=await apiClient.post<TRequest,Envelope<TResponse>>(`/hmo/${resource}/${id}`,value);
- return r.data;
+ return changed(r.data);
 }
 
 const provider=(x:ServerProvider):HmoProvider=>({id:x.id,name:x.name,contactPerson:x.contact_person??null,contactNumber:x.contact_number??null,status:x.status});
@@ -134,6 +138,12 @@ export const hmoService={
  verifyPayrollDeduction:(id:string)=>patch('payroll-deductions',id,{action:'verify'}),
 
  getPayrollDeductions:async()=>get<ServerDeduction>('payroll-deductions').then(x=>x.map(deduction)),
+
+ /** HMO cutoff deductions for from..to, shown in Deductions and deducted in payroll. */
+ cutoffLines:async(from:string,to:string,payPeriodsPerMonth:number)=>{
+  const [plans,enrollments,dependents]=await Promise.all([hmoService.plans(),hmoService.enrollments(),hmoService.dependents()]);
+  return hmoCutoffLines({plans,enrollments,dependents,from,to,payPeriodsPerMonth});
+ },
 
  getPayrollDeduction:async(employeeId:string,periodStart:string,periodEnd:string)=>{
   const deductions=await hmoService.getPayrollDeductions();
