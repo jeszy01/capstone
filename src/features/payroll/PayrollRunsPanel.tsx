@@ -30,7 +30,7 @@ export function PayrollRuns(){
  const actions=(run:PayrollRun)=>{
   const view=<Link className={ghost} to={`/payroll/review?run=${run.id}`}>View</Link>;
   if(isAdmin)return run.status==='Pending Approval'?<Link className={button} to={`/payroll/review?run=${run.id}`}>Review Payroll</Link>:view;
-  return <>{view}{canGenerate&&run.status==='Approved'&&!run.payslipsGeneratedAt&&<button type="button" className={ghost} onClick={()=>startPayment(run)}>Proceed to Payment</button>}</>;
+  return <>{view}{canGenerate&&run.status==='Approved'&&!run.payslipsGeneratedAt&&<button type="button" className={button} onClick={()=>startPayment(run)}>Proceed to Payment</button>}</>;
  };
  return <section className="min-w-0 space-y-4">
   <div className="flex items-center justify-between">
