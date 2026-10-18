@@ -34,7 +34,10 @@ export const pesoText = v => `₱${Number(v || 0).toLocaleString('en-PH', { mini
 
 const RUN_DECISION_FIELDS = ['status', 'decidedBy', 'decidedAt'];
 const RUN_RELEASE_FIELDS = ['paidAt', 'paidBy', 'paymentMethod'];
-const runPeriod = run => run.runType === 'thirteenth-month' ? `13th month pay (${run.to})` : `${run.from} to ${run.to}`;
+// Set only by POST /payroll/payslips/generate after the payslip passkey is verified.
+const RUN_PAYSLIP_FIELDS = ['payslipsGeneratedAt', 'payslipsGeneratedBy'];
+const only = (row, keys) => Object.fromEntries(keys.map(k => [k, row[k]]));
+export const runPeriod = run => run.runType === 'thirteenth-month' ? `13th month pay (${run.to})` : `${run.from} to ${run.to}`;
 // Pending Approval (HR generates) -> Approved or Rejected (Admin) -> Released (HR). Released runs are locked.
 async function payrollRunEvents(user, before, after, releasedRecentlyBy) {
   const prev = byId(before), next = byId(after), events = [];
@@ -47,11 +50,12 @@ async function payrollRunEvents(user, before, after, releasedRecentlyBy) {
     const old = prev.get(id);
     if (!old) {
       need(user, 'payroll.generate', 'Only HR Staff can generate payroll.');
-      if (row.status !== 'Pending Approval' || row.paidAt || row.decidedAt) throw forbid('A new payroll run must start as Pending Approval.');
+      if (row.status !== 'Pending Approval' || row.paidAt || row.decidedAt || row.payslipsGeneratedAt) throw forbid('A new payroll run must start as Pending Approval.');
       log('payroll.generated', id, `Generated payroll for ${runPeriod(row)} (${Array.isArray(row.rows) ? row.rows.length : 0} employees) and submitted it for approval.`);
       continue;
     }
     if (stable(old) === stable(row)) continue;
+    if (stable(only(old, RUN_PAYSLIP_FIELDS)) !== stable(only(row, RUN_PAYSLIP_FIELDS))) throw forbid('Payslips are generated only with the payslip passkey.');
     if (old.paidAt) {
       if (stable(without(old, ['released'])) === stable(without(row, ['released']))) {
         const was = old.released ?? {}, now = row.released ?? {};

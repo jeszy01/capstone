@@ -3,7 +3,7 @@ import cors from 'cors';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
+import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -205,6 +205,11 @@ await pool.query(`
     device text not null default '', browser text not null default '', user_agent text not null default '',
     created_at timestamptz not null default now(), last_active_at timestamptz not null default now(),
     expires_at timestamptz not null, revoked_at timestamptz);
+
+  -- Shared passkeys set by an Admin (for example the payslip passkey HR enters to generate payslips). Only a PBKDF2 hash is stored.
+  create table if not exists security_passkeys(
+    name text primary key, passkey_hash text not null, failed_attempts integer not null default 0, locked_until timestamptz,
+    updated_by uuid, updated_at timestamptz not null default now());
 
   create table if not exists salary_grades(
     id uuid primary key default gen_random_uuid(), grade text not null check (btrim(grade) <> ''), position text,
@@ -461,6 +466,8 @@ async function releasedRecentlyBy(user, runId) {
 const ACTION_LABELS = {
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
+  'payroll.payslips_generated': 'Generated payslips', 'payroll.payslips_generate_failed': 'Failed payslip passkey attempt',
+  'payslip_passkey.set': 'Set payslip passkey', 'payslip_passkey.changed': 'Changed payslip passkey',
   'leave.approved': 'Approved leave', 'leave.rejected': 'Rejected leave',
   'deduction.added': 'Added authorized deduction', 'deduction.stopped': 'Stopped authorized deduction',
   'claim.approved': 'Approved claim', 'claim.rejected': 'Rejected claim', 'claim.returned': 'Returned claim', 'claim.paid': 'Marked claim as Paid',
@@ -634,6 +641,71 @@ app.post('/account', auth, async (req, res) => {
     return ok(res, await accountOverview(ctx));
   }
   throw new HttpError(400, 'UNKNOWN_ACTION', 'Unsupported account action.');
+});
+
+// ---- Payslip passkey: set by an Admin in Settings & Privacy, entered by HR Staff to generate payslips ----
+// Five wrong entries lock it for 15 minutes, like the account passkey. The passkey itself is never stored, logged or returned.
+const PAYSLIP_PASSKEY = 'payslip';
+const passkeyLockedUntil = (row, now = Date.now()) => row?.locked_until && Date.parse(row.locked_until) > now ? row.locked_until : null;
+
+app.get('/payslip-passkey', auth, allow('settings.edit'), async (_req, res) => {
+  const row = await first('security_passkeys', { name: PAYSLIP_PASSKEY });
+  ok(res, { set: Boolean(row), locked_until: passkeyLockedUntil(row) });
+});
+
+// Setting or changing it requires the Admin's login password.
+app.post('/payslip-passkey', auth, allow('settings.edit'), async (req, res) => {
+  const body = input(req), user = await accountUser(ctxOf(req));
+  confirmPassword(user, body.current_password);
+  const passkeyHash = newPasskey(user, body.new_passkey);
+  const existing = await first('security_passkeys', { name: PAYSLIP_PASSKEY });
+  await run(`insert into security_passkeys(name,passkey_hash,updated_by,updated_at) values($1,$2,$3,now())
+    on conflict(name) do update set passkey_hash=$2, failed_attempts=0, locked_until=null, updated_by=$3, updated_at=now()`, [PAYSLIP_PASSKEY, passkeyHash, user.id]);
+  await audit(existing ? 'payslip_passkey.changed' : 'payslip_passkey.set', user.id, 'Settings & Privacy', null,
+    { description: `${existing ? 'Changed' : 'Set'} the payslip passkey.` }, ipDevice(req));
+  ok(res, { set: true, locked_until: null });
+});
+
+// Marks an approved run's payslips as generated, only after the payslip passkey is verified here.
+// Runs on the same lock as /app-data writes so a sync cannot overwrite it.
+app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (req, res) => {
+  const body = input(req), runId = required(body.run_id, 'run_id');
+  const client = await pool.connect();
+  let result, payrollRun, wrongPasskey = false;
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:payroll:runs']);
+    const { rows: [secret] } = await client.query('select * from security_passkeys where name=$1 for update', [PAYSLIP_PASSKEY]);
+    const { rows: [data] } = await client.query('select value, deleted from app_data where key=$1', ['payroll:runs']);
+    const runs = data && !data.deleted ? appValue(data.value) : [];
+    payrollRun = Array.isArray(runs) ? runs.find(r => r && String(r.id) === runId) : undefined;
+    if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run is not synchronized to the database.');
+    if (payrollRun.status !== 'Approved') throw new HttpError(409, 'PAYROLL_NOT_APPROVED', 'Payslips can be generated only for approved payroll.');
+    const locked = passkeyLockedUntil(secret);
+    if (!secret) result = { generated: false, reason: 'not_set' };
+    else if (locked) result = { generated: false, reason: 'locked', locked_until: locked };
+    else if (typeof body.passkey === 'string' && body.passkey && verify(body.passkey, secret.passkey_hash)) {
+      const generatedAt = new Date().toISOString(), generatedBy = req.user.display_name || req.user.name || req.user.email || 'HR Staff';
+      const next = runs.map(r => r && String(r.id) === runId ? { ...r, payslipsGeneratedAt: generatedAt, payslipsGeneratedBy: generatedBy } : r);
+      await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
+      if (secret.failed_attempts || secret.locked_until) await client.query('update security_passkeys set failed_attempts=0, locked_until=null where name=$1', [PAYSLIP_PASSKEY]);
+      result = { generated: true, runs: next };
+    } else {
+      const attempts = (secret.locked_until ? 0 : Number(secret.failed_attempts ?? 0)) + 1;
+      const lock = attempts >= PASSKEY_MAX_ATTEMPTS ? new Date(Date.now() + PASSKEY_LOCK_MINUTES * 60_000).toISOString() : null;
+      await client.query('update security_passkeys set failed_attempts=$2, locked_until=$3 where name=$1', [PAYSLIP_PASSKEY, lock ? 0 : attempts, lock]);
+      wrongPasskey = true;
+      result = lock ? { generated: false, reason: 'locked', locked_until: lock } : { generated: false, reason: 'invalid' };
+    }
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  if (result.generated) await audit('payroll.payslips_generated', req.user.id, 'Payroll', runId, { description: `Generated payslips for ${runPeriod(payrollRun)}.` }, ipDevice(req));
+  else if (wrongPasskey) await audit('payroll.payslips_generate_failed', req.user.id, 'Payroll', runId,
+    { description: `Wrong payslip passkey when generating payslips for ${runPeriod(payrollRun)}.${result.reason === 'locked' ? ' Payslip passkey locked for 15 minutes.' : ''}` }, ipDevice(req));
+  ok(res, result);
 });
 
 // ---- /users (admin user management) ----
@@ -1912,7 +1984,7 @@ app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) =
 
 // Known errors from the routes above keep their status and code; anything else falls through to the generic handler.
 const PG_CLIENT_ERRORS = { '22P02': 400, '22007': 400, '22008': 400, '23502': 400, '23514': 400, '42703': 400, '23505': 409, '23503': 409 };
-app.use(['/app-data', '/employees', '/audit-logs', '/account', '/users', '/compensation', '/hmo', '/loans', '/government-loans'], (err, _req, res, next) => {
+app.use(['/app-data', '/employees', '/audit-logs', '/account', '/payslip-passkey', '/payroll', '/users', '/compensation', '/hmo', '/loans', '/government-loans'], (err, _req, res, next) => {
   if (err instanceof HttpError || err instanceof AccessError) return fail(res, err.status, err.code, err.message);
   if (PG_CLIENT_ERRORS[err?.code]) return fail(res, PG_CLIENT_ERRORS[err.code], 'INVALID_REQUEST', err.message);
   next(err);
