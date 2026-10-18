@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useState} from 'react';
 import {formatDate} from '../../utils/date';
-import {Check,Download,Eye,Pencil,Plus,X} from 'lucide-react';
+import {Archive,Check,CircleCheck,Download,Hourglass,Eye,Pencil,Plus,X} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,Tabs,TextInput,ghost,input} from '../../components/common/ui';
 import {loadRates} from '../settings/payrollSettings';
 import type {Employee} from '../../types/domain';
@@ -13,7 +13,7 @@ import {governmentLoanService} from './governmentLoanService';
 import type {GovernmentLoan,GovernmentLoanInput,GovernmentLoanNotice,GovernmentLoanStatus,GovernmentLoanTransaction,GovernmentLoanType,ScheduledGovernmentLoan} from './governmentLoanService';
 
 const MODULE='Government Loans';
-const TABS=[{id:'pending',label:'Pending'},{id:'active',label:'Active'},{id:'closed',label:'Closed'}] as const;
+const TABS=[{id:'pending',label:'Pending',shortLabel:'Pending',icon:Hourglass},{id:'active',label:'Active',shortLabel:'Active',icon:CircleCheck},{id:'closed',label:'Closed',shortLabel:'Closed',icon:Archive}] as const;
 type TabId=(typeof TABS)[number]['id'];
 // Rejected encodings are listed with closed loans.
 const TAB_STATUSES:Record<TabId,GovernmentLoanStatus[]>={pending:['Pending'],active:['Active'],closed:['Closed','Rejected']};

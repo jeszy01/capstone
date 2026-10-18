@@ -2,7 +2,7 @@ import type {Employee} from '../../types/domain';
 import {employeeName,statusClass} from './claimsTypes';
 import type {ExpenseClaim} from './claimsTypes';
 
-export {ViewToggle,cell,flushCard,localToday,rowHeader,tableHead,formatDate as claimDate} from '../../components/common/tableUi';
+export {cell,flushCard,localToday,rowHeader,tableHead,formatDate as claimDate} from '../../components/common/tableUi';
 
 /** One status per claim: payment progress once approved, otherwise the approval status. */
 export function claimStatus(claim:ExpenseClaim){

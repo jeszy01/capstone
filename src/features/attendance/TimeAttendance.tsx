@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState} from 'react';
-import {Clock,Download,Search,UserCheck,Users,XCircle} from 'lucide-react';
+import {CalendarCheck,Clock,Download,Search,UserCheck,Users,XCircle} from 'lucide-react';
 import {Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
 import {formatDate} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
@@ -40,7 +40,7 @@ function exportCsv(file:string,headers:string[],rows:(string|number)[][]){
 }
 
 export default function TimeAttendance(){
- const tabs=[{id:'daily',label:'Attendance Records'},{id:'timesheet',label:'Timesheet'}] as const;
+ const tabs=[{id:'daily',label:'Attendance Records',shortLabel:'Records',icon:CalendarCheck},{id:'timesheet',label:'Timesheet',shortLabel:'Timesheet',icon:Clock}] as const;
  const[tab,setTab]=useState<(typeof tabs)[number]['id']>('daily');
  const[employees,setEmployees]=useState<Employee[]>([]);
  useEffect(()=>{employeeService.getAll().then(setEmployees).catch(()=>setEmployees([]))},[]);

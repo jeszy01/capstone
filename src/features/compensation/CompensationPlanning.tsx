@@ -3,10 +3,15 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Eye,
+  Gift,
+  Layers,
   Pencil,
   Plus,
   RefreshCw,
   Trash2,
+  TrendingUp,
+  UserCog,
+  Wallet,
   XCircle,
 } from 'lucide-react';
 import {
@@ -53,9 +58,9 @@ import type {
 } from './compensationState';
 
 type Section='salary-structure'|'adjustments'|'history';
-const structureTabs=[{id:'grades',label:'Salary Grades'},{id:'assignments',label:'Salary Assignments'}] as const;
+const structureTabs=[{id:'grades',label:'Salary Grades',shortLabel:'Grades',icon:Layers},{id:'assignments',label:'Salary Assignments',shortLabel:'Assignments',icon:UserCog}] as const;
 type StructureTab=(typeof structureTabs)[number]['id'];
-const adjustmentTabs=[{id:'salary',label:'Salary Adjustments'},{id:'allowances',label:'Allowances'},{id:'incentives',label:'Incentives & Bonuses'}] as const;
+const adjustmentTabs=[{id:'salary',label:'Salary Adjustments',shortLabel:'Salary',icon:TrendingUp},{id:'allowances',label:'Allowances',shortLabel:'Allowances',icon:Wallet},{id:'incentives',label:'Incentives & Bonuses',shortLabel:'Incentives',icon:Gift}] as const;
 type AdjustmentsTab=(typeof adjustmentTabs)[number]['id'];
 type Details={title:string;fields:Array<[string,string]>};
 type ModalName='grade'|'employee'|'proposal'|null;

@@ -1,16 +1,16 @@
 import {useEffect,useState} from 'react';
-import {Check} from 'lucide-react';
-import {Button,Card,ConfirmDialog,Empty,ErrorAlert,LoadingState} from '../components/common/ui';
+import {Check,History,Wallet} from 'lucide-react';
+import {Button,Card,ConfirmDialog,Empty,ErrorAlert,LoadingState,Tabs} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {normalizeClaims,saveClaims} from '../features/claims/claimsTypes';
 import {can} from '../features/auth/permissions';
 import type {ExpenseClaim} from '../features/claims/claimsTypes';
-import {ClaimStatusBadge,EmployeeCell,ViewToggle,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
+import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
 
 type View='forReimbursement'|'history';
-const VIEWS=[{id:'forReimbursement',label:'For Reimbursement'},{id:'history',label:'History'}] as const;
+const VIEWS=[{id:'forReimbursement',label:'For Reimbursement',shortLabel:'Pending',icon:Wallet},{id:'history',label:'History',shortLabel:'History',icon:History}] as const;
 
 export default function Reimbursement(){
   const[employees,setEmployees]=useState<Employee[]>([]);
@@ -35,7 +35,7 @@ export default function Reimbursement(){
           <h2 className="m-0 flex flex-wrap items-center gap-2 text-[15px] font-semibold text-[#17345b]">{view==='forReimbursement'?'Ready for reimbursement':'Reimbursement history'}<span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{list.length} {list.length===1?'claim':'claims'}</span></h2>
           <p className="mb-0 mt-1 text-[12px] text-slate-500">{view==='forReimbursement'?<>Approved claims awaiting payment · <span className="font-semibold tabular-nums text-[#17345b]">{peso(outstanding)}</span> outstanding</>:'Claims that have been reimbursed.'}</p>
         </div>
-        <ViewToggle label="Reimbursement views" value={view} options={VIEWS} onChange={setView}/>
+        <Tabs label="Reimbursement views" value={view} onChange={setView} tabs={VIEWS} className=""/>
       </div>
       <section role="tabpanel" aria-label={view==='forReimbursement'?'Ready for reimbursement':'Reimbursement history'} className="min-w-0">
         {loading?<LoadingState>Loading reimbursements…</LoadingState>:view==='forReimbursement'?<ForReimbursement claims={forReimbursement} employees={employees} onProcess={setConfirming}/>:<ReimbursementHistory claims={history} employees={employees}/>}

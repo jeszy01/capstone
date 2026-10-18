@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react';
 import type {ReactNode} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {Pencil,Plus,Trash2} from 'lucide-react';
+import {HeartPulse,House,Pencil,Plus,ShieldCheck,Trash2} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,Field,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../components/common/ui';
 import {can} from '../features/auth/permissions';
 import {confirmWithPasskey} from '../features/auth/passkeyGate';
@@ -146,7 +146,7 @@ function ContributionsSection({editing,canEdit,onEdit,onDone,onDirty}:SectionPro
   onDone('Government Contributions saved.');
  });
  return <SectionShell title="Government Contributions" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}>
-  <div className="-mt-5"><Tabs label="Agency" value={agency} onChange={setAgency} tabs={[{id:'sss',label:'SSS'},{id:'philhealth',label:'PhilHealth'},{id:'pagibig',label:'Pag-IBIG'}]}/></div>
+  <div className="-mt-5"><Tabs label="Agency" value={agency} onChange={setAgency} tabs={[{id:'sss',label:'SSS',shortLabel:'SSS',icon:ShieldCheck},{id:'philhealth',label:'PhilHealth',shortLabel:'PhilHealth',icon:HeartPulse},{id:'pagibig',label:'Pag-IBIG',shortLabel:'Pag-IBIG',icon:House}]}/></div>
   <div className={`${grid} mt-5`}>{RATE_FIELDS[agency].map(field=><RateInput key={field.key} field={field} draft={draft} setDraft={setDraft} editing={editing}/>)}</div>
  </SectionShell>;
 }

@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useState} from 'react';
 import type {ReactNode} from 'react';
 import {useSearchParams} from 'react-router-dom';
-import {LogOut,Pencil} from 'lucide-react';
+import {Lock,LogOut,Pencil,UserCog} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost} from '../components/common/ui';
 import {AccountSettings} from './Admin';
 import {recordAudit} from '../features/audit/auditService';
@@ -9,7 +9,7 @@ import {accountService,passkeyProblems,passwordProblems} from '../features/auth/
 import type {AccountSecurity,AccountSession} from '../features/auth/accountService';
 import {notificationSoundOn,setNotificationSoundOn} from '../features/notifications/notificationSound';
 
-const TABS=[{id:'account',label:'Account Settings'},{id:'privacy',label:'Privacy'}] as const;
+const TABS=[{id:'account',label:'Account Settings',shortLabel:'Account',icon:UserCog},{id:'privacy',label:'Privacy',shortLabel:'Privacy',icon:Lock}] as const;
 type TabId=(typeof TABS)[number]['id'];
 type CardId='password'|'passkey'|'otp';
 type PasskeyMode='set'|'change'|'reset';

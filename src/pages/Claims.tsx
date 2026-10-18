@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
-import {Check,FileText,MoreVertical,Plus,RotateCcw,ThumbsDown,Trash2,Upload,X} from 'lucide-react';
-import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,TextInput,ghost,input} from '../components/common/ui';
+import {Check,FileText,History,Hourglass,MoreVertical,Plus,RotateCcw,ThumbsDown,Trash2,Upload,X} from 'lucide-react';
+import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,Tabs,TextInput,ghost,input} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {can} from '../features/auth/permissions';
@@ -8,11 +8,11 @@ import {recordAudit} from '../features/audit/auditService';
 import {notifyClaimDecided,notifyClaimSubmitted} from '../features/notifications/notificationService';
 import {claimTypes,employeeName,nextClaimNumber,normalizeClaims,saveClaims} from '../features/claims/claimsTypes';
 import type {ClaimType,ExpenseClaim} from '../features/claims/claimsTypes';
-import {ClaimStatusBadge,EmployeeCell,ViewToggle,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
+import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {numberValue,peso} from '../utils/storage';
 
 type View='open'|'history';
-const VIEWS=[{id:'open',label:'Awaiting Review'},{id:'history',label:'History / Report'}] as const;
+const VIEWS=[{id:'open',label:'Awaiting Review',shortLabel:'Awaiting',icon:Hourglass},{id:'history',label:'History / Report',shortLabel:'History',icon:History}] as const;
 // Returned claims stay open: Finance can still approve them once corrected.
 const isOpen=(claim:ExpenseClaim)=>claim.approvalStatus==='Pending Approval'||claim.approvalStatus==='Returned';
 type Pending={kind:'reject'|'delete';claim:ExpenseClaim};
@@ -45,7 +45,7 @@ export default function Claims(){
      <p className="mb-0 mt-1 text-[12px] text-slate-500">{view==='open'?'Pending and returned expense claims for Finance review.':'Every claim submitted, with its current status.'}</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
-     <ViewToggle label="Claims views" value={view} options={VIEWS} onChange={setView}/>
+     <Tabs label="Claims views" value={view} onChange={setView} tabs={VIEWS} className=""/>
      {can('claims.encode')&&<Button onClick={()=>setShow(true)}><Plus size={15}/>Submit Expense Claim</Button>}
     </div>
    </div>

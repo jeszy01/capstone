@@ -1,8 +1,10 @@
+import { FileText, ShieldCheck, UserPlus, Users } from 'lucide-react';
+
 export const hmoTabs = [
-  { id: 'plan', label: 'HMO Plan', to: '/hmo-benefits/hmo/plan' },
-  { id: 'enrollment', label: 'Employee Enrollment', to: '/hmo-benefits/hmo/employee-enrollment' },
-  { id: 'dependents', label: 'Dependents', to: '/hmo-benefits/hmo/dependents' },
-  { id: 'history', label: 'HMO Records', to: '/hmo-benefits/hmo/history' },
+  { id: 'plan', label: 'HMO Plan', shortLabel: 'Plan', icon: ShieldCheck, to: '/hmo-benefits/hmo/plan' },
+  { id: 'enrollment', label: 'Employee Enrollment', shortLabel: 'Enrollment', icon: UserPlus, to: '/hmo-benefits/hmo/employee-enrollment' },
+  { id: 'dependents', label: 'Dependents', shortLabel: 'Dependents', icon: Users, to: '/hmo-benefits/hmo/dependents' },
+  { id: 'history', label: 'HMO Records', shortLabel: 'Records', icon: FileText, to: '/hmo-benefits/hmo/history' },
 ] as const;
 
 export type HmoTab = typeof hmoTabs[number]['id'];
