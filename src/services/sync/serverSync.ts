@@ -62,12 +62,12 @@ export async function hydrateFromServer(reloadOnChange=false){
    // Notifications update in place (bell, Notifications page, sound) instead of reloading the page.
    if(item.key===NOTIFICATIONS_KEY){if(item.deleted)rawRemove.call(window.localStorage,item.key);else rawSet.call(window.localStorage,item.key,JSON.stringify(item.value));continue}
    if(item.deleted){
-   if(window.localStorage.getItem(item.key)!==null){console.log('HYDRATE DIFF (deleted)',item.key);changed=true} if(window.localStorage.getItem(item.key)!==null)changed=true;
+    if(window.localStorage.getItem(item.key)!==null)changed=true;
     rawRemove.call(window.localStorage,item.key);
     continue;
    }
    const raw=JSON.stringify(item.value);
-   if(window.localStorage.getItem(item.key)!==raw){console.log('HYDRATE DIFF',item.key,window.localStorage.getItem(item.key),raw);changed=true}
+   if(window.localStorage.getItem(item.key)!==raw)changed=true;
    rawSet.call(window.localStorage,item.key,raw);
   }
   // Without Payroll Settings access, payroll reads only the rates and rules it needs, read-only; they are never pushed back.
