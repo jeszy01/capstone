@@ -44,14 +44,14 @@ export function ConfirmDialog({title,message,confirmLabel,danger=false,blocked=f
 export const MASK='••••••••';
 const EMPTY_VALUES=new Set(['','—','-','Unavailable','Not assigned']);
 export const maskValue=(shown:boolean,value:ReactNode):ReactNode=>shown||value==null||(typeof value==='string'&&EMPTY_VALUES.has(value.trim()))?value:MASK;
-/** Eye / EyeOff button that shows or hides confidential values. compact matches a modal's close button; inline is a small
+/** The one eye button for confidential values: EyeOff while the value is hidden, Eye while it is shown. compact matches a modal's close button; inline is a small
  * icon-only button that sits on the same row as the value. Its click does not reach the card it sits in. */
 export function RevealToggle({shown,onToggle,compact=false,inline=false}:{shown:boolean;onToggle:()=>void;compact?:boolean;inline?:boolean}){
  const className=inline?'grid h-7 w-7 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700!'
   :compact?'grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700'
   :'pbms-secondary grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700';
  const size=inline?15:compact?18:16;
- return <button type="button" aria-label={shown?'Hide confidential data':'Show confidential data'} aria-pressed={shown} onClick={event=>{event.stopPropagation();onToggle()}} onKeyDown={event=>event.stopPropagation()} className={className}>{shown?<EyeOff size={size}/>:<Eye size={size}/>}</button>;
+ return <button type="button" aria-label={shown?'Hide':'Show'} aria-pressed={shown} onClick={event=>{event.stopPropagation();onToggle()}} onKeyDown={event=>event.stopPropagation()} className={className}>{shown?<Eye size={size}/>:<EyeOff size={size}/>}</button>;
 }
 
 /** Figures in one rounded card: a grid with thin dividers (a 1px gap over the divider colour), no nested boxes. */
