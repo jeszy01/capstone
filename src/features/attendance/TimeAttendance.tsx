@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useState} from 'react';
-import {CalendarDays,ChevronLeft,ChevronRight,Clock,Download,Search,UserCheck,Users,XCircle} from 'lucide-react';
+import {Clock,Download,Search,UserCheck,Users,XCircle} from 'lucide-react';
 import {Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
+import {formatDate} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {fetchAttendance,hr2SyncedThrough,lastHr2Sync,runningRange} from './attendanceService';
@@ -9,7 +10,6 @@ import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
 import {confirmWithPasskey} from '../auth/passkeyGate';
 
-const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 const head='border-b border-[#e3e7ef] bg-slate-50/80 text-[10px] uppercase tracking-wide text-[#6b7794]';
 
 // Read-only: every figure below is shown as received from HR2.
@@ -40,7 +40,7 @@ function exportCsv(file:string,headers:string[],rows:(string|number)[][]){
 }
 
 export default function TimeAttendance(){
- const tabs=[{id:'daily',label:'Daily Attendance'},{id:'timesheet',label:'Timesheet'}] as const;
+ const tabs=[{id:'daily',label:'Attendance Records'},{id:'timesheet',label:'Timesheet'}] as const;
  const[tab,setTab]=useState<(typeof tabs)[number]['id']>('daily');
  const[employees,setEmployees]=useState<Employee[]>([]);
  useEffect(()=>{employeeService.getAll().then(setEmployees).catch(()=>setEmployees([]))},[]);
@@ -52,12 +52,13 @@ export default function TimeAttendance(){
 }
 
 function DailyAttendance({employees}:{employees:Employee[]}){
- const[date,setDate]=useState(today),[q,setQ]=useState(''),[status,setStatus]=useState('');
- const{records,loading,error,reload}=useAttendance(date,date);
+ // One row per employee per date in the selected cutoff, up to the latest HR2 sync (weekly syncs extend it).
+ const cutoffs=useMemo(()=>recentCutoffs(),[]);
+ const[cutoff,setCutoff]=useState(cutoffs[0]),[q,setQ]=useState(''),[status,setStatus]=useState('');
+ const running=runningRange(cutoff),through=hr2SyncedThrough();
+ const{records,loading,error,reload}=useAttendance(running?.from??'',running?.to??'');
  const employeeFor=(reference:string)=>findAttendanceEmployee(employees,reference);
- const moveDate=(offset:number)=>{const next=new Date(`${date}T12:00:00`);next.setDate(next.getDate()+offset);setDate(`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`)};
- const shown=records.filter(record=>{const employee=employeeFor(record.empId);return(!q||`${employee?.name??record.name} ${employee?.employeeNo??record.empId}`.toLowerCase().includes(q.toLowerCase()))&&(!status||attendanceStatus(record)===status)});
- const selectedDay=new Date(`${date}T12:00:00`);
+ const shown=records.filter(record=>{const employee=employeeFor(record.empId);return(!q||`${employee?.name??record.name} ${employee?.employeeNo??record.empId}`.toLowerCase().includes(q.toLowerCase()))&&(!status||attendanceStatus(record)===status)}).sort((a,b)=>a.date.localeCompare(b.date)||(employeeFor(a.empId)?.name||a.name).localeCompare(employeeFor(b.empId)?.name||b.name));
  const summary=[
   {label:'Present',value:records.filter(record=>attendanceStatus(record)==='Present').length,icon:UserCheck,color:'bg-emerald-50 text-emerald-600'},
   {label:'Late',value:records.filter(record=>attendanceStatus(record)==='Late').length,icon:Clock,color:'bg-amber-50 text-amber-500'},
@@ -65,13 +66,14 @@ function DailyAttendance({employees}:{employees:Employee[]}){
   {label:'Overtime',value:records.filter(record=>(record.otMin??0)>0).length,icon:Clock,color:'bg-blue-50 text-blue-600'},
   {label:'Total Employees',value:employees.length,icon:Users,color:'bg-slate-50 text-slate-600'},
  ];
- const headers=['Employee','Time In','Time Out','Worked Hours','Late (min)','Undertime (min)','OT (min)','Leave','Status'];
+ const headers=['Employee','Date','Time In','Time Out','Worked Hours','Late (min)','Undertime (min)','OT (min)','Leave','Status'];
  // Leave in days, matching the Timesheet's Leave total.
  const leaveDays=(record:AttendanceRecord)=>record.status==='On Leave'?1:0;
- const exportRows=async()=>{if(!await confirmWithPasskey('export',`Daily attendance (${date}) CSV`))return;exportCsv(`attendance-${date}.csv`,headers,shown.map(record=>{const c=figures(record);return [employeeFor(record.empId)?.name||record.name,record.timeIn||'—',record.timeOut||'—',workedHours(record),c.late,c.under,c.ot,leaveDays(record),attendanceStatus(record)]}))};
+ const exportRows=async()=>{if(!await confirmWithPasskey('export',`Attendance records (${shortRange(cutoff.from,cutoff.to)}) CSV`))return;exportCsv(`attendance-${cutoff.from}-${cutoff.to}.csv`,headers,shown.map(record=>{const c=figures(record);return [employeeFor(record.empId)?.name||record.name,record.date,record.timeIn||'—',record.timeOut||'—',workedHours(record),c.late,c.under,c.ot,leaveDays(record),attendanceStatus(record)]}))};
  return <div>
   <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
-   <Card className="!rounded-xl !border-white !bg-white/90 !p-3 !shadow-sm max-sm:w-full"><div className="flex items-center justify-between gap-4"><button aria-label="Previous Date" title="Previous Date" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e3e7ef] text-[#6b7794] transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" onClick={()=>moveDate(-1)}><ChevronLeft size={18}/></button><label className="relative flex min-w-0 cursor-pointer items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600"><CalendarDays size={20}/></span><span className="min-w-0"><span className="block text-[15px] font-semibold text-[#17345b]">{selectedDay.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</span><span className="block text-[11px] text-[#6b7794]">{selectedDay.toLocaleDateString('en-US',{weekday:'long'})}</span></span><input aria-label="Selected attendance date" type="date" value={date} onChange={event=>setDate(event.target.value||today())} className="absolute inset-0 h-full w-full cursor-pointer opacity-0"/></label><button aria-label="Next Date" title="Next Date" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[#e3e7ef] text-[#6b7794] transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" onClick={()=>moveDate(1)}><ChevronRight size={18}/></button></div></Card>
+   <select aria-label="Cutoff" className={`${input} !w-auto min-w-[190px] !py-3 max-sm:flex-1`} value={`${cutoff.from}|${cutoff.to}`} onChange={event=>setCutoff(cutoffs.find(item=>`${item.from}|${item.to}`===event.target.value)??cutoffs[0])}>{cutoffs.map(item=><option key={item.from} value={`${item.from}|${item.to}`}>{shortRange(item.from,item.to)}</option>)}</select>
+   <span className="text-[12px] font-medium text-slate-600">Synced up to {running&&through?shortDate(running.to):'—'}</span>
    <div className="flex min-w-[210px] flex-1 items-center gap-2 rounded-lg border border-[#e3e7ef] bg-white px-3 py-3 max-sm:min-w-full"><Search size={16} className="text-slate-400"/><input aria-label="Employee Search" placeholder="Search employee..." value={q} onChange={event=>setQ(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"/></div>
    <select aria-label="Attendance status filter" className={`${input} !w-auto min-w-[150px] !py-3 max-sm:flex-1`} value={status} onChange={event=>setStatus(event.target.value)}><option value="">All Status</option>{[['Present','Present'],['Late','Late'],['Absent','Absent'],['On Leave','Leave'],['Rest Day','Rest Day'],['Incomplete','Incomplete']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
    <span className="text-[12px] text-slate-500">Last synced: {syncedText(lastHr2Sync())}</span>
@@ -79,7 +81,7 @@ function DailyAttendance({employees}:{employees:Employee[]}){
   </div>
   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">{summary.map(({label,value,icon:Icon,color})=><Card key={label} className="relative overflow-hidden border-slate-200/70 transition-shadow hover:shadow-md"><div className="flex items-center justify-between gap-3"><div><div className="text-[11px] font-medium text-slate-500">{label}</div><div className="mt-2 text-[25px] font-semibold tracking-tight text-[#17345b]">{value}</div></div><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${color}`}><Icon size={21}/></span></div></Card>)}</div>
   {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
-  <Card className="mt-4 overflow-hidden border-slate-200/80 p-0 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">Daily Attendance</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]"><thead><tr className={head}>{headers.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={headers.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={headers.length}><Empty>No attendance records for this date.</Empty></td></tr>:shown.map(r=>{const c=figures(r);return <tr key={`${r.id}-${r.empId}`} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{employeeFor(r.empId)?.name||r.name}</div><div className="text-[11px] text-[#6b7794]">{employeeFor(r.empId)?.employeeNo||r.empId}</div></td><td className="px-4 py-3 tabular-nums">{r.timeIn||'—'}</td><td className="px-4 py-3 tabular-nums">{r.timeOut||'—'}</td><td className="px-4 py-3 tabular-nums">{workedHours(r)}</td><td className="px-4 py-3 tabular-nums">{c.late}</td><td className="px-4 py-3 tabular-nums">{c.under}</td><td className="px-4 py-3 tabular-nums">{c.ot}</td><td className="px-4 py-3 tabular-nums">{leaveDays(r)}</td><td className="px-4 py-3"><span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{attendanceStatus(r)}</span></td></tr>})}</tbody></table></div></Card>
+  <Card className="mt-4 overflow-hidden border-slate-200/80 p-0 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">Attendance Records</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[13px]"><thead><tr className={head}>{headers.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={headers.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={headers.length}><Empty>No attendance records for this cutoff.</Empty></td></tr>:shown.map(r=>{const c=figures(r);return <tr key={`${r.empId}-${r.date}`} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{employeeFor(r.empId)?.name||r.name}</div><div className="text-[11px] text-[#6b7794]">{employeeFor(r.empId)?.employeeNo||r.empId}</div></td><td className="whitespace-nowrap px-4 py-3">{formatDate(r.date)}</td><td className="px-4 py-3 tabular-nums">{r.timeIn||'—'}</td><td className="px-4 py-3 tabular-nums">{r.timeOut||'—'}</td><td className="px-4 py-3 tabular-nums">{workedHours(r)}</td><td className="px-4 py-3 tabular-nums">{c.late}</td><td className="px-4 py-3 tabular-nums">{c.under}</td><td className="px-4 py-3 tabular-nums">{c.ot}</td><td className="px-4 py-3 tabular-nums">{leaveDays(r)}</td><td className="px-4 py-3"><span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{attendanceStatus(r)}</span></td></tr>})}</tbody></table></div></Card>
  </div>;
 }
 
