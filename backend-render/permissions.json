@@ -40,6 +40,7 @@
     "payroll.release",
     "leave.encode",
     "leave.approve",
-    "deductions.manage"
+    "deductions.manage",
+    "audit.view"
   ]
 }
