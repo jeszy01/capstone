@@ -40,7 +40,7 @@ const visible=(items:NavItem[]):NavItem[]=>items.filter(item=>canOpen(item.to)).
 export function Sidebar({onNavigate}:{onNavigate?:()=>void}){
   const[collapsed,setCollapsed]=useState(false);
   const user=getCurrentUser();
-  return <aside className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-y-auto bg-[#10243f] px-4 py-5 text-white transition-[width] duration-200 ${collapsed?'w-[84px]':'w-[248px]'}`}>
+  return <aside className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-y-auto bg-[#10243f] px-4 py-5 text-white transition-[width] duration-200 max-lg:h-dvh ${collapsed?'w-[84px]':'w-[248px]'}`}>
     <div className={`flex items-center gap-2.5 pb-4 pt-1 ${collapsed?'justify-center px-0':'px-1.5'}`}>
       <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-white p-0.5"><img src="/logo.png" alt="" className="h-full w-full object-contain"/></div>
       {!collapsed&&<div><div className="text-[13px] font-bold">ARCHON NELL INC.</div><div className="text-[10px] tracking-wide text-[#aab4d0]">PAYROLL &amp; BENEFITS</div></div>}
