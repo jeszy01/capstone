@@ -2,7 +2,7 @@ import {useState} from 'react';
 import {Button,Field,Modal,TextInput,ghost} from '../../components/common/ui';
 import {verifyPayslipPasskey} from './payrollRuns';
 
-/** Asks for the payslip passkey and checks it on the server; onVerified receives it for the generate request. */
+/** Asks for the signed-in user's passkey and checks it on the server; onVerified receives it for the generate request. */
 export function PayslipPasskeyModal({runId,onClose,onVerified}:{runId:string;onClose:()=>void;onVerified:(passkey:string)=>void}){
  const [passkey,setPasskey]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const confirm=async()=>{

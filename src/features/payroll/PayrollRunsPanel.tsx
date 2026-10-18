@@ -11,7 +11,7 @@ import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 const STATUS_STYLES:Record<RunStatus,string>={'Pending Approval':'bg-amber-50 text-amber-700','Approved':'bg-emerald-50 text-emerald-700','Rejected':'bg-rose-50 text-rose-700'};
 
 export function PayrollRuns(){
- // Proceed to Payment: Payment Method -> payslip passkey (checked by the server) -> payment method saved and payslips generated.
+ // Proceed to Payment: Payment Method -> the user's passkey (checked by the server) -> payment method saved and payslips generated.
  const [paying,setPaying]=useState<PayrollRun|null>(null),[method,setMethod]=useState<PaymentMethod>('Bank Transfer'),[step,setStep]=useState<'method'|'passkey'>('method');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[,setTick]=useState(0);
  const startPayment=(run:PayrollRun)=>{setPaying(run);setMethod(run.paymentMethod??'Bank Transfer');setStep('method');setError('')};

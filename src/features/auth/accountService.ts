@@ -10,15 +10,6 @@ const fromServer=(data:ServerSecurity):AccountSecurity=>({otpEnabled:data.otp_en
 const verifyPasskey=(passkey:string,purpose:PasskeyPurpose,detail:string)=>apiClient.post<Record<string,unknown>,{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';attempts_left?:number;locked_until?:string|null}}>('/account',{action:'verify_passkey',passkey,purpose,detail}).then(({data}):PasskeyResult=>data.verified?{verified:true}:{verified:false,reason:data.reason??'invalid',attemptsLeft:data.attempts_left,lockedUntil:data.locked_until});
 const post=(payload:Record<string,unknown>)=>apiClient.post<Record<string,unknown>,{data:ServerSecurity}>('/account',payload).then(response=>fromServer(response.data));
 
-// The payslip passkey is shared: an Admin sets it here and HR Staff enter it to generate payslips. The server logs each change.
-export interface PayslipPasskeyStatus{set:boolean;lockedUntil:string|null}
-type ServerPayslipPasskey={data:{set:boolean;locked_until:string|null}};
-const fromPayslipPasskey=({data}:ServerPayslipPasskey):PayslipPasskeyStatus=>({set:data.set,lockedUntil:data.locked_until});
-export const payslipPasskeyService={
- load:()=>apiClient.get<ServerPayslipPasskey>('/payslip-passkey').then(fromPayslipPasskey),
- save:(currentPassword:string,newPasskey:string)=>apiClient.post<Record<string,unknown>,ServerPayslipPasskey>('/payslip-passkey',{current_password:currentPassword,new_passkey:newPasskey}).then(fromPayslipPasskey),
-};
-
 /** Password strength: 8-128 characters with upper case, lower case, a number and a symbol (also enforced by the server). */
 export function passwordProblems(password:string):string[]{
  const problems:string[]=[];

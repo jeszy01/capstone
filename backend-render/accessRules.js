@@ -34,7 +34,7 @@ export const pesoText = v => `₱${Number(v || 0).toLocaleString('en-PH', { mini
 
 const RUN_DECISION_FIELDS = ['status', 'decidedBy', 'decidedAt'];
 const RUN_RELEASE_FIELDS = ['paidAt', 'paidBy', 'paymentMethod'];
-// Set only by POST /payroll/payslips/generate after the payslip passkey is verified.
+// Set only by POST /payroll/payslips/generate after the user's passkey is verified.
 const RUN_PAYSLIP_FIELDS = ['payslipsGeneratedAt', 'payslipsGeneratedBy'];
 const only = (row, keys) => Object.fromEntries(keys.map(k => [k, row[k]]));
 export const runPeriod = run => run.runType === 'thirteenth-month' ? `13th month pay (${run.to})` : `${run.from} to ${run.to}`;

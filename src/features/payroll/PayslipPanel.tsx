@@ -13,7 +13,7 @@ const th='px-4 py-3';
 const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500';
 
 export function PayslipPanel({employees}:{employees:Employee[]}){
- // Only approved payrolls have generated payslips: generated with the payslip passkey, or (older runs) released to Finance
+ // Only approved payrolls have generated payslips: generated after the passkey is verified, or (older runs) released to Finance
 const generatedAt=(r:PayrollRun)=>r.payslipsGeneratedAt??r.paidAt;
 const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null);
 const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='Approved'&&generatedAt(r)).sort((a,b)=>(generatedAt(b)??'').localeCompare(generatedAt(a)??'')),[tick]);

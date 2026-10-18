@@ -5,9 +5,8 @@ import {LogOut,Pencil} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost} from '../components/common/ui';
 import {AccountSettings} from './Admin';
 import {recordAudit} from '../features/audit/auditService';
-import {accountService,passkeyProblems,passwordProblems,payslipPasskeyService} from '../features/auth/accountService';
-import type {AccountSecurity,AccountSession,PayslipPasskeyStatus} from '../features/auth/accountService';
-import {can} from '../features/auth/permissions';
+import {accountService,passkeyProblems,passwordProblems} from '../features/auth/accountService';
+import type {AccountSecurity,AccountSession} from '../features/auth/accountService';
 import {notificationSoundOn,setNotificationSoundOn} from '../features/notifications/notificationSound';
 
 const TABS=[{id:'account',label:'Account Settings'},{id:'privacy',label:'Privacy'}] as const;
@@ -40,32 +39,6 @@ function NotificationSoundCard(){
  return <Card className="min-w-0"><h2 className="m-0 mb-5 text-[16px] font-semibold text-slate-900">Notifications</h2><div className="grid gap-4 sm:grid-cols-3">
   <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-[13px] font-semibold text-slate-600"><input type="checkbox" role="switch" className="h-4 w-4 rounded border-slate-300 text-blue-600" checked={on} onChange={event=>{setOn(event.target.checked);setNotificationSoundOn(event.target.checked)}}/>Notification sound</label>
  </div></Card>;
-}
-
-/** Admin only: the shared passkey HR Staff enter to generate payslips. */
-function PayslipPasskeyCard(){
- const [status,setStatus]=useState<PayslipPasskeyStatus|null>(null),[editing,setEditing]=useState(false),[values,setValues]=useState({next:'',confirm:''}),[errors,setErrors]=useState<string[]>([]),[confirming,setConfirming]=useState(false),[notice,setNotice]=useState('');
- useEffect(()=>{payslipPasskeyService.load().then(setStatus).catch(cause=>setErrors([errorText(cause,'The payslip passkey could not be loaded.')]))},[]);
- useEffect(()=>{if(!notice)return;const timer=window.setTimeout(()=>setNotice(''),3000);return()=>window.clearTimeout(timer)},[notice]);
- const stop=()=>{setEditing(false);setValues({next:'',confirm:''});setErrors([])};
- const request=()=>{
-  const next:string[]=[];
-  if(!values.next||!values.confirm)next.push('Fill in all passkey fields.');
-  else{next.push(...passkeyProblems(values.next));if(values.next!==values.confirm)next.push('New passkeys do not match.')}
-  setErrors(next);if(!next.length)setConfirming(true);
- };
- const save=async(password:string)=>{const wasSet=status?.set;setStatus(await payslipPasskeyService.save(password,values.next));setConfirming(false);stop();setNotice(wasSet?'Payslip passkey changed.':'Payslip passkey set.')};
- return <>
-  {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[12px] text-emerald-800">{notice}</p>}
-  <SectionCard title="Payslip Passkey" editing={editing} canEdit={Boolean(status)} editLabel={status?.set?'Change Passkey':'Set Passkey'} onEdit={()=>{stop();setEditing(true)}} onCancel={stop} onSave={request}>
-   {editing?<div className="grid gap-4 sm:grid-cols-3">
-    <Field label="New passkey"><TextInput type="password" autoComplete="off" value={values.next} onChange={event=>setValues({...values,next:event.target.value})}/></Field>
-    <Field label="Confirm new passkey"><TextInput type="password" autoComplete="off" value={values.confirm} onChange={event=>setValues({...values,confirm:event.target.value})}/></Field>
-   </div>:<div className="grid gap-4 sm:grid-cols-3"><Field label="Status"><TextInput value={!status?'—':status.set?(status.lockedUntil?`Locked until ${new Date(status.lockedUntil).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit'})}`:'Set'):'Not set'} readOnly/></Field></div>}
-   {errors.length>0&&<div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><ul className="m-0 list-disc pl-5">{errors.map(error=><li key={error}>{error}</li>)}</ul></div>}
-  </SectionCard>
-  {confirming&&<PasswordConfirmDialog title={status?.set?'Change payslip passkey?':'Set payslip passkey?'} message="Save this payslip passkey?" confirmLabel="Confirm" onCancel={()=>setConfirming(false)} onConfirm={save}/>}
- </>;
 }
 
 function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
@@ -161,7 +134,6 @@ function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
    </div>:<div className="grid gap-4 sm:grid-cols-3"><Field label="Status"><TextInput value={security.passkeySet?(security.passkeyLockedUntil?`Locked until ${new Date(security.passkeyLockedUntil).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit'})}`:'Set'):'Not set'} readOnly/></Field></div>}
    {passkeyErrors.length>0&&<div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><ul className="m-0 list-disc pl-5">{passkeyErrors.map(error=><li key={error}>{error}</li>)}</ul></div>}
   </SectionCard>
-  {can('settings.edit')&&<PayslipPasskeyCard/>}
   <SectionCard title="Two-Factor Authentication (OTP)" editing={editing==='otp'} canEdit={editing===null&&security.otpAvailable} onEdit={()=>startEdit('otp')} onCancel={stopEdit} onSave={()=>{if(otpDraft===security.otpEnabled)stopEdit();else setConfirmingOtp(true)}}>
    <div className="grid gap-4 sm:grid-cols-3">
     <Field label="Status"><TextInput value={security.otpAvailable?(security.otpEnabled?'On':'Off'):'Unavailable'} readOnly/></Field>

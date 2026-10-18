@@ -53,7 +53,7 @@ export function releaseDepartment(id:string,dept:string){
 
 export type GeneratePayslipsResult={generated:true}|{generated:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
 export type PayslipPasskeyCheck={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
-// The payslip passkey (set by an Admin) is checked by the server, before the payment method is chosen and again on generate.
+// The signed-in user's passkey (Settings & Privacy > Passkey) is checked by the server before the payment method is saved, and again on generate.
 export async function verifyPayslipPasskey(id:string,passkey:string):Promise<PayslipPasskeyCheck>{
  const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null}}>('/payroll/payslips/verify-passkey',{run_id:id,passkey});
  return data.verified?{verified:true}:{verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
@@ -66,7 +66,7 @@ export async function generatePayslips(id:string,passkey:string):Promise<Generat
  return {generated:true};
 }
 
-/** Proceed to Payment, after the payslip passkey is verified: saves the payment method on the run (once; it is locked
+/** Proceed to Payment, after the user's passkey is verified: saves the payment method on the run (once; it is locked
  * after that) and generates the payslips with it. Throws with a short message when either step fails. */
 export async function payAndGeneratePayslips(id:string,method:PaymentMethod,passkey:string,by:string){
  const current=read<PayrollRun[]>(RUNS_KEY,[]).find(run=>run.id===id);
