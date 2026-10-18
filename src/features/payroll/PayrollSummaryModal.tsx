@@ -92,7 +92,7 @@ export function PayrollSummaryModal({run,employees,previousRun,onClose}:{run:Pay
     <div className="summary-print space-y-5 text-slate-800">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
         <div><div className="text-[17px] font-bold">Payroll Summary</div><div className="text-[12px] text-slate-500">Archon Nell Incorporated · {period}</div></div>
-        <div className="text-right text-[12px] text-slate-500"><div>{run.status}</div>{run.paidAt&&<div>Pay date: {new Date(run.paidAt).toLocaleDateString('en-PH',{dateStyle:'medium'})}</div>}</div>
+        <div className="text-right text-[12px] text-slate-500"><div>{run.status}</div>{run.paidAt&&<div>Pay date: {new Date(run.paidAt).toLocaleDateString('en-PH',{dateStyle:'medium'})}</div>}<div>Payment method: {run.paymentMethod??'—'}</div></div>
       </div>
 
       <div className="rounded-xl border border-slate-200 p-5">

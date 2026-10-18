@@ -52,7 +52,13 @@ export function releaseDepartment(id:string,dept:string){
 }
 
 export type GeneratePayslipsResult={generated:true}|{generated:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
-// The server checks the payslip passkey (set by an Admin) and marks the run; it also writes Logs & Audit.
+export type PayslipPasskeyCheck={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
+// The payslip passkey (set by an Admin) is checked by the server, before the payment method is chosen and again on generate.
+export async function verifyPayslipPasskey(id:string,passkey:string):Promise<PayslipPasskeyCheck>{
+ const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null}}>('/payroll/payslips/verify-passkey',{run_id:id,passkey});
+ return data.verified?{verified:true}:{verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
+}
+// Marks the run's payslips as generated with its saved payment method; the server also writes Logs & Audit.
 export async function generatePayslips(id:string,passkey:string):Promise<GeneratePayslipsResult>{
  const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{generated:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;runs?:PayrollRun[]}}>('/payroll/payslips/generate',{run_id:id,passkey});
  if(!data.generated)return {generated:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
@@ -67,24 +73,23 @@ export async function payRun(id:string,method:PaymentMethod,by:string):Promise<P
  const next=runs.map(item=>item.id===id?{...item,paymentMethod:method,paidAt:new Date().toISOString(),paidBy:by}:item);
  write(RUNS_KEY,next);
  const hasLoans=run.rows.some(row=>Boolean(row.loanRepayments?.length)),hasGovernmentLoans=run.rows.some(row=>Boolean(row.governmentLoans?.length));
- if(hasLoans||hasGovernmentLoans){
-  try{
-   await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:next});
-   // Check both loan settlements before posting either, so one failing never leaves the other's balances changed.
-   if(hasLoans)await loanService.validatePaidPayrollRun(id);
-   if(hasGovernmentLoans)await governmentLoanService.validateSettlement(id);
-   if(hasLoans)await loanService.postPaidPayrollRun(id);
-   // Government loan balances drop only now, when the payroll is released.
-   if(hasGovernmentLoans){
-    const posted=await governmentLoanService.settle(id);
-    if(posted.count)recordAudit({action:'Posted government loan deductions',module:'Government Loans',description:`Deducted ${peso(posted.totalAmount)} from ${posted.count} government loan${posted.count===1?'':'s'} for ${periodLabel(run.from,run.to)}.`});
-   }
-  }catch(cause){
-   const rollback=read<PayrollRun[]>(RUNS_KEY,[]).map(item=>item.id===id?{...item,paidAt:undefined,paidBy:undefined,paymentMethod:undefined}:item);
-   write(RUNS_KEY,rollback);
-   try{await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:rollback})}catch{/* local sync retries the rollback */}
-   throw cause;
+ try{
+  // Saved to the server right away: payslip generation and loan settlement read the run from there.
+  await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:next});
+  // Check both loan settlements before posting either, so one failing never leaves the other's balances changed.
+  if(hasLoans)await loanService.validatePaidPayrollRun(id);
+  if(hasGovernmentLoans)await governmentLoanService.validateSettlement(id);
+  if(hasLoans)await loanService.postPaidPayrollRun(id);
+  // Government loan balances drop only now, when the payroll is released.
+  if(hasGovernmentLoans){
+   const posted=await governmentLoanService.settle(id);
+   if(posted.count)recordAudit({action:'Posted government loan deductions',module:'Government Loans',description:`Deducted ${peso(posted.totalAmount)} from ${posted.count} government loan${posted.count===1?'':'s'} for ${periodLabel(run.from,run.to)}.`});
   }
+ }catch(cause){
+  const rollback=read<PayrollRun[]>(RUNS_KEY,[]).map(item=>item.id===id?{...item,paidAt:undefined,paidBy:undefined,paymentMethod:undefined}:item);
+  write(RUNS_KEY,rollback);
+  try{await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:rollback})}catch{/* local sync retries the rollback */}
+  throw cause;
  }
  return next;
 }

@@ -35,10 +35,10 @@ describe('paying a payroll run settles each loan type separately',()=>{
   expect(mocks.order).toEqual([]);
  });
 
- it('no loans: marks the run paid without calling either settlement',async()=>{
+ it('no loans: saves the paid run to the server without calling either settlement',async()=>{
   mocks.data.set(RUNS_KEY,[run('Approved')]);
   await payRun('run-1','Bank Transfer','HR');
-  expect(mocks.order).toEqual([]);
+  expect(mocks.order).toEqual(['app-data']);
   expect(paidMarker()).toEqual(expect.any(String));
  });
 

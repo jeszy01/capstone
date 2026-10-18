@@ -666,46 +666,72 @@ app.post('/payslip-passkey', auth, allow('settings.edit'), async (req, res) => {
   ok(res, { set: true, locked_until: null });
 });
 
-// Marks an approved run's payslips as generated, only after the payslip passkey is verified here.
-// Runs on the same lock as /app-data writes so a sync cannot overwrite it.
-app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (req, res) => {
-  const body = input(req), runId = required(body.run_id, 'run_id');
+// Checks the payslip passkey inside the caller's transaction. Wrong entries are counted; the fifth locks it for 15 minutes.
+async function checkPayslipPasskey(client, passkey) {
+  const { rows: [secret] } = await client.query('select * from security_passkeys where name=$1 for update', [PAYSLIP_PASSKEY]);
+  if (!secret) return { verified: false, reason: 'not_set' };
+  const locked = passkeyLockedUntil(secret);
+  if (locked) return { verified: false, reason: 'locked', locked_until: locked };
+  if (typeof passkey === 'string' && passkey && verify(passkey, secret.passkey_hash)) {
+    if (secret.failed_attempts || secret.locked_until) await client.query('update security_passkeys set failed_attempts=0, locked_until=null where name=$1', [PAYSLIP_PASSKEY]);
+    return { verified: true };
+  }
+  const attempts = (secret.locked_until ? 0 : Number(secret.failed_attempts ?? 0)) + 1;
+  const lock = attempts >= PASSKEY_MAX_ATTEMPTS ? new Date(Date.now() + PASSKEY_LOCK_MINUTES * 60_000).toISOString() : null;
+  await client.query('update security_passkeys set failed_attempts=$2, locked_until=$3 where name=$1', [PAYSLIP_PASSKEY, lock ? 0 : attempts, lock]);
+  return lock ? { verified: false, reason: 'locked', locked_until: lock, wrong: true } : { verified: false, reason: 'invalid', wrong: true };
+}
+// Runs inside a transaction holding the same lock as /app-data writes, so a sync cannot overwrite the change.
+async function withPayrollRun(runId, work) {
   const client = await pool.connect();
-  let result, payrollRun, wrongPasskey = false;
   try {
     await client.query('begin');
     await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:payroll:runs']);
-    const { rows: [secret] } = await client.query('select * from security_passkeys where name=$1 for update', [PAYSLIP_PASSKEY]);
     const { rows: [data] } = await client.query('select value, deleted from app_data where key=$1', ['payroll:runs']);
     const runs = data && !data.deleted ? appValue(data.value) : [];
-    payrollRun = Array.isArray(runs) ? runs.find(r => r && String(r.id) === runId) : undefined;
+    const payrollRun = Array.isArray(runs) ? runs.find(r => r && String(r.id) === runId) : undefined;
     if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run is not synchronized to the database.');
     if (payrollRun.status !== 'Approved') throw new HttpError(409, 'PAYROLL_NOT_APPROVED', 'Payslips can be generated only for approved payroll.');
-    const locked = passkeyLockedUntil(secret);
-    if (!secret) result = { generated: false, reason: 'not_set' };
-    else if (locked) result = { generated: false, reason: 'locked', locked_until: locked };
-    else if (typeof body.passkey === 'string' && body.passkey && verify(body.passkey, secret.passkey_hash)) {
-      const generatedAt = new Date().toISOString(), generatedBy = req.user.display_name || req.user.name || req.user.email || 'HR Staff';
-      const next = runs.map(r => r && String(r.id) === runId ? { ...r, payslipsGeneratedAt: generatedAt, payslipsGeneratedBy: generatedBy } : r);
-      await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
-      if (secret.failed_attempts || secret.locked_until) await client.query('update security_passkeys set failed_attempts=0, locked_until=null where name=$1', [PAYSLIP_PASSKEY]);
-      result = { generated: true, runs: next };
-    } else {
-      const attempts = (secret.locked_until ? 0 : Number(secret.failed_attempts ?? 0)) + 1;
-      const lock = attempts >= PASSKEY_MAX_ATTEMPTS ? new Date(Date.now() + PASSKEY_LOCK_MINUTES * 60_000).toISOString() : null;
-      await client.query('update security_passkeys set failed_attempts=$2, locked_until=$3 where name=$1', [PAYSLIP_PASSKEY, lock ? 0 : attempts, lock]);
-      wrongPasskey = true;
-      result = lock ? { generated: false, reason: 'locked', locked_until: lock } : { generated: false, reason: 'invalid' };
-    }
+    if (payrollRun.payslipsGeneratedAt) throw new HttpError(409, 'PAYSLIPS_ALREADY_GENERATED', 'Payslips were already generated for this payroll run.');
+    const result = await work(client, runs, payrollRun);
     await client.query('commit');
+    return { result, payrollRun };
   } catch (e) {
     await client.query('rollback').catch(() => undefined);
     throw e;
   } finally { client.release(); }
-  if (result.generated) await audit('payroll.payslips_generated', req.user.id, 'Payroll', runId, { description: `Generated payslips for ${runPeriod(payrollRun)}.` }, ipDevice(req));
-  else if (wrongPasskey) await audit('payroll.payslips_generate_failed', req.user.id, 'Payroll', runId,
-    { description: `Wrong payslip passkey when generating payslips for ${runPeriod(payrollRun)}.${result.reason === 'locked' ? ' Payslip passkey locked for 15 minutes.' : ''}` }, ipDevice(req));
-  ok(res, result);
+}
+const logWrongPayslipPasskey = (req, runId, payrollRun, check) => audit('payroll.payslips_generate_failed', req.user.id, 'Payroll', runId,
+  { description: `Wrong payslip passkey when generating payslips for ${runPeriod(payrollRun)}.${check.reason === 'locked' ? ' Payslip passkey locked for 15 minutes.' : ''}` }, ipDevice(req));
+const passkeyFailure = check => ({ reason: check.reason, ...(check.locked_until ? { locked_until: check.locked_until } : {}) });
+
+// Step 1 of Confirm and Generate Payslip: the passkey is checked before the Payment Method is chosen.
+app.post('/payroll/payslips/verify-passkey', auth, allow('payroll.release'), async (req, res) => {
+  const body = input(req), runId = required(body.run_id, 'run_id');
+  const { result: check, payrollRun } = await withPayrollRun(runId, client => checkPayslipPasskey(client, body.passkey));
+  if (check.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, check);
+  ok(res, check.verified ? { verified: true } : { verified: false, ...passkeyFailure(check) });
+});
+
+// Step 2: after the payment method is saved on the run (paidAt and paymentMethod), the passkey is checked again and the
+// payslips are marked as generated with that payment method. Once generated, the payment method can no longer change.
+app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (req, res) => {
+  const body = input(req), runId = required(body.run_id, 'run_id');
+  const { result, payrollRun } = await withPayrollRun(runId, async (client, runs, payrollRun) => {
+    if (!payrollRun.paidAt || !payrollRun.paymentMethod) throw new HttpError(409, 'PAYMENT_METHOD_REQUIRED', 'Choose the payment method before generating payslips.');
+    const check = await checkPayslipPasskey(client, body.passkey);
+    if (!check.verified) return check;
+    const generatedAt = new Date().toISOString(), generatedBy = req.user.display_name || req.user.name || req.user.email || 'HR Staff';
+    const next = runs.map(r => r && String(r.id) === runId ? { ...r, payslipsGeneratedAt: generatedAt, payslipsGeneratedBy: generatedBy } : r);
+    await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
+    return { verified: true, runs: next };
+  });
+  if (result.verified) {
+    await audit('payroll.payslips_generated', req.user.id, 'Payroll', runId, { description: `Generated payslips for ${runPeriod(payrollRun)} (${payrollRun.paymentMethod}).` }, ipDevice(req));
+    return ok(res, { generated: true, runs: result.runs });
+  }
+  if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result);
+  ok(res, { generated: false, ...passkeyFailure(result) });
 });
 
 // ---- /users (admin user management) ----
