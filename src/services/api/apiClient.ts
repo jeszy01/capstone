@@ -44,6 +44,16 @@ async function request<T>(
     if (response.status === 401) {
       message =
         'Your session is invalid or expired. Please sign out and sign in again, then complete OTP verification.';
+      // A revoked or expired session (for example signed out from another device) goes back to sign-in.
+      if (!options.token && read<string>('session:token', '') === token && typeof window !== 'undefined') {
+        try {
+          window.localStorage.removeItem('session:token');
+          window.localStorage.removeItem('session:user');
+          window.location.assign('/');
+        } catch {
+          // Storage or navigation is unavailable; the error below is still shown.
+        }
+      }
     }
 
     throw Object.assign(new Error(message), { status: response.status });

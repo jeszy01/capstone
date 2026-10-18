@@ -48,9 +48,20 @@ const auth = async (req, res, next) => {
     const c = jwt.verify((req.headers.authorization || '').replace(/^Bearer /i, ''), JWT_SECRET);
     const { rows: [u] } = await pool.query('select * from users where id=$1', [c.sub]);
     if (!u || u.status !== 'active') throw 0;
+    // Tokens carry the session (sid) created at sign-in; a revoked or expired session no longer works.
+    if (c.sid) {
+      const { rows: [s] } = await pool.query('select id, revoked_at, expires_at, last_active_at from user_sessions where id=$1 and user_id=$2', [c.sid, u.id]);
+      if (!s || s.revoked_at || new Date(s.expires_at).getTime() <= Date.now()) throw 0;
+      req.sessionId = s.id;
+      // Last Active in Settings & Privacy; refreshed at most once a minute.
+      if (Date.now() - new Date(s.last_active_at).getTime() > 60_000)
+        pool.query('update user_sessions set last_active_at=now() where id=$1', [s.id]).catch(() => undefined);
+    }
     req.user = u; next();
   } catch { fail(res, 401, 'INVALID_SESSION', 'Your session is invalid or expired. Please sign in again.'); }
 };
+const deviceOf = agent => /iPhone/.test(agent) ? 'iPhone' : /iPad/.test(agent) ? 'iPad' : /Android/.test(agent) ? 'Android'
+  : /Windows/.test(agent) ? 'Windows PC' : /Macintosh|Mac OS X/.test(agent) ? 'Mac' : /Linux/.test(agent) ? 'Linux PC' : 'Unknown device';
 
 const app = express();
 app.use(cors({ origin: origins }), express.json({ limit: '5mb' }));
@@ -60,7 +71,12 @@ app.post('/auth-login', async (req, res) => {
   const { rows: [u] } = await pool.query('select * from users where email=$1', [email]);
   if (!u || u.status !== 'active' || !verify(pw, u.password_hash))
     return fail(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
-  const token = jwt.sign({ sub: u.id, employee_id: u.employee_id, role: u.role }, JWT_SECRET, { expiresIn: '8h' });
+  // Each sign-in is a session listed under Settings & Privacy > Active Sessions.
+  const agent = String(req.headers['user-agent'] ?? '').slice(0, 500);
+  const { rows: [session] } = await pool.query(
+    `insert into user_sessions(user_id, device, browser, user_agent, expires_at) values($1, $2, $3, $4, now() + interval '8 hours') returning id`,
+    [u.id, deviceOf(agent), browserOf(agent) || 'Unknown browser', agent]);
+  const token = jwt.sign({ sub: u.id, employee_id: u.employee_id, role: u.role, sid: session.id }, JWT_SECRET, { expiresIn: '8h' });
   res.json({ data: { token, user: { id: u.id, employeeId: u.employee_id, name: u.name || u.email, displayName: u.display_name || null,
     role: ROLE_LABELS[roleKey(u.role)] ?? 'HR Staff' } } });
 });
@@ -448,7 +464,7 @@ const required = (value, name) => {
 };
 const ok = (res, data) => res.json({ data });
 const created = (res, data) => res.status(201).json({ data });
-const ctxOf = req => ({ userId: req.user.id, sessionId: null });
+const ctxOf = req => ({ userId: req.user.id, sessionId: req.sessionId ?? null });
 const input = req => (req.body && typeof req.body === 'object' ? req.body : {});
 
 // A release may be undone only by the HR user who made it, within minutes, when posting its loan deductions failed.
