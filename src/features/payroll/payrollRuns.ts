@@ -15,6 +15,9 @@ export type RunRow={position:string;rest:number;hmo:number;input:PayrollInput;re
 export type PayrollRunType='regular'|'thirteenth-month';
 export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;releasedAt?:string;releasedBy?:string};
 export const RUNS_KEY='payroll:runs';
+/** A payroll input with every amount at zero. */
+export const BLANK_PAYROLL_INPUT:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,govSssLoan:0,govPagibigLoan:0,otherDeductions:0,thirteenthMonthAndOtherBenefits:0,taxExemptBenefits:0,priorEmployerTaxableCompensation:0,priorEmployerBenefitsPaid:0,priorEmployerWithheld:0,priorEmployerPayrollPeriods:0};
+
 /** Pending Approval -> Approved -> Released (to Finance, after payslips are generated); a released run is locked. */
 export const runStatusLabel=(run:Pick<PayrollRun,'status'|'releasedAt'>)=>run.status==='Approved'&&run.releasedAt?'Released':run.status;
 

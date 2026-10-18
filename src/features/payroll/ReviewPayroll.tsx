@@ -14,7 +14,8 @@ import {getCurrentUser} from '../auth/authService';
 import {notifyPayrollApproved,notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
-import {RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod} from './payrollRuns';
+import {BLANK_PAYROLL_INPUT,RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod} from './payrollRuns';
+import {cutoffSynced} from '../attendance/attendanceService';
 import type {PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
@@ -29,7 +30,7 @@ import {governmentLoanDeductions,governmentLoanTotals,rowLoanAmounts} from '../g
 
 type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions'|'thirteenthMonthAndOtherBenefits'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
-const blank:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,govSssLoan:0,govPagibigLoan:0,otherDeductions:0,thirteenthMonthAndOtherBenefits:0,taxExemptBenefits:0,priorEmployerTaxableCompensation:0,priorEmployerBenefitsPaid:0,priorEmployerWithheld:0,priorEmployerPayrollPeriods:0};
+const blank=BLANK_PAYROLL_INPUT;
 const governmentLoanSum=(row:RunRow)=>{const loans=rowLoanAmounts(row.input,row.governmentLoans);return loans.govSssLoan+loans.govPagibigLoan};
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Night Differential','Holiday Pay','Leave Pay','Allowances','Incentives & Bonuses','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','Government Loans','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','13th-month & other benefits','Tax-exempt benefits','Prior-employer taxable YTD','Prior-employer benefits YTD','Prior-employer tax withheld','Prior-employer payroll periods','Total'];
@@ -137,6 +138,8 @@ const built:RunRow[]=[];
 
  const submit=async()=>{
   if(loanError){setConfirming(false);setError(loanError);return}
+  // A regular cutoff can be submitted only once HR2 attendance covers the whole period.
+  if(!thirteenth&&!cutoffSynced({from,to})){setConfirming(false);setError('Attendance not yet synced for this cutoff');return}
   setSubmitBusy(true);setError('');
   if(!thirteenth)try{
    const [currentEmployees,currentSchedule]=await Promise.all([employeeService.getAllFromServer(),loanService.schedule(from,to)]);

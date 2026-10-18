@@ -7,20 +7,36 @@ export interface AttendanceQuery{from:string;to:string}
 
 /** One attendance record as received from HR2. Late, undertime and OT are HR2's figures; Payroll does not recompute them. */
 export interface Hr2AttendanceRecord{employee_no:string;date:string;time_in:string|null;time_out:string|null;worked_hours:number|null;late_min:number;undertime_min:number;ot_min:number;status:AttendanceStatus;leave_type:string|null;ot_status:'Approved'|'Pending'|'Rejected'|null}
-type Hr2Store={receivedAt:string|null;records:Hr2AttendanceRecord[]};
+// syncedThrough: the last date HR2 has sent (weekly syncs fill a cutoff progressively).
+type Hr2Store={receivedAt:string|null;syncedThrough?:string|null;records:Hr2AttendanceRecord[]};
 
 // Received HR2 records, synced through app_data. Attendance is read-only in PBMS: records come only from HR2.
 export const HR2_ATTENDANCE_KEY='attendance:hr2';
 const loadStore=()=>read<Hr2Store>(HR2_ATTENDANCE_KEY,{receivedAt:null,records:[]});
 
-/** Saves records received from HR2: one per employee_no and date, a newly received copy replacing the older one. */
-export function receiveHr2Attendance(received:Hr2AttendanceRecord[]){
- if(!received.length)return;
+/**
+ * Saves a sync received from HR2. Records are upserted by employee_no and date, so days from earlier syncs stay as they
+ * are; syncedThrough moves forward to `through` (the last date the sync covers), or to the latest record date.
+ */
+export function receiveHr2Attendance(received:Hr2AttendanceRecord[],through?:string){
+ if(!received.length&&!through)return;
+ const store=loadStore();
  const key=(record:Hr2AttendanceRecord)=>`${record.employee_no.trim().toLowerCase()}|${record.date}`;
- const byKey=new Map(loadStore().records.map(record=>[key(record),record]));
+ const byKey=new Map(store.records.map(record=>[key(record),record]));
  for(const record of received)byKey.set(key(record),record);
- write<Hr2Store>(HR2_ATTENDANCE_KEY,{receivedAt:new Date().toISOString(),records:[...byKey.values()]});
+ const covered=[store.syncedThrough??'',through??'',...received.map(record=>record.date)].filter(Boolean).sort().pop()??null;
+ write<Hr2Store>(HR2_ATTENDANCE_KEY,{receivedAt:new Date().toISOString(),syncedThrough:covered,records:[...byKey.values()]});
 }
+
+/** The last date covered by HR2 syncs, or null if nothing has been synced. */
+export const hr2SyncedThrough=()=>{const store=loadStore();return store.syncedThrough??store.records.map(record=>record.date).sort().pop()??null};
+/** The synced part of a cutoff: from its start to the last synced date (never past its end), or null if none of it is synced. */
+export function runningRange(cutoff:{from:string;to:string}){
+ const through=hr2SyncedThrough();
+ return through&&through>=cutoff.from?{from:cutoff.from,to:through<cutoff.to?through:cutoff.to}:null;
+}
+/** A cutoff can be paid only once HR2 attendance covers the whole period. */
+export const cutoffSynced=(cutoff:{from:string;to:string})=>{const through=hr2SyncedThrough();return Boolean(through&&through>=cutoff.to)};
 
 /** When the latest HR2 records were received, or null if none have been. */
 export const lastHr2Sync=()=>loadStore().receivedAt;

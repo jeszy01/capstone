@@ -3,8 +3,8 @@ import {CalendarDays,ChevronLeft,ChevronRight,Clock,Download,Search,UserCheck,Us
 import {Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
-import {cutoffRange} from '../payroll/payrollRuns';
-import {fetchAttendance,lastHr2Sync} from './attendanceService';
+import {fetchAttendance,hr2SyncedThrough,lastHr2Sync,runningRange} from './attendanceService';
+import {recentCutoffs,shortDate,shortRange} from '../settings/payrollSettings';
 import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
 import {confirmWithPasskey} from '../auth/passkeyGate';
@@ -85,8 +85,11 @@ function DailyAttendance({employees}:{employees:Employee[]}){
 
 type SheetRow={key:string;name:string;number:string;list:AttendanceRecord[];present:number;absent:number;leave:number;late:number;under:number;ot:number;hours:number};
 function Timesheet({employees}:{employees:Employee[]}){
- const[range,setRange]=useState(cutoffRange),[q,setQ]=useState(''),[viewing,setViewing]=useState<SheetRow|null>(null);
- const{records,loading,error,reload}=useAttendance(range.from,range.to);
+ // Pay periods follow Payroll Settings; each weekly HR2 sync extends the synced part of the cutoff.
+ const cutoffs=useMemo(()=>recentCutoffs(),[]);
+ const[cutoff,setCutoff]=useState(cutoffs[0]),[q,setQ]=useState(''),[viewing,setViewing]=useState<SheetRow|null>(null);
+ const running=runningRange(cutoff),through=hr2SyncedThrough();
+ const{records,loading,error,reload}=useAttendance(running?.from??'',running?.to??'');
  const rows=useMemo(()=>{
   const groups=new Map<string,SheetRow>();
   records.forEach(record=>{
@@ -103,8 +106,8 @@ function Timesheet({employees}:{employees:Employee[]}){
  const heads=['Employee','Days Present','Absent','Late (min)','Undertime (min)','OT (min)','Worked Hours','Leave','Action'];
  return <div>
   <div className="mt-5 grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
-   <Field label="From"><TextInput type="date" value={range.from} onChange={event=>setRange({...range,from:event.target.value})}/></Field>
-   <Field label="To"><TextInput type="date" value={range.to} onChange={event=>setRange({...range,to:event.target.value})}/></Field>
+   <Field label="Cutoff"><select className={input} value={`${cutoff.from}|${cutoff.to}`} onChange={event=>setCutoff(cutoffs.find(item=>`${item.from}|${item.to}`===event.target.value)??cutoffs[0])}>{cutoffs.map(item=><option key={item.from} value={`${item.from}|${item.to}`}>{shortRange(item.from,item.to)}</option>)}</select></Field>
+   <span className="self-center text-[12px] text-slate-500 sm:pb-2.5">Synced up to {running&&through?shortDate(running.to):'—'}</span>
    <TextInput aria-label="Employee Search" placeholder="Search employee..." value={q} onChange={event=>setQ(event.target.value)} className="col-span-2 sm:min-w-[220px]"/>
   </div>
   {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}

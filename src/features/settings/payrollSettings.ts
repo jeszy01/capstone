@@ -149,6 +149,26 @@ export function cutoffFor(month:string,cutoff:1|2,rates=loadRates()){
  return cutoff===1?{from:`${month}-01`,to:`${month}-${pad(rates.firstCutoffEndDay)}`}:{from:`${month}-${pad(rates.firstCutoffEndDay+1)}`,to:`${month}-${pad(lastDay(y,m))}`};
 }
 export const cutoffNumberFor=(date:string,rates=loadRates()):1|2=>rates.payPeriodsPerMonth===1||Number(date.slice(8,10))<=rates.firstCutoffEndDay?1:2;
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+/** Compact range label: "Oct 1 - 15, 2026", "Oct 26 - Nov 10, 2026" or "Dec 16, 2026 - Jan 15, 2027". */
+export function shortRange(from:string,to:string){
+ const [fy,fm,fd]=from.split('-').map(Number),[ty,tm,td]=to.split('-').map(Number);
+ if(fy!==ty)return `${MONTHS[fm-1]} ${fd}, ${fy} - ${MONTHS[tm-1]} ${td}, ${ty}`;
+ return fm===tm?`${MONTHS[fm-1]} ${fd} - ${td}, ${fy}`:`${MONTHS[fm-1]} ${fd} - ${MONTHS[tm-1]} ${td}, ${fy}`;
+}
+/** Short date label, e.g. "Oct 7". */
+export const shortDate=(date:string)=>`${MONTHS[Number(date.slice(5,7))-1]} ${Number(date.slice(8,10))}`;
+/** The cutoff containing the given date and the ones before it, newest first, from the Pay Schedule settings. */
+export function recentCutoffs(count=6,date=new Date().toLocaleDateString('en-CA'),rates=loadRates()){
+ const list:Array<{from:string;to:string}>=[];
+ let [year,month]=date.split('-').map(Number),half=cutoffNumberFor(date,rates);
+ while(list.length<count){
+  list.push(cutoffFor(`${year}-${pad(month)}`,half,rates));
+  if(rates.payPeriodsPerMonth===2&&half===2)half=1;
+  else{month-=1;if(month===0){month=12;year-=1}half=rates.payPeriodsPerMonth===2?2:1}
+ }
+ return list;
+}
 /** Pay date for a cutoff: a pay day before the cutoff ends falls in the following month; days past month end are clamped. */
 export function payDateFor(from:string,to:string,rates=loadRates()){
  const day=rates.payPeriodsPerMonth===1||cutoffNumberFor(from,rates)===2?rates.secondPayDay:rates.firstPayDay;
