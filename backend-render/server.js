@@ -462,6 +462,7 @@ const ACTION_LABELS = {
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
   'payroll.payslips_generated': 'Generated payslips', 'payroll.payslips_generate_failed': 'Failed passkey attempt',
+  'payroll.released_to_finance': 'Released payroll to Finance', 'payroll.release_failed': 'Failed passkey attempt',
   'leave.approved': 'Approved leave', 'leave.rejected': 'Rejected leave',
   'deduction.added': 'Added authorized deduction', 'deduction.stopped': 'Stopped authorized deduction',
   'claim.approved': 'Approved claim', 'claim.rejected': 'Rejected claim', 'claim.returned': 'Returned claim', 'claim.paid': 'Marked claim as Paid',
@@ -639,10 +640,10 @@ app.post('/account', auth, async (req, res) => {
 
 // ---- Payslips: generated after the signed-in user's own passkey (Settings & Privacy > Passkey) is verified ----
 // The same passkey confirms CSV exports and payroll settings; wrong entries count toward its 15-minute lock.
-async function checkPayslipPasskey(req, passkey, payrollRun) {
+async function checkPayslipPasskey(req, passkey, payrollRun, detail = `Generate payslips for ${runPeriod(payrollRun)}`) {
   const user = await accountUser(ctxOf(req));
   const wasLocked = Boolean(lockedUntil(user));
-  const check = await checkPasskey(user, passkey, 'payslips', `Generate payslips for ${runPeriod(payrollRun)}`);
+  const check = await checkPasskey(user, passkey, 'payslips', detail);
   return { ...check, wrong: !check.verified && check.reason !== 'not_set' && !wasLocked };
 }
 // Runs inside a transaction holding the same lock as /app-data writes, so a sync cannot overwrite the change.
@@ -656,7 +657,6 @@ async function withPayrollRun(runId, work) {
     const payrollRun = Array.isArray(runs) ? runs.find(r => r && String(r.id) === runId) : undefined;
     if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run is not synchronized to the database.');
     if (payrollRun.status !== 'Approved') throw new HttpError(409, 'PAYROLL_NOT_APPROVED', 'Payslips can be generated only for approved payroll.');
-    if (payrollRun.payslipsGeneratedAt) throw new HttpError(409, 'PAYSLIPS_ALREADY_GENERATED', 'Payslips were already generated for this payroll run.');
     const result = await work(client, runs, payrollRun);
     await client.query('commit');
     return { result, payrollRun };
@@ -665,14 +665,15 @@ async function withPayrollRun(runId, work) {
     throw e;
   } finally { client.release(); }
 }
-const logWrongPayslipPasskey = (req, runId, payrollRun, check) => audit('payroll.payslips_generate_failed', req.user.id, 'Payroll', runId,
-  { description: `Wrong passkey when generating payslips for ${runPeriod(payrollRun)}.${check.reason === 'locked' ? ' Passkey locked for 15 minutes.' : ''}` }, ipDevice(req));
+const logWrongPayslipPasskey = (req, runId, payrollRun, check, action = 'payroll.payslips_generate_failed', doing = 'generating payslips for') => audit(action, req.user.id, 'Payroll', runId,
+  { description: `Wrong passkey when ${doing} ${runPeriod(payrollRun)}.${check.reason === 'locked' ? ' Passkey locked for 15 minutes.' : ''}` }, ipDevice(req));
+const refuseGenerated = payrollRun => { if (payrollRun.payslipsGeneratedAt) throw new HttpError(409, 'PAYSLIPS_ALREADY_GENERATED', 'Payslips were already generated for this payroll run.'); };
 const passkeyFailure = check => ({ reason: check.reason, ...(check.locked_until ? { locked_until: check.locked_until } : {}) });
 
 // Proceed to Payment, step 1: after the Payment Method is chosen, the passkey is checked before anything is saved.
 app.post('/payroll/payslips/verify-passkey', auth, allow('payroll.release'), async (req, res) => {
   const body = input(req), runId = required(body.run_id, 'run_id');
-  const { result: check, payrollRun } = await withPayrollRun(runId, (_client, _runs, payrollRun) => checkPayslipPasskey(req, body.passkey, payrollRun));
+  const { result: check, payrollRun } = await withPayrollRun(runId, (_client, _runs, payrollRun) => { refuseGenerated(payrollRun); return checkPayslipPasskey(req, body.passkey, payrollRun); });
   if (check.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, check);
   ok(res, check.verified ? { verified: true } : { verified: false, ...passkeyFailure(check) });
 });
@@ -682,6 +683,7 @@ app.post('/payroll/payslips/verify-passkey', auth, allow('payroll.release'), asy
 app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (req, res) => {
   const body = input(req), runId = required(body.run_id, 'run_id');
   const { result, payrollRun } = await withPayrollRun(runId, async (client, runs, payrollRun) => {
+    refuseGenerated(payrollRun);
     if (!payrollRun.paidAt || !payrollRun.paymentMethod) throw new HttpError(409, 'PAYMENT_METHOD_REQUIRED', 'Choose the payment method before generating payslips.');
     const check = await checkPayslipPasskey(req, body.passkey, payrollRun);
     if (!check.verified) return check;
@@ -696,6 +698,28 @@ app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (re
   }
   if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result);
   ok(res, { generated: false, ...passkeyFailure(result) });
+});
+
+// Release to Finance: after the payslips are generated, the user's passkey is verified and the run is marked Released
+// (releasedAt, releasedBy). A released run is locked; it makes the Payroll Summary available to Finance.
+app.post('/payroll/release', auth, allow('payroll.release'), async (req, res) => {
+  const body = input(req), runId = required(body.run_id, 'run_id');
+  const { result, payrollRun } = await withPayrollRun(runId, async (client, runs, payrollRun) => {
+    if (!payrollRun.paidAt) throw new HttpError(409, 'PAYSLIPS_NOT_GENERATED', 'Generate the payslips before releasing this payroll run.');
+    if (payrollRun.releasedAt) throw new HttpError(409, 'PAYROLL_ALREADY_RELEASED', 'This payroll run was already released.');
+    const check = await checkPayslipPasskey(req, body.passkey, payrollRun, `Release ${runPeriod(payrollRun)} to Finance`);
+    if (!check.verified) return check;
+    const releasedAt = new Date().toISOString(), releasedBy = req.user.display_name || req.user.name || req.user.email || 'HR Staff';
+    const next = runs.map(r => r && String(r.id) === runId ? { ...r, releasedAt, releasedBy } : r);
+    await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
+    return { verified: true, runs: next };
+  });
+  if (result.verified) {
+    await audit('payroll.released_to_finance', req.user.id, 'Payroll', runId, { description: `Released payroll for ${runPeriod(payrollRun)} to Finance.` }, ipDevice(req));
+    return ok(res, { released: true, runs: result.runs });
+  }
+  if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result, 'payroll.release_failed', 'releasing to Finance the payroll for');
+  ok(res, { released: false, ...passkeyFailure(result) });
 });
 
 // ---- /users (admin user management) ----

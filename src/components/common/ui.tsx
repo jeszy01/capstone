@@ -3,6 +3,8 @@ import type {ButtonHTMLAttributes,InputHTMLAttributes,ReactNode,RefObject} from 
 import {Inbox,X} from 'lucide-react';
 export const input='pbms-input w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-50 disabled:text-slate-400';
 export const button='pbms-button inline-flex items-center justify-center gap-2 rounded-xl bg-[#17345b] px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-[#224a7c] disabled:cursor-not-allowed disabled:opacity-50';
+// Green primary action (for example Release). pbms-button keeps table cell button styles from overriding it.
+export const success='pbms-button inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60';
 export const ghost='pbms-secondary inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50';
 export function Field({label,children}:{label:string;children:ReactNode}){return <label className="block text-[12px] font-semibold text-slate-600">{label}<div className="mt-1.5">{children}</div></label>}
 export function TextInput({className='',...props}:InputHTMLAttributes<HTMLInputElement>){return <input className={`${input} ${className}`} {...props}/>}

@@ -1,8 +1,9 @@
 import {useMemo,useState} from 'react';
-import {Button,Card,Empty,Modal,ghost} from '../../components/common/ui';
+import {Button,Card,Empty,Modal,ghost,success} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {peso,read} from '../../utils/storage';
-import {RUNS_KEY,runLabel,releaseDepartment} from './payrollRuns';
+import {RUNS_KEY,runLabel,releaseDepartment,releaseRun} from './payrollRuns';
+import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {can} from '../auth/permissions';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
@@ -15,7 +16,7 @@ const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate
 export function PayslipPanel({employees}:{employees:Employee[]}){
  // Only approved payrolls have generated payslips: generated after the passkey is verified, or (older runs) released to Finance
 const generatedAt=(r:PayrollRun)=>r.payslipsGeneratedAt??r.paidAt;
-const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null);
+const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null),[releasing,setReleasing]=useState<PayrollRun|null>(null);
 const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='Approved'&&generatedAt(r)).sort((a,b)=>(generatedAt(b)??'').localeCompare(generatedAt(a)??'')),[tick]);
  const[runId,setRunId]=useState(''),[dept,setDept]=useState(''),[slip,setSlip]=useState<RunRow|null>(null);
  const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
@@ -54,8 +55,10 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
  // Level 1: approved runs
   return <section className="mt-6 space-y-4" aria-label="Payslip records">
   <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll documents</div><h2 className="mb-0 mt-1 text-[18px] font-semibold text-[#17345b]">Payslips</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Generated only from approved payroll runs. Release is managed in ESS by department.</p></div><span className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700">{runs.length} runs</span></div>
-   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Date & Time Generated','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={4}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{const d=deptsOf(r),done=d.filter(x=>r.released?.[x]).length;return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3 font-semibold text-[#17345b]">{runLabel(r)}</td><td className="px-4 py-3 text-slate-500">{when(generatedAt(r))}</td><td className="px-4 py-3"><Badge on={done===d.length&&d.length>0} text={done===d.length&&d.length>0?'Released':done?`Partial (${done}/${d.length})`:'Not released'}/></td><td className="px-4 py-3"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button></td></tr>})}</tbody></table></div>
+   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Date & Time Generated','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={4}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{const d=deptsOf(r),done=d.filter(x=>r.released?.[x]).length;return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3 font-semibold text-[#17345b]">{runLabel(r)}</td><td className="px-4 py-3 text-slate-500">{when(generatedAt(r))}</td><td className="px-4 py-3"><Badge on={done===d.length&&d.length>0} text={done===d.length&&d.length>0?'Released':done?`Partial (${done}/${d.length})`:'Not released'}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button>{r.releasedAt?<span className="self-center text-[12px] font-semibold text-emerald-700">Released</span>:can('payroll.release')&&<button type="button" className={success} onClick={()=>setReleasing(r)}>Release</button>}</div></td></tr>})}</tbody></table></div>
   </Card>
+  {/* Release to Finance: the user's passkey is verified by the server, then the run is marked Released and locked. */}
+  {releasing&&<PayslipPasskeyModal title="Release" verify={passkey=>releaseRun(releasing.id,passkey)} onClose={()=>setReleasing(null)} onVerified={()=>{setReleasing(null);setTick(t=>t+1)}}/>}
  </section>;
 }
 
@@ -90,13 +93,14 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
     <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}</div>
     <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',run.paidAt?new Date(run.paidAt).toLocaleDateString('en-PH',{dateStyle:'medium'}):'—')}{info('Payment Method',run.paymentMethod??'—')}</div>
    </div>
-   {Math.abs(breakdown.earningsDifference)>0.01||Math.abs(breakdown.deductionsDifference)>0.01||Math.abs(breakdown.netDifference)>0.01?<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-900">This saved payroll does not reconcile. Earnings difference: {nf(breakdown.earningsDifference)}; deductions difference: {nf(breakdown.deductionsDifference)}; net-pay difference: {nf(breakdown.netDifference)}. Have Payroll review the run before relying on this payslip.</div>:<div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] font-medium text-emerald-800">Payslip reconciliation passed: itemized earnings, deductions, and net pay match the payroll calculation.</div>}
+   {Math.abs(breakdown.earningsDifference)>0.01||Math.abs(breakdown.deductionsDifference)>0.01||Math.abs(breakdown.netDifference)>0.01?<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-900">This saved payroll does not reconcile. Earnings difference: {nf(breakdown.earningsDifference)}; deductions difference: {nf(breakdown.deductionsDifference)}; net-pay difference: {nf(breakdown.netDifference)}. Have Payroll review the run before relying on this payslip.</div>:null}
    <div className="grid gap-4 py-4 sm:grid-cols-2">
     {table('Earnings',earnings,'Total Salary',c.gross)}
     {table('Deductions',deductions,'Total Deductions',c.deductions)}
    </div>
   <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-[#17345b]"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div><div className="mt-1 text-[11px] italic text-slate-500">{pesoWords(c.net)}</div></div>
-   <div className="mt-10 flex items-end justify-between text-[11px]"><div className="text-slate-500">This is a system-generated payslip for {run.from} to {run.to}.</div><div className="w-48 border-t border-slate-500 pt-1 text-center">Received By</div></div>
+   <div className="mt-10 flex justify-end text-[11px]"><div className="w-48 border-t border-slate-500 pt-1 text-center">Received By</div></div>
+   <div className="mt-6 text-[11px] text-slate-500">This is a system-generated payslip for {run.from} to {run.to}.</div>
   </div>
   <button className={`${ghost} no-print mt-4`} onClick={()=>window.print()}>Print / Save as PDF</button>
  </Modal>;

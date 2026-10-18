@@ -13,10 +13,10 @@ export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:
 export type RunRow={position:string;rest:number;hmo:number;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
 // released: department name -> ISO date-time when released to ESS
 export type PayrollRunType='regular'|'thirteenth-month';
-export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string};
+export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;releasedAt?:string;releasedBy?:string};
 export const RUNS_KEY='payroll:runs';
-/** Pending Approval -> Approved -> Released; a released run is locked. */
-export const runStatusLabel=(run:Pick<PayrollRun,'status'|'paidAt'>)=>run.status==='Approved'&&run.paidAt?'Released':run.status;
+/** Pending Approval -> Approved -> Released (to Finance, after payslips are generated); a released run is locked. */
+export const runStatusLabel=(run:Pick<PayrollRun,'status'|'releasedAt'>)=>run.status==='Approved'&&run.releasedAt?'Released':run.status;
 
 export type PaymentMethod='Bank Transfer'|'Direct Deposit';
 
@@ -64,6 +64,15 @@ export async function generatePayslips(id:string,passkey:string):Promise<Generat
  if(!data.generated)return {generated:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
  if(data.runs)write(RUNS_KEY,data.runs);
  return {generated:true};
+}
+
+export type ReleaseRunResult={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
+// Release to Finance: the server verifies the user's passkey, marks the run Released (releasedAt, releasedBy) and logs it.
+export async function releaseRun(id:string,passkey:string):Promise<ReleaseRunResult>{
+ const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{released:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;runs?:PayrollRun[]}}>('/payroll/release',{run_id:id,passkey});
+ if(!data.released)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
+ if(data.runs)write(RUNS_KEY,data.runs);
+ return {verified:true};
 }
 
 /** Proceed to Payment, after the user's passkey is verified: saves the payment method on the run (once; it is locked

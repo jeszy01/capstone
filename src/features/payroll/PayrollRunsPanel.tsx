@@ -4,7 +4,7 @@ import {Link} from 'react-router-dom';
 import {read} from '../../utils/storage';
 import {can} from '../auth/permissions';
 import {getCurrentUser} from '../auth/authService';
-import {RUNS_KEY,payAndGeneratePayslips,runLabel} from './payrollRuns';
+import {RUNS_KEY,payAndGeneratePayslips,runLabel,verifyPayslipPasskey} from './payrollRuns';
 import type {PaymentMethod,PayrollRun,RunStatus} from './payrollRuns';
 import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 
@@ -44,7 +44,7 @@ export function PayrollRuns(){
    {error&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={busy} onClick={closePayment}>Cancel</button><Button disabled={busy} onClick={()=>{setError('');setStep('passkey')}}>{busy?'Generating…':"Confirm and Generate Payslip"}</Button></div>
   </Modal>}
-  {paying&&step==='passkey'&&<PayslipPasskeyModal runId={paying.id} onClose={()=>setStep('method')} onVerified={passkey=>void generate(passkey)}/>}
+  {paying&&step==='passkey'&&<PayslipPasskeyModal verify={passkey=>verifyPayslipPasskey(paying.id,passkey)} onClose={()=>setStep('method')} onVerified={passkey=>void generate(passkey)}/>}
  </section>;
 }
 

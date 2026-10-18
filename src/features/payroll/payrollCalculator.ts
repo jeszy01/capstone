@@ -12,6 +12,19 @@ export function computeTax(monthlyTaxable:number,table:Array<{over:number;base:n
  return b?round(b.base+b.rate/100*(monthlyTaxable-b.over)):0;
 }
 
+/** Employer shares for one cutoff, from the Payroll Settings rates: same salary bases and per-period split as the
+ * employee shares; the SSS employer share includes the employer-only EC amount. Zero when no contributions apply. */
+export function employerShares(dailyRate:number,R:PayrollRates,applies=true){
+ const monthly=dailyRate*R.daysPerMonth;
+ if(!applies||!(monthly>0))return {employerSss:0,employerPhil:0,employerPagibig:0};
+ const sssBase=clamp(Math.round(monthly/R.sssStep)*R.sssStep,R.sssMin,R.sssMax);
+ return {
+  employerSss:round((sssBase*R.sssEmployerRate/100+(sssBase<R.sssEcThreshold?R.sssEcLow:R.sssEcHigh))/R.payPeriodsPerMonth),
+  employerPhil:round(clamp(monthly,R.philMin,R.philMax)*R.philEmployerRate/100/R.payPeriodsPerMonth),
+  employerPagibig:round(Math.min(monthly,R.pagibigMax)*R.pagibigEmployerRate/100/R.payPeriodsPerMonth),
+ };
+}
+
 export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{over:number;base:number;rate:number}>=[],taxContext:PayrollTaxContext={}):PayrollResult{
  const rate=numberValue(r.dailyRate),hourly=rate/R.hoursPerDay,monthly=rate*R.daysPerMonth;
  const earnedBasic=round(rate*numberValue(r.daysWorked));
@@ -46,5 +59,5 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance)+numberValue(r.govSssLoan)+numberValue(r.govPagibigLoan));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));
  const net=round(gross-deductions);
- return{basic,earnedBasic,absences,overtime,leavePay,allowances,earnings,gross,late,undertime,lateUt:round(late+undertime),sss,phil,pagibig,tax,taxBreakdown,loans,deductions,net,shortfall:net<0?round(-net):0};
+ return{basic,earnedBasic,absences,overtime,leavePay,allowances,earnings,gross,late,undertime,lateUt:round(late+undertime),sss,phil,pagibig,tax,taxBreakdown,loans,deductions,net,shortfall:net<0?round(-net):0,...employerShares(rate,R,has)};
 }
