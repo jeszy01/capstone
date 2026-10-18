@@ -14,7 +14,8 @@ const VIEWS=[{id:'enrollments',label:'Enrollments'},{id:'programs',label:'Benefi
 const badge='inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold';
 const stateClass={Active:'bg-emerald-50 text-emerald-700',Scheduled:'bg-blue-50 text-blue-700',Ended:'bg-slate-100 text-slate-600',Inactive:'bg-slate-100 text-slate-600'};
 
-export default function EmployeeBenefits(){
+/** Shown as the Employee Benefits tab of the HMO page (embedded), without its own page header. */
+export default function EmployeeBenefits({embedded=false}:{embedded?:boolean}={}){
  const today=localToday();
  // HR Staff manage benefit programs and enrollments; an Admin views them.
  const canManage=can('hmo.manage');
@@ -60,11 +61,12 @@ export default function EmployeeBenefits(){
   setEnding(null);
  };
 
- return <div className="space-y-5">
-  <PageHeader title="Employee Benefits" description="Company benefit programs and the employees enrolled in each." actions={<>
+ const actions=<>
    {canManage&&<button type="button" className={ghost} onClick={()=>setEditing('new')}><Plus size={15}/>Add Program</button>}
    {canManage&&<Button disabled={!activePrograms.length} title={activePrograms.length?undefined:'Add an active benefit program first.'} onClick={()=>setEnrolling(true)}><UserPlus size={15}/>Enroll Employee</Button>}
-  </>}/>
+ </>;
+ return <div className="space-y-5">
+  {embedded?canManage&&<div className="mt-5 flex flex-wrap justify-end gap-2">{actions}</div>:<PageHeader title="Employee Benefits" description="Company benefit programs and the employees enrolled in each." actions={actions}/>}
   {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}
   <Card className={flushCard}>
    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-50 px-5 py-4">

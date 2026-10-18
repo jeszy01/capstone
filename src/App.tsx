@@ -9,7 +9,6 @@ import TimeAttendance from './features/attendance/TimeAttendance';
 import Leave from './features/leave/Leave';
 import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
-import EmployeeBenefits from './features/benefits/EmployeeBenefits';
 import ClaimsReimbursement,{ClaimsReimbursementRedirect} from './pages/ClaimsReimbursement';
 import ReviewPayroll from './features/payroll/ReviewPayroll';
 import {LogsAudits} from './pages/Admin';
@@ -49,7 +48,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   {hmoTabs.map(({to})=><Route key={to} path={to} element={<HmoBenefits/>}/>)}
   <Route path="/hmo-benefits/hmo/payroll-deductions" element={<Navigate to="/deductions?tab=hmo" replace/>}/>
   <Route path="/hmo-benefits/government-loans" element={<Navigate to="/deductions?tab=loans&loans=government" replace/>}/>
-  <Route path="/hmo-benefits/employee-benefits" element={<EmployeeBenefits/>}/>
+  <Route path="/hmo-benefits/employee-benefits" element={<Navigate to="/hmo-benefits/hmo/employee-benefits" replace/>}/>
   <Route path="/hmo-benefits/dependents" element={<HmoBenefits section="dependents"/>}/>
   <Route path="/hmo-benefits/benefits-history" element={<Navigate to="/hmo-benefits/hmo" replace/>}/>
   <Route path="/hmo-benefits/plan" element={<Navigate to="/hmo-benefits/hmo/plan" replace/>}/>

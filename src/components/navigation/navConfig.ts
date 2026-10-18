@@ -19,10 +19,7 @@ export const modules:NavItem[]=[
   {label:'Claims',to:'/claims-reimbursement/claims'},
   {label:'Reimbursement',to:'/claims-reimbursement/reimbursement'},
  ]},
- {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse,children:[
-  {label:'HMO',to:'/hmo-benefits/hmo'},
-  {label:'Employee Benefits',to:'/hmo-benefits/employee-benefits'},
- ]},
+ {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse},
 ];
 export const titles={
  ...Object.fromEntries([...overview,...modules.flatMap(m=>m.children??[m])].map(i=>[i.to,i.label])),

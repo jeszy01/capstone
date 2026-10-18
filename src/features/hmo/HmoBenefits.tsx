@@ -4,6 +4,7 @@ import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import { useLocation, useNavigate } from "react-router-dom";
 import { hmoTabs, hmoTabForPath } from "./hmoNavigation";
+import EmployeeBenefits from "../benefits/EmployeeBenefits";
 import {
   Button,
   Card,
@@ -138,7 +139,9 @@ export default function HmoBenefits({
               ? "HMO Plan"
               : tab === "history"
                 ? "HMO Records"
-                : "HMO"
+                : tab === "benefits"
+                  ? "Employee Benefits"
+                  : "HMO"
         }
         description="Manage the company HMO plan, employee enrollment, and dependents."
         actions={
@@ -194,6 +197,11 @@ export default function HmoBenefits({
         aria-labelledby={section === "hmo" ? `hmo-tab-${tab}` : undefined}
         aria-label={section === "hmo" ? undefined : "Dependents"}
       >
+        {/* Employee Benefits (formerly its own page) keeps its own records and does not wait for HMO records. */}
+        {tab === "benefits" ? (
+          <EmployeeBenefits embedded />
+        ) : (
+        <>
         {loadError && (
           <ErrorAlert onRetry={() => void load()}>{loadError}</ErrorAlert>
         )}
@@ -240,6 +248,8 @@ export default function HmoBenefits({
               />
             )}
           </>
+        )}
+        </>
         )}
       </div>{" "}
       {planModal && (

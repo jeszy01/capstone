@@ -3,6 +3,7 @@ export const hmoTabs = [
   { id: 'enrollment', label: 'Employee Enrollment', to: '/hmo-benefits/hmo/employee-enrollment' },
   { id: 'dependents', label: 'Dependents', to: '/hmo-benefits/hmo/dependents' },
   { id: 'history', label: 'HMO Records', to: '/hmo-benefits/hmo/history' },
+  { id: 'benefits', label: 'Employee Benefits', to: '/hmo-benefits/hmo/employee-benefits' },
 ] as const;
 
 export type HmoTab = typeof hmoTabs[number]['id'];
@@ -15,6 +16,7 @@ export function hmoTabForPath(pathname: string): HmoTab {
       '/hmo-benefits/plan': 'plan',
       '/hmo-benefits/employee-enrollment': 'enrollment',
       '/hmo-benefits/dependents': 'dependents',
+      '/hmo-benefits/employee-benefits': 'benefits',
     } as Record<string, HmoTab>)[path]
     ?? 'plan';
 }

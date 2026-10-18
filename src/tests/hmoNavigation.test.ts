@@ -5,9 +5,9 @@ import {modules,titles} from '../components/navigation/navConfig';
 describe('HMO presentation navigation',()=>{
   it('keeps the HMO tabs in order',()=>{
     expect(hmoTabs.map(tab=>tab.label)).toEqual([
-      'HMO Plan','Employee Enrollment','Dependents','HMO Records',
+      'HMO Plan','Employee Enrollment','Dependents','HMO Records','Employee Benefits',
     ]);
-    expect(new Set(hmoTabs.map(tab=>tab.to)).size).toBe(4);
+    expect(new Set(hmoTabs.map(tab=>tab.to)).size).toBe(5);
   });
 
   it('selects the corresponding panel on each direct route and refresh',()=>{
@@ -20,10 +20,11 @@ describe('HMO presentation navigation',()=>{
     expect(titles['/hmo-benefits']).toBe('HMO & Benefits');
   });
 
-  it('groups benefit modules while retaining HMO details as internal tabs',()=>{
+  it('shows HMO & Benefits as a single link, with Employee Benefits as an HMO tab',()=>{
     const hmo=modules.find(item=>item.label==='HMO & Benefits');
     expect(hmo?.to).toBe('/hmo-benefits');
-    expect(hmo?.children).toEqual([{label:'HMO',to:'/hmo-benefits/hmo'},{label:'Employee Benefits',to:'/hmo-benefits/employee-benefits'}]);
+    expect(hmo?.children).toBeUndefined();
+    expect(hmoTabForPath('/hmo-benefits/employee-benefits')).toBe('benefits');
     // Government loans are deductions: they live under Payroll Management → Deductions, not in a sidebar module.
     expect(modules.flatMap(item=>item.children??[item]).some(item=>item.label==='Government Loans')).toBe(false);
   });
