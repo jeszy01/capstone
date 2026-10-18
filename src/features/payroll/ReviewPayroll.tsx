@@ -14,9 +14,8 @@ import {getCurrentUser} from '../auth/authService';
 import {notifyPayrollApproved,notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
-import {RUNS_KEY,decideRun,generatePayslips,isThirteenthMonthRun,payRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod} from './payrollRuns';
-import {PayslipPasskeyModal} from './PayslipPasskeyModal';
-import type {PayrollRun,PayrollRunType,RunRow,PaymentMethod} from './payrollRuns';
+import {RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod} from './payrollRuns';
+import type {PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
 import {activeCompensations,isBonusReward} from '../compensation/compensationState';
@@ -51,14 +50,7 @@ export default function ReviewPayroll(){
  const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
  const[error,setError]=useState('');
  const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
- const[paying,setPaying]=useState(false),[paymentBusy,setPaymentBusy]=useState(false),[method,setMethod]=useState<PaymentMethod>('Bank Transfer');
- const[passkeyOpen,setPasskeyOpen]=useState(false),[payslipPasskey,setPayslipPasskey]=useState('');
  const[loanError,setLoanError]=useState('');
- // Confirm and Generate Payslip: payslip passkey (checked by the server) -> Payment Method (saved on the run and locked once
- // payslips exist) -> payslips generated with that method. A run already paid only needs the payslips generated.
- const paidNow=()=>Boolean(saved&&read<PayrollRun[]>(RUNS_KEY,[]).find(run=>run.id===saved.id)?.paidAt);
- const pay=async(passkey:string)=>{if(!saved)return;setPaymentBusy(true);setError('');try{if(!paidNow()){const result=await payRun(saved.id,method,user?.name??'Admin');if(!result)throw new Error('The approved payroll run could not be settled.')}const generated=await generatePayslips(saved.id,passkey);if(!generated.generated)throw new Error(generated.reason==='invalid'?'Incorrect passkey':generated.reason==='locked'?'Passkey locked':'Passkey not set');nav('/payroll')}catch(cause){setPaying(false);setError(cause instanceof Error?cause.message:'Payslips could not be generated.')}finally{setPaymentBusy(false)}};
- const passkeyVerified=(passkey:string)=>{setPayslipPasskey(passkey);setPasskeyOpen(false);if(paidNow())void pay(passkey);else setPaying(true)};
  const priorHistory=(employeeId:string):AnnualTaxHistory=>{
   const year=from.slice(0,4);const priorRuns=read<PayrollRun[]>(RUNS_KEY,[]).filter(run=>run.status==='Approved'&&run.from.slice(0,4)===year&&run.to<from);
   return priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===employeeId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{
@@ -189,7 +181,6 @@ const built:RunRow[]=[];
     <button className={ghost} onClick={()=>window.print()}>Print</button>
     {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
     {saved&&saved.status==='Pending Approval'&&can('payroll.approve')&&<><button className={ghost} onClick={()=>decide('Rejected')}>Reject</button><Button onClick={()=>decide('Approved')}>Approve</Button></>}
-   {saved&&saved.status==='Approved'&&!saved.payslipsGeneratedAt&&can('payroll.release')&&<Button disabled={paymentBusy} onClick={()=>{setError('');setPasskeyOpen(true)}}>Confirm and Generate Payslip</Button>}
    </div>
   </div>
   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
@@ -226,11 +217,5 @@ const built:RunRow[]=[];
    <p className="mt-4 text-[13px]">Submit this payroll for Admin approval?</p>
    <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={submitBusy} onClick={()=>setConfirming(false)}>Cancel</button><Button disabled={Boolean(loanError)||submitBusy} onClick={submit}>{submitBusy?'Verifying schedule…':'Confirm'}</Button></div>
   </Modal>}
-  {paying&&<Modal title="Payment Method" onClose={()=>{if(!paymentBusy)setPaying(false)}}>
- <p className="text-[13px] text-slate-500">Payslips are generated after this step.</p>
- <div className="mt-3 grid gap-2">{(['Bank Transfer','Direct Deposit'] as PaymentMethod[]).map(m=><label key={m} className="flex items-center gap-2 text-[13px]"><input type="radio" name="pm" checked={method===m} onChange={()=>setMethod(m)}/>{m}</label>)}</div>
- <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={paymentBusy} onClick={()=>setPaying(false)}>Cancel</button><Button disabled={paymentBusy} onClick={()=>void pay(payslipPasskey)}>{paymentBusy?'Verifying repayments…':"Confirm & Generate Payslips"}</Button></div>
-</Modal>}
-  {passkeyOpen&&saved&&<PayslipPasskeyModal runId={saved.id} onClose={()=>setPasskeyOpen(false)} onVerified={passkeyVerified}/>}
  </div>;
 }

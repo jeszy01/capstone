@@ -66,6 +66,15 @@ export async function generatePayslips(id:string,passkey:string):Promise<Generat
  return {generated:true};
 }
 
+/** Proceed to Payment, after the payslip passkey is verified: saves the payment method on the run (once; it is locked
+ * after that) and generates the payslips with it. Throws with a short message when either step fails. */
+export async function payAndGeneratePayslips(id:string,method:PaymentMethod,passkey:string,by:string){
+ const current=read<PayrollRun[]>(RUNS_KEY,[]).find(run=>run.id===id);
+ if(current&&!current.paidAt&&!await payRun(id,method,by))throw new Error('The approved payroll run could not be settled.');
+ const result=await generatePayslips(id,passkey);
+ if(!result.generated)throw new Error(result.reason==='invalid'?'Incorrect passkey':result.reason==='locked'?'Passkey locked':'Passkey not set');
+}
+
 export async function payRun(id:string,method:PaymentMethod,by:string):Promise<PayrollRun[]|undefined>{
  const runs=read<PayrollRun[]>(RUNS_KEY,[]);
  const run=runs.find(item=>item.id===id);
