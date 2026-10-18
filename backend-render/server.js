@@ -722,6 +722,32 @@ app.post('/payroll/release', auth, allow('payroll.release'), async (req, res) =>
   ok(res, { released: false, ...passkeyFailure(result) });
 });
 
+// Release payslips to ESS by department (one department or Release All): the user's passkey is verified first,
+// then each department's release time is saved on the run and the release is logged.
+app.post('/payroll/payslips/release', auth, allow('payroll.release'), async (req, res) => {
+  const body = input(req), runId = required(body.run_id, 'run_id');
+  const departments = Array.isArray(body.departments) ? [...new Set(body.departments.filter(d => typeof d === 'string' && d.trim()).map(d => d.trim().slice(0, 120)))] : [];
+  if (!departments.length) throw new HttpError(400, 'VALIDATION_ERROR', 'departments is required');
+  const { result, payrollRun } = await withPayrollRun(runId, async (client, runs, payrollRun) => {
+    if (!payrollRun.paidAt) throw new HttpError(409, 'PAYSLIPS_NOT_GENERATED', 'Generate the payslips before releasing them.');
+    const pending = departments.filter(d => !payrollRun.released?.[d]);
+    if (!pending.length) throw new HttpError(409, 'PAYSLIPS_ALREADY_RELEASED', 'These payslips were already released.');
+    const check = await checkPayslipPasskey(req, body.passkey, payrollRun, `Release payslips of ${pending.join(', ')} for ${runPeriod(payrollRun)}`);
+    if (!check.verified) return check;
+    const at = new Date().toISOString();
+    const next = runs.map(r => r && String(r.id) === runId ? { ...r, released: { ...r.released, ...Object.fromEntries(pending.map(d => [d, at])) } } : r);
+    await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
+    return { verified: true, runs: next, pending };
+  });
+  if (result.verified) {
+    const which = body.all === true ? `all departments (${result.pending.join(', ')})` : result.pending.join(', ');
+    await audit('payroll.payslips_released', req.user.id, 'Payroll', runId, { description: `Released payslips of ${which} for ${runPeriod(payrollRun)} to ESS.` }, ipDevice(req));
+    return ok(res, { released: true, runs: result.runs });
+  }
+  if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result, 'payroll.release_failed', 'releasing payslips to ESS for');
+  ok(res, { released: false, ...passkeyFailure(result) });
+});
+
 // ---- /users (admin user management) ----
 // HR Staff and Admin accounts are company-issued, not employees. employee_id holds an account ID
 // (USR-0001, USR-0002, ...) assigned here, so the JWT employee_id claim keeps working.

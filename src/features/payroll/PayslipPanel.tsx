@@ -1,8 +1,8 @@
 import {useMemo,useState} from 'react';
-import {Button,Card,Empty,Modal,ghost,success} from '../../components/common/ui';
+import {Button,Card,Empty,Field,Modal,TextInput,ghost,success} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {peso,read} from '../../utils/storage';
-import {RUNS_KEY,runLabel,releaseDepartment,releaseRun} from './payrollRuns';
+import {RUNS_KEY,runLabel,releaseDepartments,releaseRun} from './payrollRuns';
 import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {can} from '../auth/permissions';
@@ -22,7 +22,19 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
  const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
  const deptsOf=(run:PayrollRun)=>[...new Set(run.rows.map(deptOf))].sort();
  const run=runs.find(r=>r.id===runId);
- const doRelease=()=>{if(!run||!confirm)return;confirm.forEach(d=>releaseDepartment(run.id,d));setConfirm(null);setTick(t=>t+1)};
+ // Releasing to ESS needs the user's passkey, verified by the server; the field is cleared whenever the modal closes.
+ const[releasePasskey,setReleasePasskey]=useState(''),[releaseError,setReleaseError]=useState(''),[releaseBusy,setReleaseBusy]=useState(false);
+ const closeConfirm=()=>{if(releaseBusy)return;setConfirm(null);setReleasePasskey('');setReleaseError('')};
+ const doRelease=async()=>{
+  if(!run||!confirm||!releasePasskey)return;
+  setReleaseBusy(true);setReleaseError('');
+  try{
+   const result=await releaseDepartments(run.id,confirm,confirm.length>1,releasePasskey);
+   if(result.verified){setConfirm(null);setReleasePasskey('');setTick(t=>t+1);return}
+   setReleasePasskey('');
+   setReleaseError(result.reason==='not_set'?'Passkey not set':result.reason==='locked'?'Passkey locked':'Incorrect passkey');
+  }catch(cause){setReleaseError(cause instanceof Error&&cause.message?cause.message:'Payslips could not be released')}finally{setReleaseBusy(false)}
+ };
 
  // Level 3: employees of a department
  if(run&&dept){
@@ -44,10 +56,12 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
    <Card><h2 className="m-0 text-[16px] font-semibold">Select department</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{runLabel(run)}</p>
     <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{can('payroll.release')&&run.paidAt&&!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release</Button>}</div></td></tr>)}</tbody></table></div>
    </Card>
-   {confirm&&<Modal title="Confirm Release" onClose={()=>setConfirm(null)}>
+   {confirm&&<Modal title="Confirm Release" onClose={closeConfirm}>
  <p className="text-[13px]">Release payslips of <b>{confirm.join(', ')}</b> for {runLabel(run)} to ESS?</p>
  <p className="mt-1 text-[12px] text-slate-500">Employees will be able to view their payslips. This cannot be undone.</p>
- <div className="mt-6 flex justify-end gap-2"><button className={ghost} onClick={()=>setConfirm(null)}>Cancel</button><Button onClick={doRelease}>Confirm Release</Button></div>
+ <div className="mt-4"><Field label="Passkey"><TextInput type="password" autoComplete="off" autoFocus value={releasePasskey} onChange={event=>setReleasePasskey(event.target.value)} onKeyDown={event=>{if(event.key==='Enter')void doRelease()}}/></Field></div>
+ {releaseError&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{releaseError}</p>}
+ <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={releaseBusy} onClick={closeConfirm}>Cancel</button><Button disabled={!releasePasskey||releaseBusy} onClick={()=>void doRelease()}>Confirm Release</Button></div>
 </Modal>}
   </section>;
  }

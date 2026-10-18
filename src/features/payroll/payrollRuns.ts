@@ -41,14 +41,12 @@ export function decideRun(id:string,status:'Approved'|'Rejected',by:string){
  return next;
 }
 
-// Call this from the ESS page when HR selects a department and releases it
-export function releaseDepartment(id:string,dept:string){
- const runs=read<PayrollRun[]>(RUNS_KEY,[]);
- const run=runs.find(item=>item.id===id);
- if(!run||run.status!=='Approved'||!run.paidAt)return undefined;
- const next=runs.map(item=>item.id===id?{...item,released:{...item.released,[dept]:new Date().toISOString()}}:item);
- write(RUNS_KEY,next);
- return next;
+// Releases payslips to ESS for the given departments after the server verifies the user's passkey; the server logs it.
+export async function releaseDepartments(id:string,departments:string[],all:boolean,passkey:string):Promise<ReleaseRunResult>{
+ const {data}=await apiClient.post<{run_id:string;departments:string[];all:boolean;passkey:string},{data:{released:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;runs?:PayrollRun[]}}>('/payroll/payslips/release',{run_id:id,departments,all,passkey});
+ if(!data.released)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
+ if(data.runs)write(RUNS_KEY,data.runs);
+ return {verified:true};
 }
 
 export type GeneratePayslipsResult={generated:true}|{generated:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};

@@ -19,6 +19,10 @@ describe('release to Finance',()=>{
   expect(runStatusLabel({status:'Approved'})).toBe('Approved');
   expect(runStatusLabel({status:'Approved',releasedAt:'2026-10-18T10:00:00.000Z'})).toBe('Released');
  });
+ it('refuses releasing department payslips to ESS through a browser sync',async()=>{
+  const paid={id:'run-1',status:'Approved',from:'2026-10-01',to:'2026-10-15',rows:[],paidAt:'2026-10-16T00:00:00.000Z',paymentMethod:'Bank Transfer'};
+  await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:runs',[paid],[{...paid,released:{Engineering:'2026-10-18T10:00:00.000Z'}}],true)).rejects.toThrow();
+ });
  it('refuses releasing a run through a browser sync',async()=>{
   const paid={id:'run-1',status:'Approved',from:'2026-10-01',to:'2026-10-15',rows:[],paidAt:'2026-10-16T00:00:00.000Z',paymentMethod:'Bank Transfer'};
   const hr={id:'u',role:'hr_staff'};

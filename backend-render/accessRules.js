@@ -57,15 +57,8 @@ async function payrollRunEvents(user, before, after, releasedRecentlyBy) {
     if (stable(old) === stable(row)) continue;
     if (stable(only(old, RUN_PAYSLIP_FIELDS)) !== stable(only(row, RUN_PAYSLIP_FIELDS))) throw forbid('Payslips are generated and released only with your passkey.');
     if (old.paidAt) {
-      if (stable(without(old, ['released'])) === stable(without(row, ['released']))) {
-        const was = old.released ?? {}, now = row.released ?? {};
-        const added = Object.keys(now).filter(d => !was[d]);
-        if (added.length && Object.entries(was).every(([d, at]) => now[d] === at)) {
-          need(user, 'payroll.release', 'Only HR Staff can release payslips.');
-          log('payroll.payslips_released', id, `Released payslips of ${added.join(', ')} for ${runPeriod(row)}.`);
-          continue;
-        }
-      }
+      // Payslips are released to ESS by department only through POST /payroll/payslips/release (passkey required).
+      if (stable(old.released ?? {}) !== stable(row.released ?? {})) throw forbid('Payslips are released only with your passkey.');
       if (!row.paidAt && stable(without(old, RUN_RELEASE_FIELDS)) === stable(without(row, RUN_RELEASE_FIELDS)) && await releasedRecentlyBy(user, id)) {
         log('payroll.release_reverted', id, `Reverted the release of ${runPeriod(row)} because loan deductions could not be posted.`);
         continue;
