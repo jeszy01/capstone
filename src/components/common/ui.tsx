@@ -1,6 +1,6 @@
 import {useEffect,useRef} from 'react';
 import type {ButtonHTMLAttributes,InputHTMLAttributes,ReactNode,RefObject} from 'react';
-import {Inbox,X} from 'lucide-react';
+import {Eye,EyeOff,Inbox,X} from 'lucide-react';
 export const input='pbms-input w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-50 disabled:text-slate-400';
 export const button='pbms-button inline-flex items-center justify-center gap-2 rounded-xl bg-[#17345b] px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-[#224a7c] disabled:cursor-not-allowed disabled:opacity-50';
 // Green primary action (for example Release). pbms-button keeps table cell button styles from overriding it.
@@ -32,9 +32,18 @@ export function useOverlayFocus(ref:RefObject<HTMLDivElement>,open:boolean,onClo
  document.addEventListener('keydown',key);return()=>{document.removeEventListener('keydown',key);document.body.style.overflow=overflow;previous?.focus()};
  },[open,ref]);
 }
-export function Modal({title,onClose,children,wide=false}:{title:string;onClose:()=>void;children:ReactNode;wide?:boolean}){const panel=useRef<HTMLDivElement>(null);useOverlayFocus(panel,true,onClose);return <div className="pbms-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm max-md:p-3" onClick={onClose}><div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl max-md:max-h-[90dvh] max-md:p-4 ${wide?'max-w-2xl':'max-w-md'}`} onClick={e=>e.stopPropagation()}><div className="mb-6 flex items-center justify-between gap-4 border-b border-slate-100 pb-4 max-md:mb-4 max-md:pb-3"><h3 className="m-0 text-[18px] font-semibold tracking-tight text-slate-900">{title}</h3><button type="button" onClick={onClose} aria-label="Close" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><X size={18}/></button></div>{children}</div></div>}
+export function Modal({title,onClose,children,wide=false,actions}:{title:string;onClose:()=>void;children:ReactNode;wide?:boolean;actions?:ReactNode}){const panel=useRef<HTMLDivElement>(null);useOverlayFocus(panel,true,onClose);return <div className="pbms-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm max-md:p-3" onClick={onClose}><div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl max-md:max-h-[90dvh] max-md:p-4 ${wide?'max-w-2xl':'max-w-md'}`} onClick={e=>e.stopPropagation()}><div className="mb-6 flex items-center justify-between gap-4 border-b border-slate-100 pb-4 max-md:mb-4 max-md:pb-3"><h3 className="m-0 text-[18px] font-semibold tracking-tight text-slate-900">{title}</h3><div className="flex shrink-0 items-center gap-1">{actions}<button type="button" onClick={onClose} aria-label="Close" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><X size={18}/></button></div></div>{children}</div></div>}
 
 /** Confirmation dialog: a short title, a one-line message, Cancel and a confirm action. */
 export function ConfirmDialog({title,message,confirmLabel,danger=false,blocked=false,saving,onCancel,onConfirm}:{title:string;message:string;confirmLabel:string;danger?:boolean;blocked?:boolean;saving:boolean;onCancel:()=>void;onConfirm:()=>void}){
   return <Modal title={title} onClose={onCancel}><p role={blocked?'alert':undefined} className={`m-0 text-[13px] leading-relaxed ${blocked?'text-red-700':'text-slate-600'}`}>{message}</p><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onCancel}>Cancel</button>{danger?<button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving||blocked} onClick={onConfirm}>{saving?'Deleting…':confirmLabel}</button>:<Button disabled={saving||blocked} onClick={onConfirm}>{saving?'Saving…':confirmLabel}</Button>}</div></Modal>;
+}
+
+// Confidential values are hidden until the eye button is pressed. Empty markers ("—", "Unavailable", "Not assigned") stay visible.
+export const MASK='••••••••';
+const EMPTY_VALUES=new Set(['','—','-','Unavailable','Not assigned']);
+export const maskValue=(shown:boolean,value:ReactNode):ReactNode=>shown||value==null||(typeof value==='string'&&EMPTY_VALUES.has(value.trim()))?value:MASK;
+/** Eye / EyeOff button that shows or hides confidential values; compact matches a modal's close button. */
+export function RevealToggle({shown,onToggle,compact=false}:{shown:boolean;onToggle:()=>void;compact?:boolean}){
+ return <button type="button" aria-label={shown?'Hide confidential data':'Show confidential data'} aria-pressed={shown} onClick={onToggle} className={compact?'grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700':'pbms-secondary grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700'}>{shown?<EyeOff size={compact?18:16}/>:<Eye size={compact?18:16}/>}</button>;
 }

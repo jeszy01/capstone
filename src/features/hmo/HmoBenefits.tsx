@@ -4,7 +4,6 @@ import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
 import { useLocation, useNavigate } from "react-router-dom";
 import { hmoTabs, hmoTabForPath } from "./hmoNavigation";
-import EmployeeBenefits from "../benefits/EmployeeBenefits";
 import {
   Button,
   Card,
@@ -15,9 +14,11 @@ import {
   Modal,
   PageHeader,
   Tabs,
+  RevealToggle,
   TextInput,
   ghost,
   input,
+  maskValue,
 } from "../../components/common/ui";
 import { employeeService } from "../employees/employeeService";
 import type { Employee } from "../../types/domain";
@@ -128,9 +129,7 @@ export default function HmoBenefits({
               ? "HMO Plan"
               : tab === "history"
                 ? "HMO Records"
-                : tab === "benefits"
-                  ? "Employee Benefits"
-                  : "HMO"
+                : "HMO"
         }
         actions={
           !loading && !loadError && can("hmo.manage") ? (
@@ -185,11 +184,6 @@ export default function HmoBenefits({
         aria-labelledby={section === "hmo" ? `hmo-tab-${tab}` : undefined}
         aria-label={section === "hmo" ? undefined : "Dependents"}
       >
-        {/* Employee Benefits (formerly its own page) keeps its own records and does not wait for HMO records. */}
-        {tab === "benefits" ? (
-          <EmployeeBenefits embedded />
-        ) : (
-        <>
         {loadError && (
           <ErrorAlert onRetry={() => void load()}>{loadError}</ErrorAlert>
         )}
@@ -238,8 +232,6 @@ export default function HmoBenefits({
               />
             )}
           </>
-        )}
-        </>
         )}
       </div>{" "}
       {planModal && (
@@ -317,45 +309,52 @@ function PlanList({
     );
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {plans.map((plan) => {
-        const provider = providerFor(plan);
-        const active = plan.status === "Active";
-        return (
-          <button
-            key={plan.id}
-            type="button"
-            onClick={() => onOpen(plan.id)}
-            className="rounded-2xl border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 text-left shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition hover:border-blue-300 hover:shadow-md"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#dce9fb] bg-[#e4efff] px-1 text-center text-[10px] font-extrabold tracking-tight text-[#0862df]">
-                  {(provider?.name ?? "HMO").toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] text-[#647796]">{provider?.name ?? "Provider unavailable"}</div>
-                  <div className="truncate text-[15px] font-semibold text-[#142b50]">{plan.name}</div>
-                </div>
-              </div>
-              <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
-                {active ? "Active" : "Inactive"}
-              </span>
+      {plans.map((plan) => (
+        <PlanCard key={plan.id} plan={plan} provider={providerFor(plan)} onOpen={() => onOpen(plan.id)} />
+      ))}
+    </div>
+  );
+}
+function PlanCard({ plan, provider, onOpen }: { plan: HmoPlan; provider?: HmoProvider; onOpen: () => void }) {
+  const [shown, setShown] = useState(false);
+  const active = plan.status === "Active";
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="block w-full rounded-2xl border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 text-left shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition hover:border-blue-300 hover:shadow-md"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#dce9fb] bg-[#e4efff] px-1 text-center text-[10px] font-extrabold tracking-tight text-[#0862df]">
+              {(provider?.name ?? "HMO").toUpperCase()}
             </div>
-            <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
-              <div>
-                <dt className="text-[#647796]">Coverage Period</dt>
-                <dd className="m-0 mt-1 font-semibold text-[#142b50]">
-                  {formatHmoDate(plan.coverageStart)} – {formatHmoDate(plan.coverageEnd)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[#647796]">Annual Benefit Limit</dt>
-                <dd className="m-0 mt-1 font-semibold text-[#142b50]">{money(plan.annualBenefitLimit)}</dd>
-              </div>
-            </dl>
-          </button>
-        );
-      })}
+            <div className="min-w-0">
+              <div className="truncate text-[12px] text-[#647796]">{provider?.name ?? "Provider unavailable"}</div>
+              <div className="truncate text-[15px] font-semibold text-[#142b50]">{plan.name}</div>
+            </div>
+          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+            {active ? "Active" : "Inactive"}
+          </span>
+        </div>
+        <dl className="mt-4 grid grid-cols-2 gap-3 pr-10 text-[12px]">
+          <div>
+            <dt className="text-[#647796]">Coverage Period</dt>
+            <dd className="m-0 mt-1 font-semibold text-[#142b50]">
+              {formatHmoDate(plan.coverageStart)} – {formatHmoDate(plan.coverageEnd)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[#647796]">Annual Benefit Limit</dt>
+            <dd className="m-0 mt-1 font-semibold text-[#142b50]">{maskValue(shown, money(plan.annualBenefitLimit))}</dd>
+          </div>
+        </dl>
+      </button>
+      <div className="absolute bottom-3 right-3">
+        <RevealToggle shown={shown} onToggle={() => setShown((value) => !value)} />
+      </div>
     </div>
   );
 }
@@ -370,13 +369,15 @@ function PlanSection({
   onBack: () => void;
   onEdit: () => void;
 }) {
+  const [shown, setShown] = useState(false);
+  const hidden = (value: string) => maskValue(shown, value);
   const contribution = (
     premium: number | null | undefined,
     share: number | null | undefined,
   ) =>
-    premium != null && share != null
+    hidden(premium != null && share != null
       ? `${money((premium * share) / 100)} (${share}%)`
-      : `Unavailable (${share == null ? "share unavailable" : share + "%"})`;
+      : `Unavailable (${share == null ? "share unavailable" : share + "%"})`);
   const sectionTitle = "text-[16px] font-semibold text-[#142b50]";
   const muted = "text-[12px] text-[#647796]";
   const tableLabel =
@@ -412,12 +413,15 @@ function PlanSection({
         <button type="button" className={ghost} onClick={onBack}>
           Back
         </button>
-        {can("hmo.manage") && (
-          <Button onClick={onEdit}>
-            <Pencil size={15} />
-            Edit Plan
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <RevealToggle shown={shown} onToggle={() => setShown((value) => !value)} />
+          {can("hmo.manage") && (
+            <Button onClick={onEdit}>
+              <Pencil size={15} />
+              Edit Plan
+            </Button>
+          )}
+        </div>
       </div>{" "}
       <Card className="overflow-hidden border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 sm:p-5">
         {" "}
@@ -466,7 +470,7 @@ function PlanSection({
               <div>
                 <div className={muted}>Annual Benefit Limit</div>
                 <div className="mt-1 text-[18px] font-bold text-[#142b50]">
-                  {money(plan.annualBenefitLimit)}
+                  {hidden(money(plan.annualBenefitLimit))}
                 </div>
               </div>
             </div>{" "}
@@ -531,7 +535,7 @@ function PlanSection({
                 <tr>
                   <th className={tableLabel}>Monthly Employee Premium</th>
                   <td className={tableValue}>
-                    {money(plan.employeeMonthlyPremium)}
+                    {hidden(money(plan.employeeMonthlyPremium))}
                   </td>
                 </tr>{" "}
               </tbody>
@@ -556,7 +560,7 @@ function PlanSection({
                 <tr className="border-b border-[#e2eaf5]">
                   <th className={tableLabel}>Annual Benefit Limit</th>
                   <td className={tableValue}>
-                    {money(plan.annualBenefitLimit)}
+                    {hidden(money(plan.annualBenefitLimit))}
                   </td>
                 </tr>{" "}
                 <tr>
@@ -593,7 +597,7 @@ function PlanSection({
             </h3>
             <p className={`mt-1 ${muted}`}>Monthly premium for the employee.</p>{" "}
             <div className="mt-4 text-2xl font-bold text-[#142b50]">
-              {money(plan.employeeMonthlyPremium)}
+              {hidden(money(plan.employeeMonthlyPremium))}
               <span className="ml-1 text-[12px] font-medium text-[#647796]">
                 / month
               </span>
@@ -668,7 +672,7 @@ function PlanSection({
                 </div>
                 <div className="text-right">
                   <div className="text-[13px] font-bold text-[#713f12]">
-                    {money(plan.dependentMonthlyPremium)}
+                    {hidden(money(plan.dependentMonthlyPremium))}
                   </div>
                   <div className="text-[11px] text-[#854d0e]">
                     Employee-paid premium
@@ -678,7 +682,7 @@ function PlanSection({
             </div>{" "}
             <p className={`mt-3 ${muted}`}>
               Configured additional-dependent premium:{" "}
-              {money(plan.dependentMonthlyPremium)}.
+              {hidden(money(plan.dependentMonthlyPremium))}.
             </p>{" "}
           </div>{" "}
         </div>{" "}
