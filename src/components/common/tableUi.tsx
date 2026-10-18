@@ -1,3 +1,4 @@
+import {Tabs} from './ui';
 /** Today's date in the browser's time zone (YYYY-MM-DD). */
 export const localToday=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 
@@ -9,7 +10,7 @@ export function formatDate(value:string){
 
 /** Switches between the list views inside a card. */
 export function ViewToggle<T extends string>({label,value,options,onChange}:{label:string;value:T;options:ReadonlyArray<{id:T;label:string}>;onChange:(id:T)=>void}){
- return <div role="tablist" aria-label={label} className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">{options.map(option=><button key={option.id} type="button" role="tab" aria-selected={value===option.id} onClick={()=>onChange(option.id)}>{option.label}</button>)}</div>;
+ return <Tabs label={label} value={value} onChange={onChange} tabs={options} className=""/>;
 }
 
 export const tableHead='border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]';
