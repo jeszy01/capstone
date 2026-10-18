@@ -278,7 +278,8 @@ await pool.query(`
     status text not null default 'Draft' check (status in ('Draft','Active','Expiring','Expired','Archived')),
     created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
     check (coverage_end >= coverage_start));
-  create unique index if not exists uq_hmo_one_active_plan on hmo_plans((status)) where status = 'Active';
+  -- Several plans may be active at once; each enrollment keeps its own plan_id.
+  drop index if exists uq_hmo_one_active_plan;
 
   create table if not exists hmo_enrollments(
     id uuid primary key default gen_random_uuid(), plan_id uuid not null references hmo_plans(id), employee_id uuid not null,

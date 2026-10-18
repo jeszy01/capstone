@@ -59,6 +59,7 @@ export default function HmoBenefits({
     [loadError, setLoadError] = useState(""),
     [planModal, setPlanModal] = useState(false),
     [editPlanModal, setEditPlanModal] = useState(false),
+    [selectedPlanId, setSelectedPlanId] = useState<string | null>(null),
     [enrollModal, setEnrollModal] = useState(false),
     [dependentModal, setDependentModal] = useState(false);
   const load = async () => {
@@ -95,29 +96,17 @@ export default function HmoBenefits({
   const maxicareProvider =
     maxicareProviders.find((p) => p.status === "Active") ??
     maxicareProviders[0];
-  const maxicarePlan =
-    plans.find(
-      (p) =>
-        maxicareProviders.some((provider) => provider.id === p.providerId) &&
-        p.status === "Active",
-    ) ??
-    plans.find((p) =>
-      maxicareProviders.some((provider) => provider.id === p.providerId),
-    );
-  const activePlan =
-    maxicarePlan ??
-    plans.find((p) => p.status === "Active") ??
-    plans.find((p) => p.status === "Draft") ??
-    plans[0];
-  const enrollmentPlan = plans.find(
+  // HMO Plan tab: a list of saved plans; clicking one opens its detail view.
+  const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+  const providerFor = (plan: HmoPlan) =>
+    providers.find((provider) => provider.id === plan.providerId) ?? maxicareProvider;
+  // Employees can be enrolled in any active Maxicare plan.
+  const enrollmentPlans = plans.filter(
     (p) => maxicareProviders.some((provider) => provider.id === p.providerId) && p.status === "Active",
   );
   const availableEnrollmentEmployees = employees.filter(
     (employee) => employee.status === "Active" && employee.employmentStatus?.toLowerCase() !== "resigned" && !hasOpenHmoEnrollment(employee.id, enrollments),
   );
-  const displayedProvider =
-    providers.find((provider) => provider.id === activePlan?.providerId) ??
-    maxicareProvider;
   const employeeMap = useMemo(
     () => new Map(employees.map((e) => [e.id, e])),
     [employees],
@@ -143,20 +132,19 @@ export default function HmoBenefits({
                   ? "Employee Benefits"
                   : "HMO"
         }
-        description="Manage the company HMO plan, employee enrollment, and dependents."
         actions={
           !loading && !loadError && can("hmo.manage") ? (
             <>
-              {tab === "plan" && !plans.length && (
+              {tab === "plan" && !selectedPlan && (
                 <Button onClick={() => setPlanModal(true)}>
                   <Plus size={15} />
-                  Create HMO Plan
+                  Add Plan
                 </Button>
               )}
               {tab === "enrollment" && (
                 <Button
                   disabled={
-                    !availableEnrollmentEmployees.length || !enrollmentPlan
+                    !availableEnrollmentEmployees.length || !enrollmentPlans.length
                   }
                   onClick={() => setEnrollModal(true)}
                 >
@@ -211,15 +199,17 @@ export default function HmoBenefits({
           </Card>
         ) : (
           <>
-            {tab === "plan" && (
-              <PlanSection
-                provider={displayedProvider}
-                plan={activePlan}
-                hasAnyPlan={plans.length > 0}
-                onEdit={() => setEditPlanModal(true)}
-                onCreate={() => setPlanModal(true)}
-              />
-            )}{" "}
+            {tab === "plan" &&
+              (selectedPlan ? (
+                <PlanSection
+                  provider={providerFor(selectedPlan)}
+                  plan={selectedPlan}
+                  onBack={() => setSelectedPlanId(null)}
+                  onEdit={() => setEditPlanModal(true)}
+                />
+              ) : (
+                <PlanList plans={plans} providerFor={providerFor} onOpen={setSelectedPlanId} />
+              ))}{" "}
             {tab === "enrollment" && <>
               <EnrollmentSection
                 enrollments={enrollments}
@@ -227,8 +217,8 @@ export default function HmoBenefits({
                 employeeMap={employeeMap}
                 onChanged={() => void load()}
               />
-              {!enrollmentPlan && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">An active Maxicare plan is required before employees can be enrolled.</p>}
-              {enrollmentPlan && !availableEnrollmentEmployees.length && <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[12px] text-blue-900">There are no active employees without an open HMO enrollment to select.</p>}
+              {!enrollmentPlans.length && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">An active Maxicare plan is required before employees can be enrolled.</p>}
+              {enrollmentPlans.length > 0 && !availableEnrollmentEmployees.length && <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[12px] text-blue-900">There are no active employees without an open HMO enrollment to select.</p>}
             </>}{" "}
             {tab === "dependents" && (
               <DependentSection
@@ -253,7 +243,7 @@ export default function HmoBenefits({
         )}
       </div>{" "}
       {planModal && (
-        <PlanModal
+        <PlanFormModal
           provider={maxicareProvider}
           onClose={() => setPlanModal(false)}
           onSaved={() => {
@@ -262,9 +252,9 @@ export default function HmoBenefits({
           }}
         />
       )}
-      {editPlanModal && activePlan && (
-        <EditPlanModal
-          plan={activePlan}
+      {editPlanModal && selectedPlan && (
+        <PlanFormModal
+          plan={selectedPlan}
           onClose={() => setEditPlanModal(false)}
           onSaved={() => {
             setEditPlanModal(false);
@@ -276,7 +266,7 @@ export default function HmoBenefits({
         <EnrollmentModal
           employees={employees}
           enrollments={enrollments}
-          plan={enrollmentPlan}
+          plans={enrollmentPlans}
           onClose={() => setEnrollModal(false)}
           onSaved={() => {
             setEnrollModal(false);
@@ -309,18 +299,76 @@ function formatHmoDate(value?: string | null) {
         year: "numeric",
       }).format(date);
 }
+/** HMO Plan tab list: one card per saved plan; clicking a card opens its detail view. */
+function PlanList({
+  plans,
+  providerFor,
+  onOpen,
+}: {
+  plans: HmoPlan[];
+  providerFor: (plan: HmoPlan) => HmoProvider | undefined;
+  onOpen: (planId: string) => void;
+}) {
+  if (!plans.length)
+    return (
+      <Card className="mt-4">
+        <Empty>No plans yet</Empty>
+      </Card>
+    );
+  return (
+    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {plans.map((plan) => {
+        const provider = providerFor(plan);
+        const active = plan.status === "Active";
+        return (
+          <button
+            key={plan.id}
+            type="button"
+            onClick={() => onOpen(plan.id)}
+            className="rounded-2xl border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 text-left shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition hover:border-blue-300 hover:shadow-md"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#dce9fb] bg-[#e4efff] px-1 text-center text-[10px] font-extrabold tracking-tight text-[#0862df]">
+                  {(provider?.name ?? "HMO").toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[12px] text-[#647796]">{provider?.name ?? "Provider unavailable"}</div>
+                  <div className="truncate text-[15px] font-semibold text-[#142b50]">{plan.name}</div>
+                </div>
+              </div>
+              <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+                {active ? "Active" : "Inactive"}
+              </span>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
+              <div>
+                <dt className="text-[#647796]">Coverage Period</dt>
+                <dd className="m-0 mt-1 font-semibold text-[#142b50]">
+                  {formatHmoDate(plan.coverageStart)} – {formatHmoDate(plan.coverageEnd)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[#647796]">Annual Benefit Limit</dt>
+                <dd className="m-0 mt-1 font-semibold text-[#142b50]">{money(plan.annualBenefitLimit)}</dd>
+              </div>
+            </dl>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 function PlanSection({
   provider,
   plan,
-  hasAnyPlan,
+  onBack,
   onEdit,
-  onCreate,
 }: {
   provider?: HmoProvider;
-  plan?: HmoPlan;
-  hasAnyPlan: boolean;
+  plan: HmoPlan;
+  onBack: () => void;
   onEdit: () => void;
-  onCreate?: () => void;
 }) {
   const contribution = (
     premium: number | null | undefined,
@@ -334,38 +382,6 @@ function PlanSection({
   const tableLabel =
     "bg-[#f3f6fb] px-3 py-2.5 text-[12px] font-medium text-[#526987] sm:w-[30%]";
   const tableValue = "px-3 py-2.5 text-[13px] text-[#142b50]";
-  if (!plan)
-    return (
-      <Card className="mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className={sectionTitle}>Maxicare HMO Plan</h2>
-            <p className={`mt-2 ${muted}`}>
-              No HMO plan has been set up yet. Create the company Maxicare plan
-              to start enrolling employees and adding dependents.
-            </p>
-          </div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800">
-            Not configured
-          </span>
-        </div>
-        {!hasAnyPlan && onCreate && can("hmo.manage") && (
-          <div className="mt-4">
-            <Button onClick={onCreate}>
-              <Plus size={15} />
-              Create HMO Plan
-            </Button>
-          </div>
-        )}
-        {hasAnyPlan && (
-          <p className="mt-3 text-[12px] text-amber-700">
-            Existing plan records were found, but none is linked to the
-            configured Maxicare provider. Review the provider and plan records
-            before activating coverage.
-          </p>
-        )}
-      </Card>
-    );
   const coveragePeriod = `${formatHmoDate(plan.coverageStart)} – ${formatHmoDate(plan.coverageEnd)}`;
   const benefits = [
     {
@@ -392,15 +408,17 @@ function PlanSection({
   ];
   return (
     <div className="mt-4 space-y-4">
-      {" "}
-      {can("hmo.manage") && (
-        <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" className={ghost} onClick={onBack}>
+          Back
+        </button>
+        {can("hmo.manage") && (
           <Button onClick={onEdit}>
             <Pencil size={15} />
             Edit Plan
           </Button>
-        </div>
-      )}{" "}
+        )}
+      </div>{" "}
       <Card className="overflow-hidden border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 sm:p-5">
         {" "}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1.35fr)_minmax(260px,1fr)] md:items-center">
@@ -426,10 +444,6 @@ function PlanSection({
               <div className="mt-1 text-lg font-semibold text-[#142b50]">
                 {plan.name}
               </div>{" "}
-              <p className={`mt-1 ${muted}`}>
-                Current configured plan for employee enrollment and eligible
-                dependents.
-              </p>{" "}
             </div>{" "}
           </div>{" "}
           <div className="grid gap-4 border-t border-[#d7e4f5] pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0">
@@ -443,7 +457,6 @@ function PlanSection({
                 <div className="mt-1 text-[14px] font-semibold text-[#142b50]">
                   {coveragePeriod}
                 </div>
-                <div className={muted}>Plan coverage dates</div>
               </div>
             </div>{" "}
             <div className="flex items-start gap-3">
@@ -455,7 +468,6 @@ function PlanSection({
                 <div className="mt-1 text-[18px] font-bold text-[#142b50]">
                   {money(plan.annualBenefitLimit)}
                 </div>
-                <div className={muted}>As configured for this plan</div>
               </div>
             </div>{" "}
           </div>{" "}
@@ -465,10 +477,6 @@ function PlanSection({
         {" "}
         <div className="mb-4">
           <h2 className={sectionTitle}>Coverage Benefits</h2>
-          <p className={`mt-1 ${muted}`}>
-            Services included in the {plan.name} plan, based on its saved
-            configuration.
-          </p>
         </div>{" "}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {" "}
@@ -1068,176 +1076,19 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
   );
 }
 
-function PlanModal({
+/** Add Plan (empty) and Edit Plan share this form. The employee premium split is fixed by company policy. */
+function PlanFormModal({
+  plan,
   provider,
   onClose,
   onSaved,
 }: {
+  plan?: HmoPlan;
   provider?: HmoProvider;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [f, setF] = useState({
-    name: "",
-    start: today(),
-    end: "",
-    limit: "100000",
-    employeePremium: "1200",
-    dependentPremium: "800",
-    inpatient: true,
-    outpatient: true,
-    emergency: true,
-    preventive: true,
-    dental: false,
-  });
-  const [saving, setSaving] = useState(false),
-    [error, setError] = useState("");
-  const datesInvalid = Boolean(f.start && f.end && f.end < f.start);
-  const save = async () => {
-    if (!f.name.trim() || !f.start || !f.end || datesInvalid || saving) return;
-    setSaving(true);
-    setError("");
-    try {
-    const p =
-      provider ??
-      (await hmoService.createProvider({ name: "Maxicare", status: "Active" }));
-    await hmoService.createPlan({
-      providerId: p.id,
-      name: f.name,
-      coverageStart: f.start,
-      coverageEnd: f.end,
-      annualBenefitLimit: Number(f.limit) || null,
-      inpatient: f.inpatient,
-      outpatient: f.outpatient,
-      emergency: f.emergency,
-      preventiveCare: f.preventive,
-      dental: f.dental,
-      employeeCompanyShare: 100,
-      employeeMemberShare: 0,
-      dependentCompanyShare: 0,
-      dependentMemberShare: 100,
-      employeeMonthlyPremium: Number(f.employeePremium) || null,
-      dependentMonthlyPremium: Number(f.dependentPremium) || null,
-      collectEmployeeShareViaPayroll: true,
-      status: "Active",
-    });
-    recordAudit({
-      action: "Created HMO plan",
-      module: "HMO & Benefits",
-      description: `Created HMO plan ${f.name}.`,
-    });
-    onSaved();
-    } catch (cause) {
-      // Show why the server refused the plan instead of leaving the form silently unchanged.
-      setError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : "The HMO plan could not be saved. Please try again.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Modal title="Create HMO Plan" onClose={() => { if (!saving) onClose(); }}>
-      <div className="grid gap-4">
-        <Field label="HMO Provider">
-          <TextInput value={provider?.name ?? "Maxicare"} readOnly />
-        </Field>
-        <Field label="Plan Name">
-          <TextInput
-            value={f.name}
-            onChange={(e) => setF({ ...f, name: e.target.value })}
-            placeholder="Corporate Gold"
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Coverage Start">
-            <TextInput
-              type="date"
-              value={f.start}
-              onChange={(e) => setF({ ...f, start: e.target.value })}
-            />
-          </Field>
-          <Field label="Coverage End">
-            <TextInput
-              type="date"
-              value={f.end}
-              onChange={(e) => setF({ ...f, end: e.target.value })}
-            />
-          </Field>
-        </div>
-        <Field label="Annual Benefit Limit">
-          <TextInput
-            type="number"
-            value={f.limit}
-            onChange={(e) => setF({ ...f, limit: e.target.value })}
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-2 text-[12px]">
-          {(
-            [
-              ["inpatient", "Inpatient"],
-              ["outpatient", "Outpatient"],
-              ["emergency", "Emergency"],
-              ["preventive", "Preventive Care"],
-              ["dental", "Dental"],
-            ] as const
-          ).map(([k, l]) => (
-            <label key={k} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={f[k]}
-                onChange={(e) => setF({ ...f, [k]: e.target.checked })}
-              />
-              {l}
-            </label>
-          ))}
-        </div>
-        <div className="rounded-xl border border-[#e3e7ef] p-3 text-[12px]">
-          <b>Contribution policy</b>
-          <div className="mt-2">
-            Principal employee: <b>100% company / 0% employee</b>
-          </div>
-          <div className="mt-1">
-            Dependents: <b>0% company / 100% employee</b>
-          </div>
-          <div className="mt-1 text-[#6b7794]">
-            Employee-paid contributions may be collected through Payroll.
-          </div>
-        </div>
-      </div>
-      {datesInvalid && (
-        <p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">
-          Coverage End must be on or after Coverage Start.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">
-          {error}
-        </p>
-      )}
-      <div className="mt-6 flex justify-end gap-2">
-        <button className={ghost} disabled={saving} onClick={onClose}>
-          Cancel
-        </button>
-        <Button disabled={!f.name.trim() || !f.start || !f.end || datesInvalid || saving} onClick={() => void save()}>
-          {saving ? "Saving…" : "Activate Plan"}
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-function EditPlanModal({
-  plan,
-  onClose,
-  onSaved,
-}: {
-  plan: HmoPlan;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [f, setF] = useState({
+  const [f, setF] = useState(() => plan ? {
     name: plan.name,
     start: plan.coverageStart,
     end: plan.coverageEnd,
@@ -1262,6 +1113,24 @@ function EditPlanModal({
     dependentMemberShare: String(plan.dependentMemberShare),
     collectPayroll: plan.collectEmployeeShareViaPayroll,
     status: plan.status,
+  } : {
+    name: "",
+    start: "",
+    end: "",
+    limit: "",
+    employeePremium: "",
+    dependentPremium: "",
+    inpatient: false,
+    outpatient: false,
+    emergency: false,
+    preventive: false,
+    dental: false,
+    employeeCompanyShare: "100",
+    employeeMemberShare: "0",
+    dependentCompanyShare: "0",
+    dependentMemberShare: "100",
+    collectPayroll: true,
+    status: "Active" as HmoPlan["status"],
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1321,8 +1190,7 @@ function EditPlanModal({
     }
     setSaving(true);
     try {
-      await hmoService.updatePlan(plan.id, {
-        providerId: plan.providerId,
+      const values = {
         name: f.name.trim(),
         coverageStart: f.start,
         coverageEnd: f.end,
@@ -1342,11 +1210,16 @@ function EditPlanModal({
           f.dependentPremium.trim() === "" ? null : Number(f.dependentPremium),
         collectEmployeeShareViaPayroll: f.collectPayroll,
         status: f.status,
-      });
+      };
+      if (plan) await hmoService.updatePlan(plan.id, { providerId: plan.providerId, ...values });
+      else {
+        const p = provider ?? (await hmoService.createProvider({ name: "Maxicare", status: "Active" }));
+        await hmoService.createPlan({ providerId: p.id, ...values });
+      }
       recordAudit({
-        action: "Updated HMO plan",
+        action: plan ? "Updated HMO plan" : "Created HMO plan",
         module: "HMO & Benefits",
-        description: `Updated HMO plan ${f.name.trim()}.`,
+        description: `${plan ? "Updated" : "Created"} HMO plan ${f.name.trim()}.`,
       });
       onSaved();
     } catch (err) {
@@ -1361,7 +1234,7 @@ function EditPlanModal({
     }
   };
   return (
-    <Modal title="Edit HMO Plan" onClose={onClose}>
+    <Modal title={plan ? "Edit HMO Plan" : "Add Plan"} onClose={onClose}>
       {" "}
       <div className="grid gap-4">
         {" "}
@@ -1537,7 +1410,7 @@ function EditPlanModal({
           disabled={saving || !f.name.trim() || !f.start || !f.end}
           onClick={() => void save()}
         >
-          {saving ? "Saving…" : "Save Changes"}
+          {saving ? "Saving…" : plan ? "Save Changes" : "Add Plan"}
         </Button>
       </div>{" "}
     </Modal>
@@ -1546,21 +1419,23 @@ function EditPlanModal({
 function EnrollmentModal({
   employees,
   enrollments,
-  plan,
+  plans,
   onClose,
   onSaved,
 }: {
   employees: Employee[];
   enrollments: HmoEnrollment[];
-  plan?: HmoPlan;
+  plans: HmoPlan[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [f, setF] = useState({
+    planId: plans.length === 1 ? plans[0].id : "",
     employeeId: "",
     effective: today(),
-    expiration: plan?.coverageEnd ?? "",
+    expiration: plans.length === 1 ? plans[0].coverageEnd : "",
   });
+  const plan = plans.find((item) => item.id === f.planId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const eligibleEmployeeChoices = employees.filter(
@@ -1598,6 +1473,27 @@ function EnrollmentModal({
   return (
     <Modal title="Enroll Employee" onClose={onClose}>
       <div className="grid gap-4">
+        <Field label="Plan">
+          <select
+            className={input}
+            value={f.planId}
+            onChange={(e) => {
+              const next = plans.find((item) => item.id === e.target.value);
+              const employee = eligibleEmployeeChoices.find((item) => item.id === f.employeeId);
+              const eligibility = employee ? hmoEligibilityDate(employee.dateHired) : null;
+              const effective = [today(), next?.coverageStart ?? "", eligibility ?? ""].filter(Boolean).sort().slice(-1)[0] ?? today();
+              setF({ ...f, planId: e.target.value, effective, expiration: next?.coverageEnd ?? "" });
+              setError("");
+            }}
+          >
+            <option value="">Select plan</option>
+            {plans.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="Employee">
           <select
             className={input}
