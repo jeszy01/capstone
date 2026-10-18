@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import {Button,Card,Empty,Field,Modal,TextInput,ghost} from '../../components/common/ui';
+import {Button,Card,Empty,Field,Modal,TextInput,button,ghost} from '../../components/common/ui';
 import {Link} from 'react-router-dom';
 import {read} from '../../utils/storage';
 import {can} from '../auth/permissions';
@@ -17,7 +17,7 @@ export function PayrollRuns(){
  const heads=['Payroll ID','Cutoff','Status','Action'];
  const actions=(run:PayrollRun)=>{
   const view=<Link className={ghost} to={`/payroll/review?run=${run.id}`}>View</Link>;
-  if(isAdmin)return run.status==='Pending Approval'?<Link className={ghost} to={`/payroll/review?run=${run.id}`}>Review Payroll</Link>:view;
+  if(isAdmin)return run.status==='Pending Approval'?<Link className={button} to={`/payroll/review?run=${run.id}`}>Review Payroll</Link>:view;
   return <>{view}{canGenerate&&run.status==='Approved'&&<button type="button" className={ghost} onClick={()=>setGenerating(run)}>Generate Payslip</button>}</>;
  };
  return <section className="min-w-0 space-y-4">
