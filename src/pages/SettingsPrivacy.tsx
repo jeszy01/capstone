@@ -8,6 +8,7 @@ import {recordAudit} from '../features/audit/auditService';
 import {accountService,passkeyProblems,passwordProblems,payslipPasskeyService} from '../features/auth/accountService';
 import type {AccountSecurity,AccountSession,PayslipPasskeyStatus} from '../features/auth/accountService';
 import {can} from '../features/auth/permissions';
+import {notificationSoundOn,setNotificationSoundOn} from '../features/notifications/notificationSound';
 
 const TABS=[{id:'account',label:'Account Settings'},{id:'privacy',label:'Privacy'}] as const;
 type TabId=(typeof TABS)[number]['id'];
@@ -31,6 +32,14 @@ function PasswordConfirmDialog({title,message,confirmLabel,danger=false,onCancel
 
 function SectionCard({title,editing,canEdit,onEdit,onCancel,onSave,actions,editLabel='Edit',children}:{title:string;editing:boolean;canEdit:boolean;onEdit:()=>void;onCancel:()=>void;onSave:()=>void;actions?:ReactNode;editLabel?:string;children:ReactNode}){
  return <Card className="min-w-0"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-slate-900">{title}</h2><div className="flex flex-wrap gap-2">{actions}{editing?<><button type="button" className={ghost} onClick={onCancel}>Cancel</button><Button onClick={onSave}>Save</Button></>:canEdit&&<button type="button" className={ghost} onClick={onEdit}><Pencil size={15}/>{editLabel}</button>}</div></div>{children}</Card>;
+}
+
+/** Saved per user on this device and applied right away. */
+function NotificationSoundCard(){
+ const [on,setOn]=useState(notificationSoundOn);
+ return <Card className="min-w-0"><h2 className="m-0 mb-5 text-[16px] font-semibold text-slate-900">Notifications</h2><div className="grid gap-4 sm:grid-cols-3">
+  <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-[13px] font-semibold text-slate-600"><input type="checkbox" role="switch" className="h-4 w-4 rounded border-slate-300 text-blue-600" checked={on} onChange={event=>{setOn(event.target.checked);setNotificationSoundOn(event.target.checked)}}/>Notification sound</label>
+ </div></Card>;
 }
 
 /** Admin only: the shared passkey HR Staff enter to generate payslips. */
@@ -159,6 +168,7 @@ function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
     <label className="flex items-center gap-3 self-end rounded-lg border border-slate-200 px-3 py-2.5 text-[13px] font-semibold text-slate-600"><input type="checkbox" role="switch" className="h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-60" disabled={editing!=='otp'} checked={editing==='otp'?otpDraft:security.otpEnabled} onChange={event=>setOtpDraft(event.target.checked)}/>Require a code at sign-in</label>
    </div>
   </SectionCard>
+  <NotificationSoundCard/>
   <Card className="min-w-0">
    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-slate-900">Active Sessions</h2><button type="button" className={ghost} disabled={!others.length} onClick={()=>setSigningOut('others')}><LogOut size={15}/>Sign out all other devices</button></div>
    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[560px] text-left text-[13px]"><thead><tr className="border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500"><th className="px-4 py-3">Device</th><th className="px-4 py-3">Browser</th><th className="px-4 py-3">Last Active</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody>

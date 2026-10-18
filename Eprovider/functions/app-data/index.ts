@@ -7,7 +7,7 @@ import type {RequestContext} from "../../lib/types";
 import {can} from "../../lib/permissions";
 
 type AppDataRow={key:string;value:unknown;deleted:boolean;updated_at:string;updated_by:string|null};
-const SYNCED_PREFIXES=["admin:","audit:","attendance:","benefits:","claims:","compensation:","deductions:","leave:","payroll:","reimbursement:"];
+const SYNCED_PREFIXES=["admin:","audit:","attendance:","benefits:","claims:","compensation:","deductions:","leave:","notifications:","payroll:","reimbursement:"];
 const isSyncedKey=(key:string)=>SYNCED_PREFIXES.some(prefix=>key.startsWith(prefix));
 // Payroll Settings keys: every "payroll:" key except runs and records, plus the legacy 13th month rules key.
 const isSettingsKey=(key:string)=>(key.startsWith("payroll:")&&key!=="payroll:runs"&&key!=="payroll:records")||key==="compensation:thirteenth-month-rules";

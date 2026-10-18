@@ -30,6 +30,7 @@ export const titles={
  '/employees':'Employee Directory',
  '/payroll/review':'Review Payroll',
  '/settings-privacy':'Settings & Privacy',
+ '/notifications':'Notifications',
  '/logs-audits':'Logs & Audits',
  '/payroll-settings':'Payroll Settings',
  '/hmo-benefits/dependents':'Dependents',

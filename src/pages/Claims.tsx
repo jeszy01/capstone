@@ -5,6 +5,7 @@ import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {can} from '../features/auth/permissions';
 import {recordAudit} from '../features/audit/auditService';
+import {notifyClaimDecided,notifyClaimSubmitted} from '../features/notifications/notificationService';
 import {claimTypes,employeeName,nextClaimNumber,normalizeClaims,saveClaims} from '../features/claims/claimsTypes';
 import type {ClaimType,ExpenseClaim} from '../features/claims/claimsTypes';
 import {ClaimStatusBadge,EmployeeCell,ViewToggle,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
@@ -29,10 +30,10 @@ export default function Claims(){
  const load=()=>{setLoading(true);setLoadError('');employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))}).catch(cause=>{setClaims(normalizeClaims([]));setLoadError(cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded.')}).finally(()=>setLoading(false))};
  useEffect(()=>{load()},[]);
  // Claim approvals are logged by the server when the claims are saved.
- const update=(id:string,patch:Partial<ExpenseClaim>)=>{setClaims(current=>{const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);return next})};
+ const update=(id:string,patch:Partial<ExpenseClaim>)=>{const before=claims.find(item=>item.id===id);if(before&&(patch.approvalStatus==='Approved'||patch.approvalStatus==='Rejected')&&before.approvalStatus!==patch.approvalStatus)notifyClaimDecided(before.claimNumber,patch.approvalStatus);setClaims(current=>{const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);return next})};
  // Only unpaid claims that are pending or returned can be deleted; the buttons are shown only for those.
  const remove=(claim:ExpenseClaim)=>{if(claim.paymentStatus!=='Unpaid'||!isOpen(claim))return;setClaims(current=>{const next=current.filter(item=>item.id!==claim.id);saveClaims(next);recordAudit({action:'Deleted claim',module:'Claims',description:`Deleted claim ${claim.claimNumber}.`});return next});setSelected(current=>current?.id===claim.id?null:current)};
- const save=(claim:ExpenseClaim)=>{setClaims(current=>{const next=[...current,claim];saveClaims(next);return next});recordAudit({action:'Submitted claim',module:'Claims',description:`Submitted claim ${claim.claimNumber} for ${peso(claim.amount)}.`});setShow(false);setView('open')};
+ const save=(claim:ExpenseClaim)=>{setClaims(current=>{const next=[...current,claim];saveClaims(next);return next});recordAudit({action:'Submitted claim',module:'Claims',description:`Submitted claim ${claim.claimNumber} for ${peso(claim.amount)}.`});notifyClaimSubmitted(claim.claimNumber,peso(claim.amount));setShow(false);setView('open')};
  const confirmPending=()=>{if(!pending)return;if(pending.kind==='reject')update(pending.claim.id,{approvalStatus:'Rejected',notes:'Rejected by Finance during review.'});else remove(pending.claim);setPending(null)};
  const list=view==='open'?openClaims:claims;
  return <div className="claims-page space-y-5">

@@ -91,6 +91,25 @@ async function payrollRunEvents(user, before, after, releasedRecentlyBy) {
   }
   return events;
 }
+// Notifications: one copy per role ('admin' or 'hr'). Anyone may add unread ones; a user may only mark their own role's copies
+// as read, and unread ones are never removed (a stale copy that drops them is refused, and the browser reloads the server copy).
+const NOTIFICATION_ROLES = { admin: 'admin', hr_staff: 'hr' };
+function notificationEvents(user, before, after) {
+  const own = NOTIFICATION_ROLES[roleKey(user.role)];
+  if (!own) throw forbid();
+  const prev = byId(before), next = byId(after);
+  for (const [id, old] of prev) if (!next.has(id) && !old.read) throw forbid('Unread notifications cannot be removed.');
+  for (const [id, row] of next) {
+    const old = prev.get(id);
+    if (!old) {
+      if (!['admin', 'hr'].includes(row.role) || row.read) throw forbid('A new notification must be unread and for Admin or HR.');
+      continue;
+    }
+    if (stable(old) === stable(row)) continue;
+    if (old.role !== own || row.read !== true || stable(without(old, ['read'])) !== stable(without(row, ['read']))) throw forbid('Only your own notifications can be marked as read.');
+  }
+  return [];
+}
 const CLAIM_DECISIONS = ['Approved', 'Rejected', 'Returned'];
 // Older claim rows use earlier status names; they are compared the way the Claims page reads them.
 const claimApproval = claim => {
@@ -226,6 +245,8 @@ export async function appDataEvents(user, key, before, after, existed, releasedR
   if (key.startsWith('audit:')) throw forbid('Logs & Audit entries are recorded by the server.');
   if (key === 'admin:users') { need(user, 'users.manage'); return []; }
   if (key === 'payroll:runs') return payrollRunEvents(user, before, after, releasedRecentlyBy);
+  if (key === 'notifications:records') return notificationEvents(user, before, after);
+  if (key.startsWith('notifications:')) throw forbid();
   if (key === 'payroll:records') { if (!can(user.role, 'payroll.generate') && !can(user.role, 'payroll.approve')) throw forbid(); return []; }
   if (isSettingsKey(key)) return settingsEvents(user, key, before, after);
   if (key === 'claims:records') return claimEvents(user, before, after);

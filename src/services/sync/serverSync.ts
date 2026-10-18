@@ -1,9 +1,11 @@
 import {apiClient} from '../api/apiClient';
 import {can} from '../../features/auth/permissions';
+import {NOTIFICATIONS_EVENT,NOTIFICATIONS_KEY} from '../../features/notifications/notificationService';
+import {soundHoldMs} from '../../features/notifications/notificationSound';
 
 type PendingWrite={raw?:string;deleted?:boolean};
 // Logs & Audit is kept by the server, so 'audit:' keys are no longer synchronized.
-const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','payroll:','reimbursement:'];
+const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','notifications:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
 // Payroll Settings keys: every 'payroll:' key except runs and records, plus the legacy 13th month rules key.
 const settingsKey=(key:string)=>(key.startsWith('payroll:')&&key!=='payroll:runs'&&key!=='payroll:records')||key==='compensation:thirteenth-month-rules';
@@ -48,6 +50,7 @@ Storage.prototype.removeItem=function(this:Storage,key:string){
 export async function hydrateFromServer(reloadOnChange=false){
  hydrating=true;
  let changed=false;
+ const notificationsBefore=window.localStorage.getItem(NOTIFICATIONS_KEY);
  try{
   const response=await apiClient.get<{data:{key:string;value:unknown;deleted?:boolean}[]}>('/app-data');
   const items=response.data;
@@ -56,6 +59,8 @@ export async function hydrateFromServer(reloadOnChange=false){
    // A local edit is newer than this snapshot; do not overwrite it while it is queued.
    if(pending.has(item.key))continue;
    if(RETIRED_KEYS.includes(item.key))continue;
+   // Notifications update in place (bell, Notifications page, sound) instead of reloading the page.
+   if(item.key===NOTIFICATIONS_KEY){if(item.deleted)rawRemove.call(window.localStorage,item.key);else rawSet.call(window.localStorage,item.key,JSON.stringify(item.value));continue}
    if(item.deleted){
    if(window.localStorage.getItem(item.key)!==null){console.log('HYDRATE DIFF (deleted)',item.key);changed=true} if(window.localStorage.getItem(item.key)!==null)changed=true;
     rawRemove.call(window.localStorage,item.key);
@@ -88,7 +93,9 @@ export async function hydrateFromServer(reloadOnChange=false){
  }catch{/* keep the local copy when the server is unreachable */}
  finally{
   hydrating=false;
-  if(reloadOnChange&&changed)window.location.reload();
+  if(window.localStorage.getItem(NOTIFICATIONS_KEY)!==notificationsBefore)window.dispatchEvent(new CustomEvent(NOTIFICATIONS_EVENT,{detail:{source:'poll'}}));
+  // A notification sound that just started finishes before the reload.
+  if(reloadOnChange&&changed)window.setTimeout(()=>window.location.reload(),soundHoldMs());
  }
  return changed;
 }

@@ -12,6 +12,7 @@ import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
 import {confirmWithPasskey} from '../auth/passkeyGate';
+import {notifyPayrollApproved,notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
 import {RUNS_KEY,decideRun,isThirteenthMonthRun,payRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod} from './payrollRuns';
@@ -166,11 +167,12 @@ const built:RunRow[]=[];
   }
   const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,payDate,settings:payrollSettingsSnapshot(to),status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
   write(RUNS_KEY,[...runs,run]);
+  notifyPayrollPending(run.id,runLabel(run));
   nav('/payroll');
  };
  const decide=(status:'Approved'|'Rejected')=>{
   if(!saved||!window.confirm(`${status==='Approved'?'Approve':'Reject'} payroll for ${runLabel(saved)}?`))return;
-  decideRun(saved.id,status,user?.name??'Admin');
+  if(decideRun(saved.id,status,user?.name??'Admin')&&status==='Approved')notifyPayrollApproved(saved.id,runLabel(saved));
   nav('/payroll');
  };
 
