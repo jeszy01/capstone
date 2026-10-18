@@ -319,12 +319,19 @@ function PlanCard({ plan, provider, onOpen }: { plan: HmoPlan; provider?: HmoPro
   const [shown, setShown] = useState(false);
   const active = plan.status === "Active";
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="block w-full rounded-2xl border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 text-left shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition hover:border-blue-300 hover:shadow-md"
-      >
+    // The card opens the plan; it is a role="button" div so the eye button can sit inside it.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      className="block w-full cursor-pointer rounded-2xl border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 text-left shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition hover:border-blue-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+    >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#dce9fb] bg-[#e4efff] px-1 text-center text-[10px] font-extrabold tracking-tight text-[#0862df]">
@@ -339,7 +346,7 @@ function PlanCard({ plan, provider, onOpen }: { plan: HmoPlan; provider?: HmoPro
             {active ? "Active" : "Inactive"}
           </span>
         </div>
-        <dl className="mt-4 grid grid-cols-2 gap-3 pr-10 text-[12px]">
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
           <div>
             <dt className="text-[#647796]">Coverage Period</dt>
             <dd className="m-0 mt-1 font-semibold text-[#142b50]">
@@ -348,13 +355,12 @@ function PlanCard({ plan, provider, onOpen }: { plan: HmoPlan; provider?: HmoPro
           </div>
           <div>
             <dt className="text-[#647796]">Annual Benefit Limit</dt>
-            <dd className="m-0 mt-1 font-semibold text-[#142b50]">{maskValue(shown, money(plan.annualBenefitLimit))}</dd>
+            <dd className="m-0 mt-1 flex items-center justify-between gap-2 font-semibold text-[#142b50]">
+              <span className="min-w-0 truncate">{maskValue(shown, money(plan.annualBenefitLimit))}</span>
+              <RevealToggle inline shown={shown} onToggle={() => setShown((value) => !value)} />
+            </dd>
           </div>
         </dl>
-      </button>
-      <div className="absolute bottom-3 right-3">
-        <RevealToggle shown={shown} onToggle={() => setShown((value) => !value)} />
-      </div>
     </div>
   );
 }
