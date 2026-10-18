@@ -244,6 +244,8 @@ export async function appDataEvents(user, key, before, after, existed, releasedR
   if (isSettingsKey(key)) return settingsEvents(user, key, before, after);
   if (key === 'claims:records') return claimEvents(user, before, after);
   if (key.startsWith('claims:') || key.startsWith('reimbursement:')) { need(user, 'claims.encode'); return []; }
+  // HR2 attendance mirror: replaced as HR2 sends records (corrections included); nobody encodes attendance by hand.
+  if (key === 'attendance:hr2') { need(user, 'attendance.encode', 'Only HR Staff can sync attendance.'); return []; }
   if (key.startsWith('attendance:')) return attendanceEvents(user, before, after, existed);
   if (key === 'leave:records') return leaveEvents(user, before, after);
   if (key === 'deductions:other') return otherDeductionEvents(user, before, after);
