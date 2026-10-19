@@ -1,6 +1,7 @@
-import {useMemo,useState} from 'react';
-import {CalendarDays,CalendarRange,Printer} from 'lucide-react';
-import {Card,Empty,Tabs,ghost,input} from '../../components/common/ui';
+import {useMemo,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
+import {CalendarDays,CalendarRange,FileText,Printer,X} from 'lucide-react';
+import {Button,Card,Tabs,ghost,input,maskValue,useOverlayFocus} from '../../components/common/ui';
 import {localToday} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {peso} from '../../utils/storage';
@@ -8,15 +9,19 @@ import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
 import type {PayrollRun} from './payrollRuns';
 import {buildPayrollReport} from './payrollReport';
-import type {ReportLine,ReportPeriod,ReportTotals} from './payrollReport';
+import type {PayrollPeriodReport as Report,ReportLine,ReportPeriod,ReportTotals} from './payrollReport';
 
 const KINDS=[{id:'monthly',label:'Monthly',shortLabel:'Monthly',icon:CalendarDays},{id:'annual',label:'Annual',shortLabel:'Annual',icon:CalendarRange}] as const;
 type Kind=(typeof KINDS)[number]['id'];
 const COLUMNS:Array<[keyof ReportTotals,string]>=[['basic','Basic'],['overtime','Overtime'],['otherEarnings','Other Earnings'],['gross','Gross Pay'],['attendance','Absences / Late'],['sss','SSS'],['phil','PhilHealth'],['pagibig','Pag-IBIG'],['tax','W/Tax'],['loans','Loans'],['other','HMO / Other'],['deductions','Total Deductions'],['net','Net Pay']];
-// Printing shows only the report, on landscape pages. The body class keeps these rules from affecting other prints.
+// Printing shows only the report preview, on landscape pages. The preview is a direct child of <body>, so everything
+// else is hidden outright; the body class keeps these rules from affecting other prints.
 const PRINT_CSS=`@page payroll-report{size:A4 landscape;margin:10mm}
-@media print{body.print-payroll-report *{visibility:hidden!important}body.print-payroll-report .payroll-report,body.print-payroll-report .payroll-report *{visibility:visible!important}
-body.print-payroll-report .payroll-report{position:absolute;left:0;top:0;width:100%;page:payroll-report;border:0!important;box-shadow:none!important;padding:0!important;background:#fff!important}
+@media print{html:has(body.print-payroll-report),body.print-payroll-report{background:#fff!important}body.print-payroll-report>*:not(.report-preview){display:none!important}
+body.print-payroll-report .payroll-report th,body.print-payroll-report .payroll-report td{position:static!important;box-shadow:none!important}
+body.print-payroll-report .report-preview,body.print-payroll-report .report-preview-panel{position:static!important;inset:auto!important;overflow:visible!important;height:auto!important;max-height:none!important;padding:0!important;margin:0!important;background:#fff!important;box-shadow:none!important;border:0!important;border-radius:0!important;backdrop-filter:none!important}
+body.print-payroll-report .report-preview .no-print{display:none!important}
+body.print-payroll-report .payroll-report{page:payroll-report;padding:0!important;background:#fff!important}
 body.print-payroll-report .payroll-report .report-scroll{overflow:visible!important}body.print-payroll-report .payroll-report table{min-width:0!important;font-size:8.5px}
 body.print-payroll-report .payroll-report th,body.print-payroll-report .payroll-report td{padding:2px 4px!important}
 body.print-payroll-report .payroll-report thead{display:table-header-group}body.print-payroll-report .payroll-report tr{break-inside:avoid}body.print-payroll-report .payroll-report section{break-inside:avoid-page}}`;
@@ -31,6 +36,39 @@ export function PayrollPeriodReport({runs,employees,showAmounts=false}:{runs:Pay
  const years=[...new Set([...runs.map(run=>run.to.slice(0,4)),today.slice(0,4)])].sort().reverse();
  const period:ReportPeriod=kind==='monthly'?{kind,month}:{kind,year};
  const report=useMemo(()=>buildPayrollReport(runs,period,employees,includePending),[runs,kind,month,year,employees,includePending]); // eslint-disable-line react-hooks/exhaustive-deps
+ const[previewing,setPreviewing]=useState(false);
+ const canPreview=report.runs.length>0&&showAmounts;
+ const hidden=(value:number)=>maskValue(showAmounts,peso(value));
+ return <Card className="mt-6 min-w-0 border-blue-100">
+  <div className="flex flex-wrap items-start justify-between gap-3">
+   <div className="min-w-0"><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">Payroll Report</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Monthly or annual totals from saved payroll runs. Open the preview to see every section and print or save it as PDF.</p></div>
+   <Button disabled={!canPreview} title={!report.runs.length?'No payroll runs in this period.':showAmounts?undefined:'Show amounts to preview the report.'} onClick={()=>setPreviewing(true)}><FileText size={15}/>Preview &amp; Print Report</Button>
+  </div>
+  <div className="mt-4 flex flex-wrap items-end gap-3">
+   <Tabs label="Report period" value={kind} onChange={setKind} tabs={KINDS} className=""/>
+   {kind==='monthly'
+    ?<label className="block text-[12px] font-semibold text-slate-600">Month<input type="month" className={`${input} mt-1.5 !w-auto`} value={month} max={today.slice(0,7)} onChange={e=>e.target.value&&setMonth(e.target.value)}/></label>
+    :<label className="block text-[12px] font-semibold text-slate-600">Year<select className={`${input} mt-1.5 !w-auto`} value={year} onChange={e=>setYear(e.target.value)}>{years.map(item=><option key={item}>{item}</option>)}</select></label>}
+   <label className="flex items-center gap-2 pb-2.5 text-[12px] text-slate-600"><input type="checkbox" checked={includePending} onChange={e=>setIncludePending(e.target.checked)}/>Include runs pending approval</label>
+  </div>
+  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+   {report.runs.length?<dl className="m-0 flex flex-wrap gap-x-8 gap-y-2 text-[12px]">
+    <div><dt className="text-slate-500">{report.title.split(' · ')[1]}</dt><dd className="m-0 mt-0.5 font-semibold text-[#17345b]">{report.runs.length} run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</dd></div>
+    <div><dt className="text-slate-500">Gross pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-[#17345b]">{hidden(report.totals.gross)}</dd></div>
+    <div><dt className="text-slate-500">Total deductions</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-[#17345b]">{hidden(report.totals.deductions)}</dd></div>
+    <div><dt className="text-slate-500">Net pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-[#17345b]">{hidden(report.totals.net)}</dd></div>
+   </dl>:<p className="m-0 text-[12px] text-slate-500">{runs.length?`No ${includePending?'approved or pending':'approved'} payroll runs in ${report.title.split(' · ')[1]}.`:'No payroll runs yet. Submit and approve a payroll run first.'}</p>}
+   {report.excludedPending>0&&<p className="mb-0 mt-2 text-[12px] text-amber-800">{report.excludedPending} run{report.excludedPending===1?' is':'s are'} still pending approval and {report.excludedPending===1?'is':'are'} not included.</p>}
+   {!showAmounts&&report.runs.length>0&&<p className="mb-0 mt-2 text-[12px] text-slate-500">Amounts are hidden. Use the eye toggle to show amounts, then open the preview.</p>}
+  </div>
+  {previewing&&canPreview&&<ReportPreview report={report} kind={kind} includePending={includePending} onClose={()=>setPreviewing(false)}/>}
+ </Card>;
+}
+
+/** The full report in a full-screen preview, rendered as a direct child of <body> so printing shows only the report. */
+function ReportPreview({report,kind,includePending,onClose}:{report:Report;kind:Kind;includePending:boolean;onClose:()=>void}){
+ const panel=useRef<HTMLDivElement>(null);
+ useOverlayFocus(panel,true,onClose);
  const user=getCurrentUser();
  const print=()=>{
   document.body.classList.add('print-payroll-report');
@@ -39,37 +77,33 @@ export function PayrollPeriodReport({runs,employees,showAmounts=false}:{runs:Pay
   recordAudit({action:'Printed payroll report',module:'Payroll',description:`Printed the ${report.title}.`});
   window.print();
  };
- return <Card className="mt-6 min-w-0 border-blue-100">
+ return createPortal(<div className="report-preview fixed inset-0 z-50 flex justify-center bg-slate-950/45 p-3 backdrop-blur-sm sm:p-6" onClick={onClose}>
   <style>{PRINT_CSS}</style>
-  <div className="no-print flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 pb-4">
-   <div className="min-w-0"><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">Payroll Report</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Monthly or annual totals from saved payroll runs, ready to print or save as PDF.</p></div>
-   <div className="flex flex-wrap items-end gap-2">
-    <Tabs label="Report period" value={kind} onChange={setKind} tabs={KINDS} className=""/>
-    {kind==='monthly'
-     ?<label className="block text-[12px] font-semibold text-slate-600">Month<input type="month" className={`${input} mt-1.5 !w-auto`} value={month} max={today.slice(0,7)} onChange={e=>e.target.value&&setMonth(e.target.value)}/></label>
-     :<label className="block text-[12px] font-semibold text-slate-600">Year<select className={`${input} mt-1.5 !w-auto`} value={year} onChange={e=>setYear(e.target.value)}>{years.map(item=><option key={item}>{item}</option>)}</select></label>}
-    <label className="flex items-center gap-2 self-center pt-5 text-[12px] text-slate-600"><input type="checkbox" checked={includePending} onChange={e=>setIncludePending(e.target.checked)}/>Include runs pending approval</label>
-    <button type="button" className={ghost} disabled={!report.runs.length||!showAmounts} title={showAmounts?undefined:'Show amounts to print the report.'} onClick={print}><Printer size={15}/>Print Report</button>
+  <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={report.title} className="report-preview-panel flex h-full w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e=>e.stopPropagation()}>
+   <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
+    <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">Report preview</div><div className="text-[15px] font-semibold text-[#17345b]">{report.title}</div></div>
+    <div className="flex gap-2"><Button onClick={print}><Printer size={15}/>Print / Save as PDF</Button><button type="button" className={ghost} onClick={onClose} aria-label="Close preview"><X size={15}/>Close</button></div>
    </div>
-  </div>
+   <div className="report-preview-panel min-h-0 flex-1 overflow-auto px-5 pb-6 sm:px-8">
   <div className="payroll-report pt-5 text-slate-800">
    <header className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-slate-800 pb-3">
     <div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[13px] font-semibold">{report.title}</div><div className="text-[11px] text-slate-500">{kind==='monthly'?'All payroll runs whose cutoff ends in this month.':'All payroll runs whose cutoff ends in this year.'} {includePending?'Includes runs pending approval.':'Approved runs only.'} Table amounts are in Philippine pesos (₱).</div></div>
     <div className="text-right text-[11px] text-slate-500"><div>Generated {new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div><div>{report.runs.length} payroll run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</div></div>
    </header>
    {report.excludedPending>0&&<p className="no-print mb-0 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{report.excludedPending} run{report.excludedPending===1?' is':'s are'} still pending approval and {report.excludedPending===1?'is':'are'} not included.</p>}
-   {/* Amounts follow the page's eye toggle, like the summary figures above, so they are never shown or printed by accident. */}
-   {!showAmounts&&report.runs.length>0?<Empty>Amounts are hidden. Use the eye toggle to show amounts, then view or print the report.</Empty>:!report.runs.length?<Empty>{runs.length?'No approved payroll runs in this period.':'No payroll runs yet. Submit and approve a payroll run first.'}</Empty>:<>
+   <>
     <ReportSection title="Summary"><table className="w-full max-w-[560px] text-[12px]"><tbody>
      {([['Gross pay',report.totals.gross],['Total deductions',report.totals.deductions],['Net pay',report.totals.net],['Government contributions (employee share)',report.totals.sss+report.totals.phil+report.totals.pagibig],['Withholding tax',report.totals.tax]] as const).map(([label,value])=><tr key={label} className="border-b border-slate-100"><th className="!py-1 pr-4 text-left font-medium text-slate-600">{label}</th><td className="!py-1 text-right font-semibold tabular-nums">{peso(value)}</td></tr>)}
     </tbody></table></ReportSection>
     {kind==='annual'?<ReportSection title="By month"><TotalsTable first="Month" lines={report.byMonth} totals={report.totals}/></ReportSection>:<ReportSection title="By payroll run"><TotalsTable first="Cutoff" lines={report.byRun} totals={report.totals}/></ReportSection>}
     <ReportSection title="By employee"><TotalsTable first="Employee" lines={report.byEmployee} totals={report.totals} showCount={false}/></ReportSection>
     <ReportSection title="By department"><TotalsTable first="Department" lines={report.byDepartment} totals={report.totals}/></ReportSection>
-    <div className="mt-8 grid gap-6 sm:grid-cols-3">{[['Prepared by',user?.name??'Payroll Officer'],['Reviewed by','HR Head'],['Approved by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[56px] flex-col justify-end border-t border-slate-700 pt-1.5 text-[11px] text-slate-500"><b className="text-slate-800">{label}</b>{name} · Date: ________</div>)}</div>
-   </>}
+    <div className="mt-8 grid grid-cols-3 gap-6">{[['Prepared by',user?.name??'Payroll Officer'],['Reviewed by','HR Head'],['Approved by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[56px] flex-col justify-end border-t border-slate-700 pt-1.5 text-[11px] text-slate-500"><b className="text-slate-800">{label}</b>{name} · Date: ________</div>)}</div>
+   </>
   </div>
- </Card>;
+   </div>
+  </div>
+ </div>,document.body);
 }
 
 function ReportSection({title,children}:{title:string;children:React.ReactNode}){return <section className="mt-5"><h3 className="m-0 mb-2 text-[13px] font-semibold text-[#17345b]">{title}</h3>{children}</section>}
