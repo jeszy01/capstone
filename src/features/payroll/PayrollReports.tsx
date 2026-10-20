@@ -11,16 +11,8 @@ import {PayrollSummaryModal} from './PayrollSummaryModal';
 import {PayslipPanel} from './PayslipPanel';
 import {PayrollPeriodReport} from './PayrollPeriodReport';
 import {cell,flushCard,formatDate,rowHeader,tableHead} from '../../components/common/tableUi';
+import {StatusBadge} from '../../components/common/StatusBadge';
 type Computed={r:PayrollInput;c:PayrollResult};
-export function PayrollRuns(){
- const metrics=[{label:'Total Runs',hint:'Persisted run count unavailable'},{label:'Completed',hint:'Completion metrics unavailable'},{label:'Processing',hint:'Processing metrics unavailable'},{label:'For Approval',hint:'Approval metrics unavailable'}];
- return <section aria-labelledby="payroll-runs-title" className="min-w-0 space-y-5">
-  <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="payroll-runs-title" className="m-0 text-[26px] font-bold tracking-tight text-slate-900">Payroll Runs</h2><p className="mb-0 mt-2 text-[13px] leading-relaxed text-slate-500">Create and manage payroll runs for employee compensation.</p></div><span className="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-500">Run integration unavailable</span></div>
-  <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-[12px] leading-relaxed text-blue-800">Persisted payroll run data and run actions are not available through the current frontend integration. Local payroll calculations are not payroll runs.</div>
-  <div aria-label="Payroll Runs summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(({label,hint})=><Card key={label}><div className="flex items-center justify-between gap-3"><div className="text-[12px] font-medium text-slate-500">{label}</div><span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-blue-500">—</span></div><div className="mt-3 text-[20px] font-semibold tracking-tight text-[#17345b]">Unavailable</div><div className="mt-2 text-[11px] text-slate-400">{hint}</div></Card>)}</div>
-  <Card className="min-w-0"><div className="mb-4 flex flex-wrap items-start justify-between gap-3"><div><h3 className="m-0 text-[16px] font-semibold text-slate-800">Payroll Runs Records</h3><p className="mb-0 mt-1 text-[12px] text-slate-500">Existing run fields · no sample records or financial amounts</p></div><span className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500">Records unavailable</span></div><div role="region" aria-label="Payroll Runs records table" tabIndex={0} className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[1050px] text-left text-[13px]"><thead><tr className="border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500">{['Run ID','Payroll Period','Pay Date','Employees','Gross Pay','Deductions','Net Pay','Status','Action'].map(label=><th key={label} scope="col" className="px-4 py-3">{label}</th>)}</tr></thead><tbody><tr><td colSpan={9}><Empty><div className="font-semibold text-slate-700">Payroll run records are unavailable</div><div className="mt-2 text-[12px] leading-relaxed">No persisted run data is connected to this view. Counts, statuses and amounts cannot be determined.</div></Empty></td></tr></tbody></table></div><div className="mt-4 border-t border-slate-100 pt-3 text-[11px] leading-relaxed text-slate-500">Intended workflow: Draft → For Review → Approved → Processed.<br/>Workflow transitions, date/search/status filters, export, pagination and Create Run are not supported by this view.</div></Card>
- </section>;
-}
 export function PayrollReport({kind,computed,employees,showAmounts=false}:{kind:'payslip'|'summary';computed:Computed[];employees:Employee[];showAmounts?:boolean}){
  const[view,setView]=useState<Computed|null>(null);
  const[summary,setSummary]=useState<PayrollRun|null>(null);
@@ -37,7 +29,6 @@ const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].sort((a,b)=>b.createdAt.localeCo
  const allowance=(r:PayrollInput)=>numberValue(r.transportation)+numberValue(r.riceSubsidy);
  const cards:Array<[string,string|number]>=[['Employees',new Set(computed.map(item=>item.r.empId)).size],['Gross Payroll',peso(sum('gross'))],['Deductions',peso(sum('deductions'))],['Net Payroll',peso(sum('net'))],['Overtime',peso(sum('overtime'))],['Government Deductions (employee)',peso(sum('sss')+sum('phil')+sum('pagibig'))]];
  const total=(run:PayrollRun,key:'gross'|'deductions'|'net')=>run.rows.reduce((t,row)=>t+row.result[key],0);
- const statusClass:Record<string,string>={Released:'bg-emerald-50 text-emerald-700',Approved:'bg-blue-50 text-blue-700',Rejected:'bg-red-50 text-red-700','Pending Approval':'bg-amber-50 text-amber-800'};
  return <div>
  {kind==='summary'?<><div className={`mt-4 ${statCard}`}><StatGrid className="grid-cols-1 md:grid-cols-3" items={cards.map(([label,value])=>({label,value:label==='Employees'?value:maskValue(showAmounts,value)}))}/><div className="border-t border-slate-200 px-5 pb-1 pt-4"><h2 className="m-0 text-[16px] font-semibold">Government Contributions</h2></div><StatGrid className="grid-cols-1 md:grid-cols-3" items={([['SSS',sum('sss')],['PhilHealth',sum('phil')],['Pag-IBIG',sum('pagibig')]] as const).map(([label,value])=>({label:`${label} employee deduction`,value:maskValue(showAmounts,peso(value))}))}/></div>
   <Card className={`mt-6 ${flushCard}`}>
@@ -50,7 +41,7 @@ const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].sort((a,b)=>b.createdAt.localeCo
      <td className={`${cell} whitespace-nowrap text-right tabular-nums`}>{maskValue(showAmounts,peso(total(run,'gross')))}</td>
      <td className={`${cell} whitespace-nowrap text-right tabular-nums`}>{maskValue(showAmounts,peso(total(run,'deductions')))}</td>
      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{maskValue(showAmounts,peso(total(run,'net')))}</td>
-     <td className={cell}><span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClass[label]??'bg-slate-100 text-slate-700'}`}>{label}</span></td>
+     <td className={cell}><StatusBadge status={label}/></td>
      <td className={`${cell} whitespace-nowrap text-slate-600`}>{run.paidAt?<><div>{run.paymentMethod??'Paid'}</div><div className="mt-0.5 text-[11px] text-slate-500">{formatDate(run.paidAt.slice(0,10))}</div></>:'—'}</td>
      <td className={cell}><div className="flex flex-nowrap gap-2"><button type="button" className={ghost} onClick={()=>setSummary(run)}>View</button>{run.status==='Approved'&&!run.paidAt&&can('payroll.release')&&<Button onClick={()=>setReleasing(run)}>Release</Button>}</div></td>
     </tr>})}</tbody>

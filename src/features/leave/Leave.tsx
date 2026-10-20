@@ -8,10 +8,10 @@ import {getCurrentUser} from '../auth/authService';
 import {can} from '../auth/permissions';
 import {recordAudit} from '../audit/auditService';
 import {isPaidLeave,leaveDays,leaveStatuses,leaveTypes,loadLeaves,overlaps,saveLeaves} from './leaveService';
-import type {LeaveRecord,LeaveStatus,LeaveType} from './leaveService';
+import type {LeaveRecord,LeaveType} from './leaveService';
+import {StatusBadge} from '../../components/common/StatusBadge';
 
 const head='border-b border-[#e3e7ef] bg-slate-50/80 text-[10px] uppercase tracking-wide text-[#6b7794]';
-const statusClass:Record<LeaveStatus,string>={Pending:'bg-amber-50 text-amber-700',Approved:'bg-emerald-50 text-emerald-700',Rejected:'bg-red-50 text-red-700'};
 const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 const shortDate=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
@@ -41,7 +41,7 @@ export default function Leave(){
     <td className="px-4 py-3"><div className="font-semibold text-slate-800">{employee?.name??item.employeeId}</div><div className="text-[11px] text-[#6b7794]">{employee?.employeeNo??''}</div></td>
     <td className="px-4 py-3">{item.leaveType}</td><td className="whitespace-nowrap px-4 py-3">{shortDate(item.from)}</td><td className="whitespace-nowrap px-4 py-3">{shortDate(item.to)}</td>
     <td className="px-4 py-3 tabular-nums">{item.days}</td><td className="px-4 py-3">{item.paid?'Paid':'Unpaid'}</td>
-    <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass[item.status]}`}>{item.status}</span></td>
+    <td className="px-4 py-3"><StatusBadge status={item.status}/></td>
     <td className="px-4 py-3">{canApprove&&item.status==='Pending'?<div className="flex gap-2"><Button onClick={()=>setDeciding({leave:item,status:'Approved'})}><Check size={14}/>Approve</Button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} onClick={()=>setDeciding({leave:item,status:'Rejected'})}><X size={14}/>Reject</button></div>:<span className="text-[12px] text-slate-400">—</span>}</td>
    </tr>})}
   </tbody></table></div></Card>

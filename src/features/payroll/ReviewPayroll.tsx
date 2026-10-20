@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useState} from 'react';
 import {useNavigate,useSearchParams} from 'react-router-dom';
-import {Button,Empty,LoadingState,Modal,ghost} from '../../components/common/ui';
+import {Button,ConfirmDialog,Empty,LoadingState,Modal,ghost} from '../../components/common/ui';
 import type {PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
@@ -27,6 +27,7 @@ import {compensationService} from '../compensation/compensationService';
 import {loanService} from '../deductions/loanService';
 import {governmentLoanService} from '../governmentLoans/governmentLoanService';
 import {governmentLoanDeductions,governmentLoanTotals,rowLoanAmounts} from '../governmentLoans/governmentLoanPayroll';
+import {StatusBadge} from '../../components/common/StatusBadge';
 
 type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions'|'thirteenthMonthAndOtherBenefits'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
@@ -170,8 +171,11 @@ const built:RunRow[]=[];
   notifyPayrollPending(run.id,runLabel(run));
   nav('/payroll');
  };
+ // Approve and Reject ask in the app's own dialog before deciding.
+ const[deciding,setDeciding]=useState<'Approved'|'Rejected'|null>(null);
  const decide=(status:'Approved'|'Rejected')=>{
-  if(!saved||!window.confirm(`${status==='Approved'?'Approve':'Reject'} payroll for ${runLabel(saved)}?`))return;
+  if(!saved)return;
+  setDeciding(null);
   if(decideRun(saved.id,status,user?.name??'Admin')&&status==='Approved')notifyPayrollApproved(saved.id,runLabel(saved));
   nav('/payroll');
  };
@@ -179,11 +183,11 @@ const built:RunRow[]=[];
  return <div className="space-y-4">
   <style>{`.paper table{border-collapse:collapse;width:100%}.paper th,.paper td{border:1px solid #d7e0ed;padding:7px 8px;font-size:11px;color:#0f172a}.paper th{background:#f1f6fc;text-align:center;font-weight:600}.paper td.n{text-align:right;font-variant-numeric:tabular-nums}.paper-input{width:72px;border:1px solid #cbd5e1;border-radius:6px;padding:4px 5px;text-align:right;font-size:11px}.paper tbody tr:hover{background:#f8fbff}@media print{@page{size:landscape;margin:8mm}aside,header,.no-print{display:none!important}.paper{box-shadow:none!important;border:0!important;padding:0!important}.paper th,.paper td{padding:3px 4px;font-size:8px}.paper-input{width:52px;border:0!important;padding:0!important;background:transparent!important;font-size:8px}}`}</style>
   <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
-   <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title||'Payroll entry'}</div></div>{saved&&<span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${saved.status==='Approved'?'bg-emerald-100 text-emerald-800':saved.status==='Rejected'?'bg-rose-100 text-rose-800':'bg-amber-100 text-amber-800'}`}>{runStatusLabel(saved)}</span>}</div>
+   <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title||'Payroll entry'}</div></div>{saved&&<StatusBadge status={runStatusLabel(saved)}/>}</div>
    <div className="flex flex-wrap gap-2">
     <button className={ghost} onClick={()=>window.print()}>Print</button>
     {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
-    {saved&&saved.status==='Pending Approval'&&can('payroll.approve')&&<><button className={ghost} onClick={()=>decide('Rejected')}>Reject</button><Button onClick={()=>decide('Approved')}>Approve</Button></>}
+    {saved&&saved.status==='Pending Approval'&&can('payroll.approve')&&<><button className={ghost} onClick={()=>setDeciding('Rejected')}>Reject</button><Button onClick={()=>setDeciding('Approved')}>Approve</Button></>}
    </div>
   </div>
   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
@@ -215,6 +219,7 @@ const built:RunRow[]=[];
     </div>
    </>}
   </div>}
+  {deciding&&saved&&<ConfirmDialog title={deciding==="Approved"?"Approve payroll?":"Reject payroll?"} message={`${deciding==="Approved"?"Approve":"Reject"} payroll for ${runLabel(saved)}?${deciding==="Rejected"?" A rejected run cannot be approved later.":""}`} confirmLabel={deciding==="Approved"?"Approve":"Reject"} danger={deciding==="Rejected"} saving={false} onCancel={()=>setDeciding(null)} onConfirm={()=>decide(deciding)}/>}
   {confirming&&<Modal title="Confirm Payroll Submission" onClose={()=>setConfirming(false)}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Employees',String(rows.length)],['Gross Pay',peso(totals.gross)],['Total Deductions',peso(totals.deductions)],['Net Pay',peso(totals.net)]].map(([label,value])=><div key={label} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{label}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
    <p className="mt-4 text-[13px]">Submit this payroll for Admin approval?</p>

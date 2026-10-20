@@ -7,11 +7,12 @@ import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {can} from '../auth/permissions';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
+import {StatusBadge} from '../../components/common/StatusBadge';
 
 const when=(iso?:string)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'—';
-const Badge=({on,text}:{on:boolean;text?:string})=><span className={`inline-flex rounded-md px-2.5 py-1 text-[11px] font-semibold ${on?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-500'}`}>{text??(on?'Released':'Not released')}</span>;
+const Badge=({on,text}:{on:boolean;text?:string})=><StatusBadge status={on?'Released':'Not released'} label={text}/>;
 // One release status per run, from its department release records: none, some, or all departments released.
-const ReleaseStatus=({done,total}:{done:number;total:number})=>{const all=total>0&&done===total;return <span className={`inline-flex whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold ${all?'bg-emerald-50 text-emerald-700':done?'bg-amber-50 text-amber-700':'bg-slate-100 text-slate-500'}`}>{all?'Released':done?'Partially released':'Not released'}</span>};
+const ReleaseStatus=({done,total}:{done:number;total:number})=>{const all=total>0&&done===total;return <StatusBadge status={all?'Released':done?'Partially released':'Not released'}/>};
 const th='px-4 py-3';
 const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500';
 
@@ -70,7 +71,7 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
 
  // Level 1: approved runs
   return <section className="mt-6 space-y-4" aria-label="Payslip records">
-  <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll documents</div><h2 className="mb-0 mt-1 text-[18px] font-semibold text-[#17345b]">Payslips</h2></div><span className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700">{runs.length} runs</span></div>
+  <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll documents</div><h2 className="mb-0 mt-1 text-[18px] font-semibold text-[#17345b]">Payslips</h2></div><span className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700">{runs.length} {runs.length===1?"run":"runs"}</span></div>
    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Date & Time Generated','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={4}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{const d=deptsOf(r),done=d.filter(x=>r.released?.[x]).length;return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3 font-semibold text-[#17345b]">{runLabel(r)}</td><td className="px-4 py-3 text-slate-500">{when(generatedAt(r))}</td><td className="px-4 py-3"><ReleaseStatus done={done} total={d.length}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button>{!r.releasedAt&&can('payroll.release')&&<button type="button" className={success} onClick={()=>setReleasing(r)}>Release</button>}</div></td></tr>})}</tbody></table></div>
   </Card>
   {/* Release to Finance: the user's passkey is verified by the server, then the run is marked Released and locked. */}

@@ -10,6 +10,7 @@ import {numberValue,peso} from '../../utils/storage';
 import {formatDate,formatDateRange,isIsoDate} from '../../utils/date';
 import {appliesToCutoff,loadOtherDeductions,otherDeductionTypes,saveOtherDeductions} from './otherDeductionService';
 import type {OtherDeduction,OtherDeductionType} from './otherDeductionService';
+import {StatusBadge} from '../../components/common/StatusBadge';
 
 const headers=['Employee','Deduction Type','Description','Amount per Cutoff','Start Date','End Date','Status','Actions'];
 
@@ -41,7 +42,7 @@ export function OtherDeductions({employees,from,to,query}:{employees:Employee[];
     <td className="px-4 py-3.5 font-semibold tabular-nums text-[#17345b]">{peso(item.amountPerCutoff)}</td>
     <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{formatDate(item.startDate)}</td>
     <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{item.endDate?formatDate(item.endDate):'—'}</td>
-    <td className="px-4 py-3.5"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${item.status==='Active'?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{item.status}</span></td>
+    <td className="px-4 py-3.5"><StatusBadge status={item.status}/></td>
     <td className="px-4 py-3.5">{canManage&&item.status==='Active'?<button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} onClick={()=>setStopping(item)}>Stop</button>:<span className="text-[12px] text-slate-400">—</span>}</td>
    </tr>})}</tbody>
    {rows.length>0&&<tfoot><tr className="border-t-2 border-blue-100 bg-blue-50/50 font-semibold text-[#17345b]"><th scope="row" colSpan={3} className="px-4 py-3.5 text-left">Total this cutoff · {rows.length} deductions</th><td className="px-4 py-3.5 tabular-nums">{peso(cutoffTotal)}</td><td colSpan={4} className="px-4 py-3.5"/></tr></tfoot>}

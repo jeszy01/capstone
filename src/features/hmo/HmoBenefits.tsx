@@ -27,6 +27,7 @@ import { hasOpenHmoEnrollment, hmoEligibilityDate, isHmoEmployeeEligible } from 
 import { recordAudit } from "../audit/auditService";
 import { localToday } from "../../components/common/tableUi";
 import { can } from "../auth/permissions";
+import { StatusBadge } from "../../components/common/StatusBadge";
 import type {
   HmoDependent,
   HmoEnrollment,
@@ -282,14 +283,11 @@ export default function HmoBenefits({
 }
 function formatHmoDate(value?: string | null) {
   if (!value) return "Unavailable";
+  // Same style as every other screen ("Oct 3, 2026"); timestamps are shown in the browser's local date.
   const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
   return Number.isNaN(date.getTime())
     ? "Unavailable"
-    : new Intl.DateTimeFormat("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(date);
+    : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 /** HMO Plan tab list: one card per saved plan; clicking a card opens its detail view. */
 function PlanList({
@@ -768,9 +766,7 @@ function EnrollmentSection({
                   {formatHmoDate(e.expirationDate)}
                 </td>
                 <td className="px-4 py-3">
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800">
-                    {enrollmentDisplayStatus(e)}
-                  </span>
+                  <StatusBadge status={enrollmentDisplayStatus(e)}/>
                 </td>
                 <td className="px-4 py-3">
                   <button
@@ -932,9 +928,7 @@ function DependentSection({
                   <td className="px-4 py-3">{money(d.employeeShare)}</td>
                   <td className="px-4 py-3">{money(d.companyShare)}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold">
-                      {dependentDisplayStatus(d)}
-                    </span>
+                    <StatusBadge status={dependentDisplayStatus(d)}/>
                     <div className="mt-1 text-[11px] text-[#6b7794]">
                       {d.eligibilityStatus}
                     </div>
@@ -1810,7 +1804,7 @@ function HmoRecordsSection({
                   <td className="px-3 py-3">{row.dependents.length ? row.dependents.map((item) => item.name).join(", ") : "None"}</td>
                   <td className="px-3 py-3 whitespace-nowrap">{money(row.companyShare)}</td>
                   <td className="px-3 py-3 whitespace-nowrap">{money(row.employeeShare)}</td>
-                  <td className="px-3 py-3"><span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{enrollmentDisplayStatus(row.enrollment)}</span></td>
+                  <td className="px-3 py-3"><StatusBadge status={enrollmentDisplayStatus(row.enrollment)}/></td>
                   <td className="px-3 py-3"><button type="button" className="font-semibold text-blue-600 hover:text-blue-800 print:hidden" onClick={() => setSelectedEnrollment(row.enrollment)}>View</button></td>
                 </tr>
               ))}

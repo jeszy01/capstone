@@ -1,6 +1,7 @@
 import type {Employee} from '../../types/domain';
 import {employeeName,statusClass} from './claimsTypes';
 import type {ExpenseClaim} from './claimsTypes';
+import {StatusBadge} from '../../components/common/StatusBadge';
 
 export {cell,flushCard,localToday,rowHeader,tableHead,formatDate as claimDate} from '../../components/common/tableUi';
 
@@ -12,7 +13,7 @@ export function claimStatus(claim:ExpenseClaim){
  if(claim.approvalStatus==='Returned')return {label:'Returned',className:statusClass('Returned')};
  return {label:claim.approvalStatus,className:claim.approvalStatus==='Pending Approval'?'bg-blue-50 text-blue-700':statusClass(claim.approvalStatus)};
 }
-export function ClaimStatusBadge({claim}:{claim:ExpenseClaim}){const status=claimStatus(claim);return <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${status.className}`}>{status.label}</span>}
+export function ClaimStatusBadge({claim}:{claim:ExpenseClaim}){return <StatusBadge status={claimStatus(claim).label}/>}
 
 /** Employee name with employee number and department underneath. */
 export function EmployeeCell({employees,claim}:{employees:Employee[];claim:ExpenseClaim}){

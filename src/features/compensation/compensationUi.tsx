@@ -2,6 +2,7 @@ import type {ReactNode} from 'react';
 import {Empty,LoadingState,TextInput} from '../../components/common/ui';
 export {ConfirmDialog} from '../../components/common/ui';
 import {Search} from 'lucide-react';
+import {statusBadgeClass} from '../../components/common/StatusBadge';
 
 export const actionCell='sticky right-0 z-10 bg-white px-4 py-3 shadow-[-1px_0_0_#e3e7ef]';
 export const wholePeso=(value:number)=>'₱'+Math.round(value).toLocaleString('en-PH');
@@ -9,7 +10,7 @@ export const actionLabel='max-sm:sr-only';
 export const tableClass='w-full text-left text-[13px]';
 export const rowClass='border-b border-[#eef1f6] last:border-0';
 export const headerClass='border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]';
-export const statusClass=(status:string)=>`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${['Applied','Approved','Effective','Active'].includes(status)?'bg-emerald-50 text-emerald-700':status==='Rejected'||status==='Inactive'?'bg-red-50 text-red-700':'bg-amber-50 text-amber-700'}`;
+export const statusClass=(status:string)=>statusBadgeClass(status);
 export const matches=(query:string,...values:unknown[])=>{
   const needle=query.trim().toLowerCase();
   return !needle||values.some(value=>String(value??'').toLowerCase().includes(needle));
