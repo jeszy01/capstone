@@ -2048,5 +2048,12 @@ app.use(['/app-data', '/employees', '/audit-logs', '/account', '/payroll', '/use
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+// Row counts for checking which database this service reads; attendance is the HR2 store in app_data "attendance:hr2".
+app.get('/api/health', async (_req, res) => {
+  const { rows: [db] } = await pool.query(`select current_database() as database, (select count(*)::int from employees) as employees`);
+  const { rows: [row] } = await pool.query(`select value, deleted from app_data where key='attendance:hr2'`);
+  const records = row && !row.deleted ? appValue(row.value)?.records ?? [] : [];
+  res.json({ ok: true, database: db.database, employees: db.employees, attendance: records.length });
+});
 app.use((err, _req, res, _next) => { console.error(err); fail(res, 500, 'INTERNAL_ERROR', 'Internal server error'); });
 app.listen(process.env.PORT || 3000);

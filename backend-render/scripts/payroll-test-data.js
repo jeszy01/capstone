@@ -119,6 +119,9 @@ try {
   await client.query('begin');
   await (mode === 'seed' ? seed : clean)(client);
   await client.query('commit');
+  // Compare with "database" from GET /api/health on the backend the app uses.
+  const { rows: [db] } = await client.query('select current_database() as database, (select count(*)::int from employees) as employees');
+  console.log(`Database: ${db.database} (${db.employees} employees in total)`);
 } catch (e) {
   await client.query('rollback').catch(() => undefined);
   console.error(e.message);
