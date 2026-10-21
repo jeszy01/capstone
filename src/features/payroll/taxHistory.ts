@@ -8,6 +8,8 @@ import type {AnnualTaxHistory,WithholdingTaxRuleSet} from './withholdingTax';
 
 /** The last payroll of the year: a regular cutoff ending on December 31. Its withholding is the year-end adjustment. */
 export const isYearEndCutoff=(to:string)=>to.slice(5)==='12-31';
+/** A row whose withholding annualizes: the year-end payroll, or a separated employee's last pay. */
+export const isFinalTaxRow=(run:Pick<PayrollRun,'runType'|'to'>,row:Pick<RunRow,'separated'>)=>!isThirteenthMonthRun(run)&&(isYearEndCutoff(run.to)||Boolean(row.separated));
 
 export type TaxHistoryScope={year:string;from:string;to:string;currentRunId?:string;final:boolean};
 
@@ -25,9 +27,12 @@ export function taxHistoryRuns(runs:PayrollRun[],scope:TaxHistoryScope){
   :(run.status==='Approved'||run.status==='Pending Approval')&&run.to<scope.from));
 }
 
-/** Why a final cutoff cannot be submitted yet: a same-year run still pending approval would be left out of the annualization. */
-export function finalCutoffBlocked(runs:PayrollRun[],year:string,currentRunId?:string){
- const pending=runs.filter(run=>run.id!==currentRunId&&run.from.slice(0,4)===year&&run.status==='Pending Approval');
+/**
+ * Why a final cutoff cannot be submitted yet: a same-year run still pending approval would be left out of the
+ * annualization. With employeeNumbers (separated employees' last pay), only pending runs that pay them count.
+ */
+export function finalCutoffBlocked(runs:PayrollRun[],year:string,currentRunId?:string,employeeNumbers?:string[]){
+ const pending=runs.filter(run=>run.id!==currentRunId&&run.from.slice(0,4)===year&&run.status==='Pending Approval'&&(!employeeNumbers||run.rows.some(row=>employeeNumbers.includes(row.input.empId))));
  return pending.length?`The year-end tax adjustment must include every ${year} payroll. Approve or reject the pending payroll first (${pending.length===1?'1 run':`${pending.length} runs`}).`:'';
 }
 

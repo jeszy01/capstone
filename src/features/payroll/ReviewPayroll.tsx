@@ -8,7 +8,7 @@ import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
 import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
 import {fetchAttendance} from '../attendance/attendanceService';
 import {attendanceGaps} from '../attendance/workDays';
-import {finalCutoffBlocked,isYearEndCutoff,yearToDateHistory} from './taxHistory';
+import {finalCutoffBlocked,isFinalTaxRow,isYearEndCutoff,yearToDateHistory} from './taxHistory';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
@@ -63,7 +63,7 @@ export default function ReviewPayroll(){
  const payPeriod=rates.payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const;
  // The last December payroll is the year-end adjustment: it annualizes the year's pay and withholding.
  const yearEnd=!thirteenth&&isYearEndCutoff(to);
- const calc=(row:RunRow)=>{const rules=loadWithholdingRules();const history=yearToDateHistory(read<PayrollRun[]>(RUNS_KEY,[]),row,{year:from.slice(0,4),from,to,currentRunId:saved?.id,final:yearEnd},rates,rules);if(thirteenth)return calculatePayroll(row.input,rates,[],{periodStart:from,periodEnd:to,period:payPeriod,priorYear:history,rules});return calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:yearEnd,rules})};
+ const calc=(row:RunRow)=>{const rules=loadWithholdingRules();const final=isFinalTaxRow({runType,to},row);const history=yearToDateHistory(read<PayrollRun[]>(RUNS_KEY,[]),row,{year:from.slice(0,4),from,to,currentRunId:saved?.id,final},rates,rules);if(thirteenth)return calculatePayroll(row.input,rates,[],{periodStart:from,periodEnd:to,period:payPeriod,priorYear:history,rules});return calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:final,rules})};
 
  useEffect(()=>{
   if(saved||!from||!to)return;
@@ -122,7 +122,9 @@ const built:RunRow[]=[];
      // An employee who is no longer active is checked only up to their last attendance day.
      const lastDay=mine.map(record=>record.date).sort().pop()??to;
      const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to:employee.status==='Active'?to:lastDay,holidays});
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
+     // Inactive or resigned: this is their last pay, so its withholding annualizes the year to date.
+     const separated=employee.status==='Inactive'||employee.employmentStatus==='Resigned';
+     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
     if(active){setRows(built);setOriginals(Object.fromEntries(built.map(row=>[row.input.empId,row.input])));setLoading(false)}
@@ -175,6 +177,8 @@ const built:RunRow[]=[];
   const blockedBy=(runs:PayrollRun[])=>{
    if(runs.some(run=>run.from===from&&run.to===to&&run.status!=='Rejected'))return 'A payroll for this cutoff has already been submitted.';
    if(yearEnd)return finalCutoffBlocked(runs,from.slice(0,4));
+   const leaving=rows.filter(row=>row.separated).map(row=>row.input.empId);
+   if(leaving.length){const blocked=finalCutoffBlocked(runs,from.slice(0,4),undefined,leaving);if(blocked)return `This payroll is the last pay of an employee who has left, and it annualizes their tax. ${blocked}`}
    if(!thirteenth)return '';
    if(runs.some(run=>!isThirteenthMonthRun(run)&&run.status!=='Rejected'&&run.to===`${to.slice(0,4)}-12-31`))return `The ${to.slice(0,4)} year-end tax adjustment was already made in the last December payroll. Release 13th month pay before submitting the last December payroll.`;
    const rules=loadThirteenthMonthRules(),year=to.slice(0,4),deadline=releaseDeadlineFor(year,rules);

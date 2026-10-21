@@ -13,8 +13,10 @@ export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:
 // hmoCompany: the company's HMO premium cost for the cutoff (not deducted); missing on runs saved before it was recorded.
 // attendanceGaps: work days Payroll could not pay (no HR2 record, or Present without a time-in or time-out).
 // manualAdjustments: amounts HR typed in Review Payroll instead of the loaded value, each with its reason.
+// separated: the employee had left (Inactive or Resigned) when the run was prepared; this is their last pay, and its
+// withholding annualizes the year to date (RR 2-98 Sec. 2.79(B)(1)(b)(i)).
 export type ManualAdjustment={field:string;label:string;original:number;amount:number;reason:string};
-export type RunRow={position:string;rest:number;hmo:number;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
+export type RunRow={position:string;rest:number;hmo:number;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];separated?:boolean;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
 // released: department name -> ISO date-time when released to ESS
 export type PayrollRunType='regular'|'thirteenth-month';
 export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;releasedAt?:string;releasedBy?:string};

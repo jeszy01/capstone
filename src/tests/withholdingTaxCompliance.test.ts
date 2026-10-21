@@ -95,3 +95,27 @@ describe('3. December year-end adjustment',()=>{
   expect(finalCutoffBlocked([{id:'a',from:'2026-12-01',to:'2026-12-15',status:'Approved'} as PayrollRun],'2026')).toBe('');
  });
 });
+
+describe('4. Annualization when an employee leaves before year end',()=>{
+ it("settles the year's tax in a separated employee's last pay",()=>{
+  // Ten cutoffs Jan–May at ₱40,000 basic (₱37,925 taxable after ₱2,075 contributions: SSS ₱875, PhilHealth ₱1,100, Pag-IBIG ₱100),
+  // then the last pay on May 16–31 annualized: ₱379,250 for the year → ₱19,387.50 due in total.
+  const rules=[DEFAULT_WITHHOLDING_RULES],runs:PayrollRun[]=[];let withheld=0;
+  cutoffs2026().slice(0,10).forEach(([from,to],i)=>{
+   const row={input:{...BLANK_PAYROLL_INPUT,empId:'E',name:'E',dailyRate:4000,daysWorked:10}},last=i===9;
+   const history=yearToDateHistory(runs,row,{year:'2026',from,to,final:last},DEFAULT_RATES,rules);
+   const result=calculatePayroll(row.input,DEFAULT_RATES,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:last,rules});
+   withheld+=result.tax;
+   runs.push({id:`r${i}`,from,to,status:'Approved',rows:[{position:'',rest:0,hmo:0,input:row.input,result,...(last?{separated:true}:{})}],totals:{gross:0,deductions:0,net:0},preparedBy:'',createdAt:''});
+  });
+  expect(r2(withheld)).toBe(officialTax('annual',379250));
+  expect(runs[9].rows[0].result.taxBreakdown!.status).toBe('Year-end adjusted');
+ });
+ it('marks only a separated employee as a final row; the year-end payroll is final for everyone',async()=>{
+  const {isFinalTaxRow}=await import('../features/payroll/taxHistory');
+  expect(isFinalTaxRow({runType:'regular',to:'2026-05-31'},{separated:true})).toBe(true);
+  expect(isFinalTaxRow({runType:'regular',to:'2026-05-31'},{})).toBe(false);
+  expect(isFinalTaxRow({runType:'regular',to:'2026-12-31'},{})).toBe(true);
+  expect(isFinalTaxRow({runType:'thirteenth-month',to:'2026-12-31'},{separated:true})).toBe(false);
+ });
+});
