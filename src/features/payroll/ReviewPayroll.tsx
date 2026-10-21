@@ -6,7 +6,8 @@ import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
 import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
 import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
-import {fetchAttendance} from '../attendance/attendanceService';
+import {fetchAttendance,hr2SyncedThrough} from '../attendance/attendanceService';
+import {attendanceExceptions,loadExceptionReviews} from '../attendance/attendanceExceptions';
 import {attendanceGaps} from '../attendance/workDays';
 import {finalCutoffBlocked,isFinalTaxRow,isYearEndCutoff,yearToDateHistory} from './taxHistory';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
@@ -58,6 +59,8 @@ export default function ReviewPayroll(){
  const[originals,setOriginals]=useState<Record<string,PayrollInput>>({}),[reasons,setReasons]=useState<Record<string,string>>({});
  const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
  const[error,setError]=useState('');
+ // Attendance exceptions in this cutoff that HR has not reviewed yet (Time & Attendance → Exceptions).
+ const[unreviewed,setUnreviewed]=useState(0);
  const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
  const[loanError,setLoanError]=useState('');
  const payPeriod=rates.payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const;
@@ -127,7 +130,9 @@ const built:RunRow[]=[];
      const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
-    if(active){setRows(built);setOriginals(Object.fromEntries(built.map(row=>[row.input.empId,row.input])));setLoading(false)}
+    const reviewed=new Set(loadExceptionReviews().map(review=>review.key));
+    const openExceptions=attendanceExceptions({records,employees,from,to,holidays,syncedThrough:hr2SyncedThrough()}).filter(item=>!reviewed.has(item.key)).length;
+    if(active){setRows(built);setOriginals(Object.fromEntries(built.map(row=>[row.input.empId,row.input])));setUnreviewed(openExceptions);setLoading(false)}
    }catch(cause){if(active){const message=cause instanceof Error?cause.message:'The approved loan installment schedule could not be loaded.';setLoanError(`Payroll cannot be submitted or paid until compensation records and approved loan schedules load from the database. ${message}`);setError('Payroll data could not be loaded. Please retry after the employee, attendance, compensation, and loan schedule services are available.');setLoading(false)}}
   })();
   return()=>{active=false};
@@ -209,6 +214,7 @@ const built:RunRow[]=[];
   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
   {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
   {!loading&&negative.length>0&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">Net pay is below zero for {negative.join(', ')}. This payroll cannot be submitted until their deductions are reduced.</p>}
+  {!loading&&!saved&&unreviewed>0&&<div role="alert" className="no-print flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><span>{unreviewed} attendance {unreviewed===1?'exception':'exceptions'} in this cutoff {unreviewed===1?'is':'are'} not reviewed yet (late, undertime, incomplete, absent, pending overtime or missing records). Payroll pays them as HR2 sent them.</span><button type="button" className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>nav(`/time-attendance?tab=exceptions&from=${from}&to=${to}`)}>Review exceptions</button></div>}
   {!loading&&gapRows.length>0&&<div role="alert" className="no-print rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Some work days are not paid because their attendance is missing or incomplete. Ask HR2 to complete these records, then reload the preview.</div><ul className="mb-0 mt-1.5 list-disc pl-5">{gapRows.map(row=>{const gaps=row.attendanceGaps!;return <li key={row.input.empId}><b>{row.input.name}</b>: {[gaps.missingDays.length?dayCount(gaps.missingDays.length,'with no attendance record'):'',gaps.incompleteDays.length?dayCount(gaps.incompleteDays.length,'without a time-in or time-out'):''].filter(Boolean).join(', ')} ({[...gaps.missingDays,...gaps.incompleteDays].sort().map(date=>periodLabel(date,date).split(' - ')[0]).join(', ')})</li>})}</ul></div>}
   {saved?.status==='Pending Approval'&&<p className="no-print mb-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">Submitted to Finance on {periodLabel(saved.createdAt.slice(0,10),saved.createdAt.slice(0,10)).split(' - ')[0]}. Waiting for Finance to approve or reject it.</p>}
   {saved?.status==='Rejected'&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><b>Rejected by {saved.decidedBy??'Finance'}.</b> {saved.rejectionReason??'No reason given.'} Correct the inputs and submit a new payroll for this cutoff.</p>}
