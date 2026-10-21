@@ -13,6 +13,7 @@
     "settings.view",
     "payroll.approve",
     "compensation.approve",
+    "hmo.approve",
     "settings.edit",
     "users.manage",
     "audit.view"

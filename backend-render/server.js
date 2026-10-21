@@ -1406,6 +1406,10 @@ async function hmoHandler(req, res) {
     return ok(res, await listRows(table));
   }
   if (resource === 'history') return fail(res, 405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
+  // HR submits and manages HMO records; approving or rejecting an enrollment or dependent is an Admin decision.
+  const approval = ['enrollments', 'dependents'].includes(resource) && ['approve', 'reject'].includes(text(input(req).action));
+  if (!can(req.user.role, approval ? 'hmo.approve' : 'hmo.manage'))
+    return fail(res, 403, 'FORBIDDEN', approval ? 'Only an Admin can approve or reject HMO enrollments and dependents.' : FORBIDDEN_MESSAGE);
 
   const saveTransition = async (action, targetId, previous, values) => {
     await updateRows(table, { id: targetId }, values);
@@ -1418,6 +1422,8 @@ async function hmoHandler(req, res) {
     const previous = await first(table, { id: targetId });
     if (!previous) throw new HttpError(404, 'HMO_RECORD_NOT_FOUND', 'HMO record was not found.');
     const now = new Date().toISOString();
+    if (['approve', 'reject'].includes(action) && previous.submitted_by && String(previous.submitted_by) === String(ctx.userId))
+      throw new HttpError(409, 'HMO_SELF_APPROVAL', 'A request must be approved or rejected by someone other than the person who submitted it.');
 
     if (resource === 'enrollments' && ['approve', 'reject', 'activate', 'terminate'].includes(action)) {
       const status = String(previous.status ?? ''), approval = String(previous.approval_status ?? 'Pending');
@@ -1664,7 +1670,9 @@ async function hmoHandler(req, res) {
   }
   fail(res, 405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
 }
-app.all(['/hmo/:resource', '/hmo/:resource/:id'], auth, (req, res, next) => allow(req.method === 'GET' ? 'hmo.view' : 'hmo.manage')(req, res, next), hmoHandler);
+// Reads need hmo.view; the handler checks hmo.manage or hmo.approve for each change.
+app.all(['/hmo/:resource', '/hmo/:resource/:id'], auth, (req, res, next) => req.method === 'GET' || can(req.user.role, 'hmo.manage') || can(req.user.role, 'hmo.approve')
+  ? allow('hmo.view')(req, res, next) : fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE), hmoHandler);
 
 // ---- /loans (employee loans and cash advances) ----
 const loanMoney = (v, field) => { const n = Number(v); if (!Number.isFinite(n) || n <= 0) throw new HttpError(400, 'INVALID_LOAN_AMOUNT', `${field} must be greater than zero.`); return Math.round((n + Number.EPSILON) * 100) / 100; };

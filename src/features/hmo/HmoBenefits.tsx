@@ -803,7 +803,7 @@ function enrollmentDisplayStatus(enrollment: HmoEnrollment) {
   if (enrollment.status === "Active" && enrollment.maxicareStatus === "Active") return "Active";
   if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
   if (enrollment.approvalStatus === "Approved") return "Ready for Submission";
-  return "Pending HR Approval";
+  return "Pending Admin Approval";
 }
 
 function EnrollmentViewModal({
@@ -823,8 +823,8 @@ function EnrollmentViewModal({
   const name = employee?.name ?? "this employee";
   const steps: WorkflowStep[] = [
     ...(pending ? [
-      { key: "approve", label: "Approve Enrollment", run: () => hmoService.approveEnrollment(enrollment.id), audit: `Approved the HMO enrollment of ${name}.` },
-      { key: "reject", label: "Reject", danger: true, needs: "reason" as const, run: (reason: string) => hmoService.rejectEnrollment(enrollment.id, reason), audit: `Rejected the HMO enrollment of ${name}.` },
+      { key: "approve", label: "Approve Enrollment", permission: "hmo.approve" as const, run: () => hmoService.approveEnrollment(enrollment.id), audit: `Approved the HMO enrollment of ${name}.` },
+      { key: "reject", label: "Reject", danger: true, permission: "hmo.approve" as const, needs: "reason" as const, run: (reason: string) => hmoService.rejectEnrollment(enrollment.id, reason), audit: `Rejected the HMO enrollment of ${name}.` },
     ] : []),
     ...(enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus !== "Active" && !["Terminated", "Rejected", "Expired"].includes(enrollment.status) ? [
       { key: "activate", label: "Record Maxicare Approval", needs: "reference" as const, run: (reference: string) => hmoService.activateEnrollment(enrollment.id, reference), audit: `Recorded Maxicare approval for ${name}.` },
@@ -972,7 +972,7 @@ function dependentDisplayStatus(dependent: HmoDependent) {
   if (dependent.status === "Active" && dependent.maxicareStatus === "Active") return "Active";
   if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
   if (dependent.approvalStatus === "Approved") return "Ready for Submission";
-  return "Pending HR Approval";
+  return "Pending Admin Approval";
 }
 
 function DependentViewModal({
@@ -995,8 +995,8 @@ function DependentViewModal({
   const name = dependent.name;
   const steps: WorkflowStep[] = !coverageActive ? [] : [
     ...(pending ? [
-      { key: "approve", label: "Approve Dependent", run: () => hmoService.approveDependent(dependent.id), audit: `Approved HMO dependent ${name}.` },
-      { key: "reject", label: "Reject", danger: true, needs: "reason" as const, run: (reason: string) => hmoService.rejectDependent(dependent.id, reason), audit: `Rejected HMO dependent ${name}.` },
+      { key: "approve", label: "Approve Dependent", permission: "hmo.approve" as const, run: () => hmoService.approveDependent(dependent.id), audit: `Approved HMO dependent ${name}.` },
+      { key: "reject", label: "Reject", danger: true, permission: "hmo.approve" as const, needs: "reason" as const, run: (reason: string) => hmoService.rejectDependent(dependent.id, reason), audit: `Rejected HMO dependent ${name}.` },
     ] : []),
     ...(open && dependent.approvalStatus === "Approved" && ["Not Submitted", "Rejected"].includes(dependent.maxicareStatus ?? "Not Submitted") ? [
       { key: "submit", label: "Submit to Maxicare", run: () => hmoService.submitDependentToMaxicare(dependent.id), audit: `Submitted HMO dependent ${name} to Maxicare.` },
@@ -1033,7 +1033,8 @@ function DependentViewModal({
   );
 }
 
-type WorkflowStep = { key: string; label: string; danger?: boolean; needs?: "reason" | "reference"; confirm?: string; audit: string; run: (value: string) => Promise<unknown> };
+// Approve and Reject need hmo.approve (Admin); every other step needs hmo.manage (HR Staff).
+type WorkflowStep = { key: string; label: string; permission?: "hmo.approve" | "hmo.manage"; danger?: boolean; needs?: "reason" | "reference"; confirm?: string; audit: string; run: (value: string) => Promise<unknown> };
 /** Action buttons for an HMO record. Steps that need a reason, a Maxicare reference or a confirmation open an inline
  * form first; the others run on click. Errors from the server stay visible in the dialog. */
 function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; onDone: () => void; onClose: () => void }) {
@@ -1055,6 +1056,8 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
     }
   };
   const open = (step: WorkflowStep) => { setError(""); setValue(""); if (step.needs || step.confirm) setActive(step); else void run(step); };
+  const allowed = steps.filter((step) => can(step.permission ?? "hmo.manage"));
+  const waitingForAdmin = !allowed.length && steps.some((step) => step.permission === "hmo.approve");
   return (
     <>
       {error && <p role="alert" className="mb-0 mt-4 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
@@ -1069,8 +1072,9 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
           </div>
         </div>
       ) : (
-        <div className="mt-6 flex flex-wrap justify-end gap-2">
-          {can("hmo.manage") && steps.map((step) => step.danger
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+          {waitingForAdmin && <p className="m-0 mr-auto text-[12px] text-[#526079]">Waiting for an Admin to approve or reject this request.</p>}
+          {allowed.map((step) => step.danger
             ? <button key={step.key} type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving} onClick={() => open(step)}>{step.label}</button>
             : <Button key={step.key} disabled={saving} onClick={() => open(step)}>{saving ? "Saving…" : step.label}</Button>)}
           <button type="button" className={ghost} disabled={saving} onClick={onClose}>Close</button>

@@ -14,7 +14,7 @@ const TONES:Record<string,StatusTone>={};
 const tone=(value:StatusTone,statuses:string[])=>statuses.forEach(status=>{TONES[status]=value});
 tone('success',['active','paid','released','reimbursed','verified','eligible','included in payroll','applied','effective','connected','actual','present']);
 tone('info',['approved','ready for reimbursement','ready for submission','scheduled','on leave']);
-tone('warning',['pending','pending approval','pending hr approval','pending hr review','pending estimate','estimate','submitted','awaiting maxicare approval','returned','planned','partially released','pending backend','late']);
+tone('warning',['pending','pending approval','pending hr approval','pending admin approval','pending hr review','pending estimate','estimate','submitted','awaiting maxicare approval','returned','planned','partially released','pending backend','late']);
 tone('danger',['rejected','not eligible','validation error','absent','failed']);
 tone('neutral',['inactive','closed','ended','terminated','expired','archived','draft','not released','not submitted','day off']);
 
