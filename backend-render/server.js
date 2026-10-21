@@ -4,6 +4,7 @@ import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
+import { hmoExpiryChanges, manilaToday } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -324,6 +325,7 @@ await pool.query(`
     created_at timestamptz not null default now(), updated_at timestamptz not null default now());
   create unique index if not exists uq_hmo_one_sponsored_dependent_per_employee on hmo_dependents((enrollment_id))
     where company_sponsored = true and status in ('Pending','Submitted','Active');
+  alter table hmo_dependents add column if not exists terminated_at timestamptz;
 
   create table if not exists hmo_utilizations(
     id uuid primary key default gen_random_uuid(), enrollment_id uuid not null references hmo_enrollments(id),
@@ -1322,7 +1324,7 @@ const ensurePlan = async id => {
   return plan;
 };
 const ensureActivePlanCoverage = (plan, effectiveDate, expirationDate) => {
-  if (String(plan.status ?? '').trim().toLowerCase() !== 'active') throw new HttpError(409, 'HMO_PLAN_NOT_ACTIVE', 'Select an active HMO plan.');
+  if (!['active', 'expiring'].includes(String(plan.status ?? '').trim().toLowerCase())) throw new HttpError(409, 'HMO_PLAN_NOT_ACTIVE', 'Select an active HMO plan.');
   const start = hmoDate(String(plan.coverage_start ?? '').slice(0, 10), 'plan.coverage_start');
   const end = hmoDate(String(plan.coverage_end ?? '').slice(0, 10), 'plan.coverage_end');
   if (effectiveDate < start || effectiveDate > end) throw new HttpError(409, 'HMO_EFFECTIVE_DATE_OUTSIDE_PLAN', 'The enrollment effective date must be within the selected plan coverage dates.');
@@ -1358,12 +1360,29 @@ const hmoUtilizationValues = (b, partial) => {
   return values;
 };
 
+// Plans, enrollments and dependents expire by date. The check runs when HMO records are read, at most once a minute,
+// and each change is written to the HMO history as a System action.
+let hmoExpiry = { at: 0, running: null };
+async function expireHmoRecords() {
+  const [plans, enrollments, dependents] = await Promise.all([listRows('hmo_plans'), listRows('hmo_enrollments'), listRows('hmo_dependents')]);
+  for (const change of hmoExpiryChanges({ plans, enrollments, dependents, today: manilaToday() })) {
+    await updateRows(change.table, { id: change.id }, change.values);
+    await hmoHistory(change.entityType, change.id, change.action, null, change.previous, { ...change.previous, ...change.values });
+  }
+}
+const checkHmoExpiry = () => {
+  if (!hmoExpiry.running && Date.now() - hmoExpiry.at > 60_000)
+    hmoExpiry.running = expireHmoRecords().finally(() => { hmoExpiry = { at: Date.now(), running: null }; });
+  return hmoExpiry.running ?? Promise.resolve();
+};
+
 async function hmoHandler(req, res) {
   const resource = req.params.resource, pathId = req.params.id;
   if (!HMO_RESOURCES.has(resource)) return fail(res, 404, 'NOT_FOUND', 'Not Found');
   const table = hmoTable(resource), ctx = ctxOf(req), method = req.method;
 
   if (method === 'GET') {
+    if (['plans', 'enrollments', 'dependents'].includes(resource)) await checkHmoExpiry();
     if (resource === 'history') {
       const q = req.query;
       const page = Math.max(1, Number(q.page ?? 1) || 1), pageSize = Math.min(100, Math.max(1, Number(q.page_size ?? 25) || 25));
@@ -1433,6 +1452,13 @@ async function hmoHandler(req, res) {
         return ok(res, updated);
       }
       if (!['Pending', 'Submitted', 'Active'].includes(status)) throw new HttpError(409, 'HMO_ENROLLMENT_ALREADY_CLOSED', 'Only an open enrollment can be terminated.');
+      // Ending the employee's coverage also ends every open dependent under it.
+      for (const dependent of await listRows('hmo_dependents', { enrollment_id: targetId })) {
+        if (!['Pending', 'Submitted', 'Active'].includes(String(dependent.status))) continue;
+        const values = { status: 'Terminated', terminated_at: now, updated_at: now };
+        await updateRows('hmo_dependents', { id: dependent.id }, values);
+        await hmoHistory('dependent', dependent.id, 'terminated', ctx.userId, dependent, { ...dependent, ...values });
+      }
       return saveTransition('terminated', targetId, previous, { status: 'Terminated', terminated_at: now, updated_at: now });
     }
 
@@ -1466,7 +1492,7 @@ async function hmoHandler(req, res) {
         return saveTransition('maxicare_activated', targetId, previous, { status: 'Active', maxicare_status: 'Active', maxicare_reference: reference, maxicare_activated_at: now, updated_at: now });
       }
       if (status !== 'Active' && status !== 'Submitted') throw new HttpError(409, 'HMO_DEPENDENT_ALREADY_CLOSED', 'Only an open dependent enrollment can be terminated.');
-      return saveTransition('terminated', targetId, previous, { status: 'Terminated', updated_at: now });
+      return saveTransition('terminated', targetId, previous, { status: 'Terminated', terminated_at: now, updated_at: now });
     }
 
     if (resource === 'payroll-deductions' && action === 'verify') {

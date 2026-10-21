@@ -102,9 +102,9 @@ export default function HmoBenefits({
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
   const providerFor = (plan: HmoPlan) =>
     providers.find((provider) => provider.id === plan.providerId) ?? maxicareProvider;
-  // Employees can be enrolled in any active Maxicare plan.
+  // Employees can be enrolled in any active Maxicare plan, including one close to its coverage end.
   const enrollmentPlans = plans.filter(
-    (p) => maxicareProviders.some((provider) => provider.id === p.providerId) && p.status === "Active",
+    (p) => maxicareProviders.some((provider) => provider.id === p.providerId) && (p.status === "Active" || p.status === "Expiring"),
   );
   const availableEnrollmentEmployees = employees.filter(
     (employee) => employee.status === "Active" && employee.employmentStatus?.toLowerCase() !== "resigned" && !hasOpenHmoEnrollment(employee.id, enrollments),
