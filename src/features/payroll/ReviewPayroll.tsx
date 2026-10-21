@@ -15,13 +15,13 @@ import {getCurrentUser} from '../auth/authService';
 import {notifyPayrollApproved,notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
-import {BLANK_PAYROLL_INPUT,RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod} from './payrollRuns';
+import {BLANK_PAYROLL_INPUT,RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod,updateRuns} from './payrollRuns';
 import {cutoffSynced} from '../attendance/attendanceService';
 import type {PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
 import {activeCompensations,isBonusReward} from '../compensation/compensationState';
-import {numberValue,peso,read,write} from '../../utils/storage';
+import {numberValue,peso,read} from '../../utils/storage';
 import {loadWithholdingRules,ruleForDate} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
 import {compensationService} from '../compensation/compensationService';
@@ -163,27 +163,32 @@ const built:RunRow[]=[];
    const message=`The current employee and loan schedule could not be verified. Payroll was not submitted. ${cause instanceof Error?cause.message:''}`;
    setLoanError(message);setError(message);setConfirming(false);return;
   }finally{setSubmitBusy(false)}
-  const runs=read<PayrollRun[]>(RUNS_KEY,[]);
-  if(runs.some(run=>run.from===from&&run.to===to&&run.status!=='Rejected')){setConfirming(false);setError('A payroll for this cutoff has already been submitted.');return}
-  if(thirteenth){
+  // Checked against the server's current runs, so a run another user submitted meanwhile is seen.
+  const blockedBy=(runs:PayrollRun[])=>{
+   if(runs.some(run=>run.from===from&&run.to===to&&run.status!=='Rejected'))return 'A payroll for this cutoff has already been submitted.';
+   if(!thirteenth)return '';
    const rules=loadThirteenthMonthRules(),year=to.slice(0,4),deadline=releaseDeadlineFor(year,rules);
    const releases=runs.filter(run=>isThirteenthMonthRun(run)&&run.to.slice(0,4)===year&&run.status!=='Rejected');
-   const blocked=to>deadline?`13th month pay for ${year} must be released on or before ${periodLabel(deadline,deadline).split(' - ')[0]}.`
+   return to>deadline?`13th month pay for ${year} must be released on or before ${periodLabel(deadline,deadline).split(' - ')[0]}.`
     :releases.some(run=>run.status==='Pending Approval')?`A 13th month run for ${year} is awaiting approval.`
     :releases.length>=(rules.allowInstallments?rules.installments:1)?`All 13th month releases for ${year} have been submitted.`:'';
-   if(blocked){setConfirming(false);setSubmitBusy(false);setError(blocked);return}
-  }
+  };
   const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,payDate,settings:payrollSettingsSnapshot(to),status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
-  write(RUNS_KEY,[...runs,run]);
+  setSubmitBusy(true);
+  try{await updateRuns(runs=>{const blocked=blockedBy(runs);if(blocked)throw new Error(blocked);return [...runs,run]})}
+  catch(cause){setConfirming(false);setError(cause instanceof Error&&cause.message?cause.message:'The payroll could not be submitted.');return}
+  finally{setSubmitBusy(false)}
   notifyPayrollPending(run.id,runLabel(run));
   nav('/payroll');
  };
  // Approve and Reject ask in the app's own dialog before deciding.
  const[deciding,setDeciding]=useState<'Approved'|'Rejected'|null>(null);
- const decide=(status:'Approved'|'Rejected')=>{
+ const decide=async(status:'Approved'|'Rejected')=>{
   if(!saved)return;
-  setDeciding(null);
-  if(decideRun(saved.id,status,user?.name??'Admin')&&status==='Approved')notifyPayrollApproved(saved.id,runLabel(saved));
+  setDeciding(null);setError('');
+  try{await decideRun(saved.id,status,user?.name??'Admin')}
+  catch(cause){setError(cause instanceof Error&&cause.message?cause.message:'The payroll decision could not be saved.');return}
+  if(status==='Approved')notifyPayrollApproved(saved.id,runLabel(saved));
   nav('/payroll');
  };
 
@@ -228,7 +233,7 @@ const built:RunRow[]=[];
     </div>
    </>}
   </div>}
-  {deciding&&saved&&<ConfirmDialog title={deciding==="Approved"?"Approve payroll?":"Reject payroll?"} message={`${deciding==="Approved"?"Approve":"Reject"} payroll for ${runLabel(saved)}?${deciding==="Rejected"?" A rejected run cannot be approved later.":""}`} confirmLabel={deciding==="Approved"?"Approve":"Reject"} danger={deciding==="Rejected"} saving={false} onCancel={()=>setDeciding(null)} onConfirm={()=>decide(deciding)}/>}
+  {deciding&&saved&&<ConfirmDialog title={deciding==="Approved"?"Approve payroll?":"Reject payroll?"} message={`${deciding==="Approved"?"Approve":"Reject"} payroll for ${runLabel(saved)}?${deciding==="Rejected"?" A rejected run cannot be approved later.":""}`} confirmLabel={deciding==="Approved"?"Approve":"Reject"} danger={deciding==="Rejected"} saving={false} onCancel={()=>setDeciding(null)} onConfirm={()=>void decide(deciding)}/>}
   {confirming&&<Modal title="Confirm Payroll Submission" onClose={()=>setConfirming(false)}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Employees',String(rows.length)],['Gross Pay',peso(totals.gross)],['Total Deductions',peso(totals.deductions)],['Net Pay',peso(totals.net)]].map(([label,value])=><div key={label} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{label}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
    <p className="mt-4 text-[13px]">Submit this payroll for Admin approval?</p>

@@ -35,14 +35,29 @@ export const runLabel=(run:Pick<PayrollRun,'runType'|'from'|'to'>)=>isThirteenth
 /** The cutoff containing today, from the Pay Schedule settings. */
 export const cutoffRange=()=>{const d=new Date(),date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;return cutoffFor(date.slice(0,7),cutoffNumberFor(date))};
 
-// Approving, rejecting and releasing payroll are logged by the server when the run is saved.
-export function decideRun(id:string,status:'Approved'|'Rejected',by:string){
- const runs=read<PayrollRun[]>(RUNS_KEY,[]);
- const run=runs.find(item=>item.id===id);
- if(!run||run.status!=='Pending Approval')return undefined;
- const next=runs.map(item=>item.id===id?{...item,status,decidedBy:by,decidedAt:new Date().toISOString()}:item);
- write(RUNS_KEY,next);
- if(status==='Approved'){const stamp=Date.now();write('payroll:records',run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
+/**
+ * Reads the server's current payroll runs, applies change to them and saves the result, so a run another user saved
+ * since this browser last loaded is never overwritten. change may throw to stop the save. Returns the saved runs.
+ */
+export async function updateRuns(change:(runs:PayrollRun[])=>PayrollRun[]):Promise<PayrollRun[]>{
+ const {data}=await apiClient.get<{data:{key:string;value:unknown;deleted?:boolean}[]}>('/app-data');
+ const item=data.find(entry=>entry.key===RUNS_KEY&&!entry.deleted);
+ const next=change(Array.isArray(item?.value)?item.value as PayrollRun[]:[]);
+ const saved=await apiClient.post<{key:string;value:unknown},{data?:{value?:unknown}}>('/app-data',{key:RUNS_KEY,value:next});
+ const stored=Array.isArray(saved?.data?.value)?saved.data.value as PayrollRun[]:next;
+ write(RUNS_KEY,stored);
+ return stored;
+}
+
+// Approving and rejecting payroll are logged by the server when the run is saved. Throws when the run is no longer pending.
+export async function decideRun(id:string,status:'Approved'|'Rejected',by:string){
+ const decided:{run?:PayrollRun}={};
+ const next=await updateRuns(runs=>{
+  decided.run=runs.find(item=>item.id===id);
+  if(!decided.run||decided.run.status!=='Pending Approval')throw new Error('This payroll run is no longer pending approval.');
+  return runs.map(item=>item.id===id?{...item,status,decidedBy:by,decidedAt:new Date().toISOString()}:item);
+ });
+ if(status==='Approved'&&decided.run){const stamp=Date.now();write('payroll:records',decided.run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
  return next;
 }
 
@@ -82,21 +97,22 @@ export async function releaseRun(id:string,passkey:string):Promise<ReleaseRunRes
  * after that) and generates the payslips with it. Throws with a short message when either step fails. */
 export async function payAndGeneratePayslips(id:string,method:PaymentMethod,passkey:string,by:string){
  const current=read<PayrollRun[]>(RUNS_KEY,[]).find(run=>run.id===id);
- if(current&&!current.paidAt&&!await payRun(id,method,by))throw new Error('The approved payroll run could not be settled.');
+ if(current&&!current.paidAt)await payRun(id,method,by);
  const result=await generatePayslips(id,passkey);
  if(!result.generated)throw new Error(result.reason==='invalid'?'Incorrect passkey':result.reason==='locked'?'Passkey locked':'Passkey not set');
 }
 
-export async function payRun(id:string,method:PaymentMethod,by:string):Promise<PayrollRun[]|undefined>{
- const runs=read<PayrollRun[]>(RUNS_KEY,[]);
- const run=runs.find(item=>item.id===id);
- if(!run||run.status!=='Approved'||run.paidAt)return undefined;
- const next=runs.map(item=>item.id===id?{...item,paymentMethod:method,paidAt:new Date().toISOString(),paidBy:by}:item);
- write(RUNS_KEY,next);
+export async function payRun(id:string,method:PaymentMethod,by:string):Promise<PayrollRun[]>{
+ const paid:{run?:PayrollRun}={};
+ // Saved to the server right away: payslip generation and loan settlement read the run from there.
+ const next=await updateRuns(runs=>{
+  paid.run=runs.find(item=>item.id===id);
+  if(!paid.run||paid.run.status!=='Approved'||paid.run.paidAt)throw new Error('This payroll run is not approved, or it was already paid.');
+  return runs.map(item=>item.id===id?{...item,paymentMethod:method,paidAt:new Date().toISOString(),paidBy:by}:item);
+ });
+ const run=paid.run!;
  const hasLoans=run.rows.some(row=>Boolean(row.loanRepayments?.length)),hasGovernmentLoans=run.rows.some(row=>Boolean(row.governmentLoans?.length));
  try{
-  // Saved to the server right away: payslip generation and loan settlement read the run from there.
-  await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:next});
   // Check both loan settlements before posting either, so one failing never leaves the other's balances changed.
   if(hasLoans)await loanService.validatePaidPayrollRun(id);
   if(hasGovernmentLoans)await governmentLoanService.validateSettlement(id);
@@ -107,9 +123,8 @@ export async function payRun(id:string,method:PaymentMethod,by:string):Promise<P
    if(posted.count)recordAudit({action:'Posted government loan deductions',module:'Government Loans',description:`Deducted ${peso(posted.totalAmount)} from ${posted.count} government loan${posted.count===1?'':'s'} for ${periodLabel(run.from,run.to)}.`});
   }
  }catch(cause){
-  const rollback=read<PayrollRun[]>(RUNS_KEY,[]).map(item=>item.id===id?{...item,paidAt:undefined,paidBy:undefined,paymentMethod:undefined}:item);
-  write(RUNS_KEY,rollback);
-  try{await apiClient.post<{key:string;value:unknown},unknown>('/app-data',{key:RUNS_KEY,value:rollback})}catch{/* local sync retries the rollback */}
+  const revert=(runs:PayrollRun[])=>runs.map(item=>item.id===id?{...item,paidAt:undefined,paidBy:undefined,paymentMethod:undefined}:item);
+  try{await updateRuns(revert)}catch{write(RUNS_KEY,revert(read<PayrollRun[]>(RUNS_KEY,[])))/* local sync retries the rollback */}
   throw cause;
  }
  return next;

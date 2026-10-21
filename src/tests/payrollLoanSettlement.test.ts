@@ -1,7 +1,8 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({data:new Map<string,unknown>(),order:[] as string[],post:vi.fn(),validate:vi.fn(),settle:vi.fn(),govValidate:vi.fn(),govSettle:vi.fn(),audit:vi.fn()}));
 vi.mock('../utils/storage',()=>({read:(key:string,fallback:unknown)=>mocks.data.has(key)?mocks.data.get(key):fallback,write:(key:string,value:unknown)=>{mocks.data.set(key,value)},peso:(value:number)=>`₱${value}`}));
-vi.mock('../services/api/apiClient',()=>({apiClient:{post:async(...args:unknown[])=>{mocks.order.push('app-data');return mocks.post(...args)}}}));
+// The server copy of payroll:runs is the stored test data; payRun reads it before saving.
+vi.mock('../services/api/apiClient',()=>({apiClient:{get:async()=>({data:[{key:'payroll:runs',value:mocks.data.get('payroll:runs')??[]}]}),post:async(...args:unknown[])=>{mocks.order.push('app-data');return mocks.post(...args)}}}));
 vi.mock('../features/deductions/loanService',()=>({loanService:{
  validatePaidPayrollRun:async(...args:unknown[])=>{mocks.order.push('validate');return mocks.validate(...args)},
  postPaidPayrollRun:async(...args:unknown[])=>{mocks.order.push('settle');return mocks.settle(...args)},
@@ -31,7 +32,7 @@ describe('paying a payroll run settles each loan type separately',()=>{
 
  it('does not settle an unapproved payroll',async()=>{
   mocks.data.set(RUNS_KEY,[run('Pending Approval',{employee:true,government:true})]);
-  expect(await payRun('run-1','Bank Transfer','HR')).toBeUndefined();
+  await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('not approved');
   expect(mocks.order).toEqual([]);
  });
 
@@ -49,7 +50,7 @@ describe('paying a payroll run settles each loan type separately',()=>{
   expect(mocks.settle).toHaveBeenCalledWith('run-1');
   expect(mocks.govSettle).not.toHaveBeenCalled();
   expect(paidMarker()).toEqual(expect.any(String));
-  expect(await payRun('run-1','Bank Transfer','HR')).toBeUndefined();
+  await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('already paid');
   expect(mocks.settle).toHaveBeenCalledTimes(1);
  });
 

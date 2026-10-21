@@ -2,9 +2,8 @@ import {useEffect,useMemo,useState} from 'react';
 import {Calculator,Download,Eye,LoaderCircle,Printer,TriangleAlert} from 'lucide-react';
 import {Button,Card,Empty,Modal,ghost,input} from '../../components/common/ui';
 import type {Employee,PayrollInput,PayrollRates,PayrollResult} from '../../types/domain';
-import {numberValue,peso,read,write} from '../../utils/storage';
+import {numberValue,peso,read} from '../../utils/storage';
 import {can} from '../auth/permissions';
-import {recordAudit} from '../audit/auditService';
 import {employeeService} from '../employees/employeeService';
 import {calculatePayroll} from './payrollCalculator';
 import {loadRates} from '../settings/payrollSettings';
@@ -18,11 +17,8 @@ import {StatusBadge} from '../../components/common/StatusBadge';
 const rates=loadRates();
 const nf=(value:number)=>peso(value);
 const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
-const LEGACY_SAMPLE_RUN_ID='TEST-ONLY-WHT-2026-10';
-const TEST_EMPLOYEE_ID='TEST-WHT-001';
 type Entry={key:string;run:PayrollRun;row:RunRow;result:PayrollResult;employee?:Employee;recalculated:boolean;error?:string};
 const rowKey=(runId:string,empId:string,index:number)=>`${runId}:${empId}:${index}`;
-const isTestRun=(run:PayrollRun)=>run.id===LEGACY_SAMPLE_RUN_ID||run.rows?.some(row=>row.input.empId===TEST_EMPLOYEE_ID);
 function employeeFor(employees:Employee[],input:PayrollInput){return employees.find(employee=>employee.id===input.empId||employee.employeeNo===input.empId)}
 function reportStatus(entry:Entry){return entry.error?'Validation error':entry.run.status==='Approved'?'Actual':entry.run.status==='Rejected'?'Rejected':entry.recalculated||entry.result.taxBreakdown?'Estimate':'Pending estimate'}
 function priorHistory(runs:PayrollRun[],currentRun:PayrollRun,row:RunRow,allRules=loadWithholdingRules(),currentRates:PayrollRates=rates):AnnualTaxHistory{
@@ -71,8 +67,6 @@ export function WithholdingTaxReport({from,to,query}:{from:string;to:string;quer
  const[estimates,setEstimates]=useState<Record<string,PayrollResult>>({});
  const canCompute=can('payroll.generate');
  useEffect(()=>{let active=true;employeeService.getAll().then(rows=>{if(active){setEmployees(rows);setEmployeeError('')}}).catch(error=>{if(active)setEmployeeError(error instanceof Error?error.message:'Employee records could not be loaded.')}).finally(()=>{if(active)setEmployeeLoading(false)});return()=>{active=false}},[]);
- // Remove the previously opt-in test row from browser data as the report moves to real payroll-only computation.
- useEffect(()=>{if(!canCompute)return;const existing=read<PayrollRun[]>(RUNS_KEY,[]);const clean=existing.filter(run=>!isTestRun(run));if(clean.length!==existing.length){write(RUNS_KEY,clean);setRuns(clean)}},[]);
  const availableRuns=useMemo(()=>runs.filter(run=>run.from<=to&&run.to>=from).sort((a,b)=>b.from.localeCompare(a.from)),[runs,from,to]);
  useEffect(()=>{if(periodId&&!availableRuns.some(run=>run.id===periodId))setPeriodId('')},[availableRuns,periodId]);
  const periodRuns=useMemo(()=>periodId?availableRuns.filter(run=>run.id===periodId):availableRuns,[availableRuns,periodId]);
@@ -85,21 +79,20 @@ export function WithholdingTaxReport({from,to,query}:{from:string;to:string;quer
   setComputing(true);setNotice('');setValidationErrors([]);setValidationByRow({});
   try{
    if(!periodRuns.length){setValidationErrors(['No payroll run matches the selected payroll period.']);return}
-   const activeRules=loadWithholdingRules();const activeRates=loadRates();const allErrors:string[]=[];const rowErrors:Record<string,string>={};const nextEstimates:Record<string,PayrollResult>={};const updatedRuns=new Map<string,PayrollRun>();
+   const activeRules=loadWithholdingRules();const activeRates=loadRates();const allErrors:string[]=[];const rowErrors:Record<string,string>={};const nextEstimates:Record<string,PayrollResult>={};let locked=0;
    for(const run of periodRuns){
     const errors=validationForRun(run,employees,!employeeLoading&&!employeeError,activeRules);
-    if(run.status==='Approved'&&run.paidAt)errors.push(`Payroll ${periodLabel(run.from,run.to)} is already paid; its actual deductions are locked.`);
     if(errors.length){allErrors.push(...errors);for(const row of run.rows)rowErrors[rowKey(run.id,row.input.empId,run.rows.indexOf(row))]=errors.find(error=>error.toLowerCase().includes(row.input.empId.toLowerCase()))??errors[0];continue}
-    const approved=run.status==='Approved';const nextRows=run.rows.map((row,index)=>{
+    // An approved run keeps the tax it was approved with; Review Payroll already computed it, year-end adjustment included.
+    if(run.status==='Approved'){locked++;continue}
+    run.rows.forEach((row,index)=>{
      const calculated=calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},activeRates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,activeRates.payPeriodsPerMonth),priorYear:priorHistory(runs,run,row,activeRules,activeRates),finalPeriod:!isThirteenthMonthRun(run)&&run.to.slice(5,7)==='12'&&Number(run.to.slice(8,10))===new Date(Date.UTC(Number(run.to.slice(0,4)),12,0)).getUTCDate(),rules:activeRules});
-     if(approved){const result=withTaxOnly(row.result,calculated);return{...row,result}}
-     nextEstimates[rowKey(run.id,row.input.empId,index)]=calculated;return row;
+     nextEstimates[rowKey(run.id,row.input.empId,index)]=calculated;
     });
-    if(approved){const totals={gross:round(nextRows.reduce((total,row)=>total+row.result.gross,0)),deductions:round(nextRows.reduce((total,row)=>total+row.result.deductions,0)),net:round(nextRows.reduce((total,row)=>total+row.result.net,0))};updatedRuns.set(run.id,{...run,rows:nextRows,totals})}
    }
    setValidationErrors(allErrors);setValidationByRow(rowErrors);setEstimates(previous=>({...previous,...nextEstimates}));
-   if(updatedRuns.size){const nextRuns=runs.map(run=>updatedRuns.get(run.id)??run);write(RUNS_KEY,nextRuns);setRuns(nextRuns);for(const run of updatedRuns.values())recordAudit({action:'Computed withholding tax',module:'Payroll',description:`Updated the approved withholding-tax calculation for ${periodLabel(run.from,run.to)}.`});setNotice(`Computed ${Object.keys(nextEstimates).length+updatedRuns.size} payroll run(s). Approved, unpaid run tax amounts are recorded as actual deductions; pending and rejected run results remain estimates.`)}
-   else if(nextEstimates){const count=Object.keys(nextEstimates).length;setNotice(count?`Computed ${count} estimate(s). No actual deductions were created because the selected run(s) are not approved.`:'No tax was computed; correct the validation errors.');}
+   const count=Object.keys(nextEstimates).length;
+   setNotice(count?`Computed ${count} estimate(s) for runs awaiting approval.${locked?` ${locked} approved run(s) keep the tax they were approved with.`:''}`:locked?`The selected run(s) are approved and keep the tax they were approved with.`:'No tax was computed; correct the validation errors.');
   }catch(error){setValidationErrors([error instanceof Error?error.message:'Tax computation failed.']);}
   finally{setComputing(false)}
  };

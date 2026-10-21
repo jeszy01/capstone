@@ -3,7 +3,7 @@ import cors from 'cors';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
+import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, keepMissingRuns, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -109,7 +109,7 @@ app.get('/app-data', auth, async (req, res) => {
 
 // Every write is checked against the role rules in appDataEvents before it is stored; allowed state changes are logged.
 async function saveAppData(req, key, isDel, value) {
-  const next = isDel ? null : value ?? null;
+  let next = isDel ? null : value ?? null;
   const client = await pool.connect();
   let events;
   try {
@@ -117,6 +117,10 @@ async function saveAppData(req, key, isDel, value) {
     await client.query('select pg_advisory_xact_lock(hashtext($1))', [`app_data:${key}`]);
     const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [key]);
     const existed = Boolean(row && !row.deleted);
+    if (key === 'payroll:runs') {
+      if (isDel) throw new AccessError('Payroll runs cannot be deleted.');
+      next = keepMissingRuns(existed ? appValue(row.value) : null, next);
+    }
     events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed, releasedRecentlyBy);
     await client.query(
       `insert into app_data(key,value,deleted,updated_by) values($1,$2,$3,$4)
@@ -128,14 +132,15 @@ async function saveAppData(req, key, isDel, value) {
     throw e;
   } finally { client.release(); }
   for (const [action, module, entityId, description] of events) await audit(action, req.user.id, module, entityId, { description }, ipDevice(req));
+  return next;
 }
 
 app.post('/app-data', auth, async (req, res) => {
   const { key, value, deleted } = req.body;
   if (!okKey(key)) return fail(res, 400, 'INVALID_DATA_KEY', 'This data key cannot be synchronized');
   const isDel = deleted === true;
-  await saveAppData(req, key, isDel, value);
-  res.json({ data: { key, value: isDel ? null : value, deleted: isDel } });
+  const stored = await saveAppData(req, key, isDel, value);
+  res.json({ data: { key, value: isDel ? null : stored, deleted: isDel } });
 });
 
 app.delete('/app-data', auth, async (req, res) => {

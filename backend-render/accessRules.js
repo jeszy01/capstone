@@ -38,14 +38,21 @@ const RUN_RELEASE_FIELDS = ['paidAt', 'paidBy', 'paymentMethod'];
 const RUN_PAYSLIP_FIELDS = ['payslipsGeneratedAt', 'payslipsGeneratedBy', 'releasedAt', 'releasedBy'];
 const only = (row, keys) => Object.fromEntries(keys.map(k => [k, row[k]]));
 export const runPeriod = run => run.runType === 'thirteenth-month' ? `13th month pay (${run.to})` : `${run.from} to ${run.to}`;
-// Pending Approval (HR generates) -> Approved or Rejected (Admin) -> Released (HR). Released runs are locked.
+/**
+ * Payroll runs are never removed by a save: runs missing from the saved list (for example, a run another user
+ * submitted after this browser last loaded) are kept, so a stale browser copy cannot drop them.
+ */
+export const keepMissingRuns = (before, after) => {
+  if (!Array.isArray(before) || !Array.isArray(after)) return after;
+  const ids = new Set(after.map(run => run?.id));
+  return [...after, ...before.filter(run => run && !ids.has(run.id))];
+};
+// Pending Approval (HR generates) -> Approved or Rejected (Admin) -> Released (HR). A submitted run's contents never
+// change: it is approved as submitted, and every later step changes only its own status fields.
 async function payrollRunEvents(user, before, after, releasedRecentlyBy) {
   const prev = byId(before), next = byId(after), events = [];
   const log = (action, id, description) => events.push([action, 'Payroll', id, description]);
-  for (const [id, old] of prev) if (!next.has(id)) {
-    if (old.paidAt) throw forbid('Released payroll runs cannot be deleted.');
-    need(user, 'payroll.generate');
-  }
+  for (const [id] of prev) if (!next.has(id)) throw forbid('Payroll runs cannot be deleted.');
   for (const [id, row] of next) {
     const old = prev.get(id);
     if (!old) {
@@ -80,7 +87,7 @@ async function payrollRunEvents(user, before, after, releasedRecentlyBy) {
       continue;
     }
     if (row.status === 'Rejected') throw forbid('Rejected payroll runs cannot be changed.');
-    need(user, 'payroll.generate');
+    throw forbid(row.status === 'Approved' ? 'An approved payroll run cannot be changed.' : 'A submitted payroll run cannot be changed. Reject it and submit a new one.');
   }
   return events;
 }
