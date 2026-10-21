@@ -80,10 +80,12 @@ export const hmoService={
 
  createPlan:async(v:Partial<HmoPlan>)=>plan(await post('plans',{provider_id:v.providerId,name:v.name,coverage_start:v.coverageStart,coverage_end:v.coverageEnd,annual_benefit_limit:v.annualBenefitLimit,inpatient:v.inpatient,outpatient:v.outpatient,emergency:v.emergency,preventive_care:v.preventiveCare,dental:v.dental,employee_company_share:v.employeeCompanyShare,employee_member_share:v.employeeMemberShare,dependent_company_share:v.dependentCompanyShare,dependent_member_share:v.dependentMemberShare,employee_monthly_premium:v.employeeMonthlyPremium,dependent_monthly_premium:v.dependentMonthlyPremium,collect_employee_share_via_payroll:v.collectEmployeeShareViaPayroll,status:v.status})),
 
- updatePlan:async(id:string,v:Partial<HmoPlan>):Promise<HmoPlan>=>{
+ /** applyToDependents also moves the plan's current dependents to the new dependent premium and split. */
+ updatePlan:async(id:string,v:Partial<HmoPlan>,applyToDependents=false):Promise<HmoPlan>=>{
   await postById('plans',id,{
    id,
    action:'update',
+   apply_to_dependents:applyToDependents,
    provider_id:v.providerId,
    name:v.name,
    coverage_start:v.coverageStart,

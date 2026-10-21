@@ -248,6 +248,7 @@ export default function HmoBenefits({
       {editPlanModal && selectedPlan && (
         <PlanFormModal
           plan={selectedPlan}
+          openDependents={selectedPlan ? dependents.filter((d) => ["Pending", "Submitted", "Active"].includes(d.status) && enrollments.some((e) => e.id === d.enrollmentId && e.planId === selectedPlan.id && ["Pending", "Submitted", "Active"].includes(e.status))).length : 0}
           onClose={() => setEditPlanModal(false)}
           onSaved={() => {
             setEditPlanModal(false);
@@ -1105,11 +1106,14 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
 function PlanFormModal({
   plan,
   provider,
+  openDependents = 0,
   onClose,
   onSaved,
 }: {
   plan?: HmoPlan;
   provider?: HmoProvider;
+  /** Open dependents under this plan, offered the new dependent premium and split when those change. */
+  openDependents?: number;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1159,6 +1163,12 @@ function PlanFormModal({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [applyToDependents, setApplyToDependents] = useState(true);
+  const dependentTermsChanged = Boolean(plan) && (
+    Number(f.dependentPremium || 0) !== Number(plan?.dependentMonthlyPremium ?? 0) ||
+    Number(f.dependentCompanyShare) !== Number(plan?.dependentCompanyShare) ||
+    Number(f.dependentMemberShare) !== Number(plan?.dependentMemberShare));
+  const offerDependentUpdate = openDependents > 0 && dependentTermsChanged;
   const save = async () => {
     setError("");
     if (!f.name.trim() || !f.start || !f.end) {
@@ -1194,6 +1204,10 @@ function PlanFormModal({
       setError(
         "Company policy requires the company to pay 100% of the employee’s own HMO premium.",
       );
+      return;
+    }
+    if (Math.abs(Number(f.dependentCompanyShare) + Number(f.dependentMemberShare) - 100) > 0.001) {
+      setError("The dependent premium company and employee shares must add up to 100%.");
       return;
     }
     if (
@@ -1236,7 +1250,7 @@ function PlanFormModal({
         collectEmployeeShareViaPayroll: f.collectPayroll,
         status: f.status,
       };
-      if (plan) await hmoService.updatePlan(plan.id, { providerId: plan.providerId, ...values });
+      if (plan) await hmoService.updatePlan(plan.id, { providerId: plan.providerId, ...values }, offerDependentUpdate && applyToDependents);
       else {
         const p = provider ?? (await hmoService.createProvider({ name: "Maxicare", status: "Active" }));
         await hmoService.createPlan({ providerId: p.id, ...values });
@@ -1407,9 +1421,15 @@ function PlanFormModal({
           </label>
           <p className="mt-2 text-[11px] text-[#6b7794]">
             The company must cover 100% of the employee’s own HMO premium. One
-            eligible spouse or child is company-sponsored under the existing
-            policy.
+            eligible spouse or child is company-sponsored; other dependents
+            split the dependent premium by the two dependent shares above.
           </p>
+          {offerDependentUpdate && (
+            <label className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">
+              <input type="checkbox" className="mt-0.5" checked={applyToDependents} onChange={(e) => setApplyToDependents(e.target.checked)} />
+              <span>Apply the new dependent premium and shares to the {openDependents === 1 ? "1 current dependent" : `${openDependents} current dependents`} under this plan. Payroll runs already saved keep their amounts.</span>
+            </label>
+          )}
         </div>{" "}
         <Field label="Plan Status">
           <select

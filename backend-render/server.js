@@ -4,7 +4,7 @@ import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
-import { hmoExpiryChanges, manilaToday, nextSponsoredDependent } from './hmoRules.js';
+import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -1349,6 +1349,9 @@ const HMO_PLAN_FIELDS = ['provider_id', 'name', 'coverage_start', 'coverage_end'
 const HMO_PROVIDER_FIELDS = ['name', 'contact_person', 'contact_number', 'status'];
 const HMO_UTILIZATION_FIELDS = ['service_date', 'service_type', 'amount_used', 'status', 'remarks'];
 const HMO_PLAN_STATUSES = ['Draft', 'Active', 'Expiring', 'Expired', 'Archived'];
+const ensureDependentSplit = (company, member) => {
+  if (!validDependentSplit(Number(company), Number(member))) throw new HttpError(400, 'INVALID_DEPENDENT_CONTRIBUTION_POLICY', 'The dependent premium company and employee shares must add up to 100%.');
+};
 const pickFields = (b, fields) => Object.fromEntries(Object.entries(b).filter(([key]) => fields.includes(key)));
 const hmoPlanStatus = (value, fallback) => { const status = text(value) || fallback; if (!HMO_PLAN_STATUSES.includes(status)) throw new HttpError(400, 'INVALID_HMO_PLAN_STATUS', `Plan status must be one of ${HMO_PLAN_STATUSES.join(', ')}.`); return status; };
 const hmoUtilizationValues = (b, partial) => {
@@ -1552,10 +1555,25 @@ async function hmoHandler(req, res) {
         const employeeCompanyShare = Number(b.employee_company_share ?? previous.employee_company_share ?? 100);
         const employeeMemberShare = Number(b.employee_member_share ?? previous.employee_member_share ?? 0);
         if (employeeCompanyShare !== 100 || employeeMemberShare !== 0) throw new HttpError(400, 'INVALID_EMPLOYEE_CONTRIBUTION_POLICY', 'The company must pay 100% of the employee HMO premium.');
+        ensureDependentSplit(b.dependent_company_share ?? previous.dependent_company_share ?? 0, b.dependent_member_share ?? previous.dependent_member_share ?? 100);
+        const openEnrollments = (await listRows('hmo_enrollments', { plan_id: updateId })).filter(r => ['Pending', 'Submitted', 'Active'].includes(String(r.status)));
+        const outside = openEnrollments.filter(r => String(r.effective_date) < start || String(r.effective_date) > end);
+        if (outside.length) throw new HttpError(409, 'HMO_PLAN_DATES_EXCLUDE_ENROLLMENTS', `${outside.length === 1 ? '1 open enrollment starts' : `${outside.length} open enrollments start`} outside the new coverage dates. Terminate ${outside.length === 1 ? 'it' : 'them'} or keep the coverage dates that include ${outside.length === 1 ? 'its' : 'their'} start.`);
         const values = { ...pickFields(b, HMO_PLAN_FIELDS), ...(b.status !== undefined ? { status: hmoPlanStatus(b.status, String(previous.status)) } : {}), provider_id: providerId, name, coverage_start: start, coverage_end: end, employee_company_share: employeeCompanyShare, employee_member_share: employeeMemberShare, updated_at: now };
         await updateRows(table, { id: updateId }, values);
         const updated = await first(table, { id: updateId }) ?? { ...previous, ...values, id: updateId };
         await hmoHistory('plan', updateId, 'updated', ctx.userId, previous, updated);
+        // Optionally apply a new dependent premium or split to the plan's current dependents; past payroll runs keep their amounts.
+        if (b.apply_to_dependents === true) {
+          const enrollmentIds = new Set(openEnrollments.map(r => String(r.id)));
+          for (const dependent of await listRows('hmo_dependents')) {
+            if (!enrollmentIds.has(String(dependent.enrollment_id)) || !['Pending', 'Submitted', 'Active'].includes(String(dependent.status))) continue;
+            const shares = dependentShares(updated, dependent.company_sponsored === true);
+            if (shares.employee_share === Number(dependent.employee_share) && shares.company_share === Number(dependent.company_share)) continue;
+            await updateRows('hmo_dependents', { id: dependent.id }, { ...shares, updated_at: now });
+            await hmoHistory('dependent', dependent.id, 'shares_updated', ctx.userId, dependent, { ...dependent, ...shares, updated_at: now });
+          }
+        }
         return ok(res, updated);
       }
       const actionId = text(b.id) || pathId;
@@ -1573,6 +1591,7 @@ async function hmoHandler(req, res) {
       if (end < start) throw new HttpError(400, 'INVALID_HMO_DATES', 'coverage_end must be on or after coverage_start.');
       const employeeCompanyShare = Number(b.employee_company_share ?? 100), employeeMemberShare = Number(b.employee_member_share ?? 0);
       if (employeeCompanyShare !== 100 || employeeMemberShare !== 0) throw new HttpError(400, 'INVALID_EMPLOYEE_CONTRIBUTION_POLICY', 'The company must pay 100% of the employee HMO premium.');
+      ensureDependentSplit(b.dependent_company_share ?? 0, b.dependent_member_share ?? 100);
       const row = await insertRow(table, { ...pickFields(b, HMO_PLAN_FIELDS), provider_id: providerId, name, coverage_start: start, coverage_end: end, employee_company_share: employeeCompanyShare,
         employee_member_share: employeeMemberShare, status: hmoPlanStatus(b.status, 'Draft'), created_at: now, updated_at: now });
       await hmoHistory('plan', row.id, 'created', ctx.userId, undefined, row);
@@ -1618,10 +1637,9 @@ async function hmoHandler(req, res) {
       const hasSponsored = (await listRows('hmo_dependents')).some(r => enrollmentIds.has(String(r.enrollment_id)) && r.company_sponsored === true && ['Pending', 'Submitted', 'Active'].includes(String(r.status)));
       const sponsored = b.company_sponsored === undefined ? !hasSponsored : b.company_sponsored === true;
       if (sponsored && hasSponsored) throw new HttpError(409, 'COMPANY_SPONSORED_DEPENDENT_EXISTS', 'Only one spouse or child per employee can be company-sponsored.');
-      const premium = hmoNumber(plan.dependent_monthly_premium ?? 0, 'dependent_monthly_premium');
       const row = await insertRow('hmo_dependents', { enrollment_id: enrollmentId, name, relationship, date_of_birth: dateOfBirth, eligibility_status: 'Pending', submitted_by: ctx.userId ?? null,
         effective_date: effective, expiration_date: expiration, status: 'Submitted', approval_status: 'Pending', company_sponsored: sponsored,
-        employee_share: sponsored ? 0 : premium, company_share: sponsored ? premium : 0, maxicare_status: 'Not Submitted', maxicare_reference: null, maxicare_activated_at: null, created_at: now, updated_at: now });
+        ...dependentShares(plan, sponsored), maxicare_status: 'Not Submitted', maxicare_reference: null, maxicare_activated_at: null, created_at: now, updated_at: now });
       await hmoHistory('dependent', row.id, 'submitted', ctx.userId, undefined, row);
       return created(res, row);
     }

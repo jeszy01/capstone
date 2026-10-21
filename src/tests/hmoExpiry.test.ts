@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {hmoExpiryChanges,manilaToday,nextSponsoredDependent,planStatusFor} from '../../backend-render/hmoRules.js';
+import {dependentShares,hmoExpiryChanges,manilaToday,nextSponsoredDependent,planStatusFor,validDependentSplit} from '../../backend-render/hmoRules.js';
 import {hmoCutoffLines} from '../features/hmo/hmoPayroll';
 import type {HmoDependent,HmoEnrollment,HmoPlan} from '../features/hmo/hmoTypes';
 
@@ -42,6 +42,21 @@ describe('HMO expiry check',()=>{
   expect(changes({enrollments:[enrollment({status:'Terminated',terminated_at:'2026-10-10T01:00:00.000Z'})],dependents:[dependent(),dependent({id:'d2',status:'Rejected'})]}))
    .toEqual([{table:'hmo_dependents',id:'d1',action:'terminated',status:'Terminated'}]);
   expect(changes({enrollments:[enrollment()],dependents:[dependent({expiration_date:'2026-10-15'})]})).toEqual([{table:'hmo_dependents',id:'d1',action:'expired',status:'Expired'}]);
+ });
+});
+
+describe('dependent premium split',()=>{
+ it('splits the dependent premium by the plan percentages; the sponsored dependent is company-paid',()=>{
+  expect(dependentShares({dependent_monthly_premium:900,dependent_member_share:100},false)).toEqual({employee_share:900,company_share:0});
+  expect(dependentShares({dependent_monthly_premium:900,dependent_member_share:50},false)).toEqual({employee_share:450,company_share:450});
+  expect(dependentShares({dependent_monthly_premium:900,dependent_member_share:50},true)).toEqual({employee_share:0,company_share:900});
+  expect(dependentShares({dependent_monthly_premium:null},false)).toEqual({employee_share:0,company_share:0});
+ });
+ it('requires the two percentages to add up to 100',()=>{
+  expect(validDependentSplit(0,100)).toBe(true);
+  expect(validDependentSplit(40,60)).toBe(true);
+  expect(validDependentSplit(50,60)).toBe(false);
+  expect(validDependentSplit(-10,110)).toBe(false);
  });
 });
 

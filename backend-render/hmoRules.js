@@ -64,6 +64,20 @@ export function hmoExpiryChanges({ plans, enrollments, dependents, today, now = 
 }
 
 /**
+ * A dependent's monthly shares under a plan. The company-sponsored dependent is fully company-paid; any other
+ * dependent splits the dependent premium by the plan's dependent company and employee percentages.
+ */
+export function dependentShares(plan, sponsored) {
+  const premium = Math.max(0, Number(plan.dependent_monthly_premium ?? 0) || 0);
+  const memberPercent = Number(plan.dependent_member_share ?? 100);
+  const employee = sponsored ? 0 : Math.round(premium * (Number.isFinite(memberPercent) ? memberPercent : 100)) / 100;
+  return { employee_share: employee, company_share: Math.round((premium - employee) * 100) / 100 };
+}
+
+/** The dependent premium percentages must be 0–100 and add up to 100. */
+export const validDependentSplit = (company, member) => [company, member].every(n => Number.isFinite(n) && n >= 0 && n <= 100) && Math.abs(company + member - 100) < 0.001;
+
+/**
  * Each employee may have one company-sponsored dependent. When that dependent closes (rejected, terminated or
  * expired), the earliest open employee-paid dependent under the same enrollment takes the slot. Returns that
  * dependent, or null when a sponsored dependent is still open or none is waiting.
