@@ -174,3 +174,33 @@ describe('6. De minimis ceilings (RR 29-2025 from January 6, 2026) and monetized
   expect(later.taxBreakdown).toMatchObject({monetizedLeaveExempt:0,benefitPayments:5000});
  });
 });
+
+import {alphalistCsv,employeeYears,monthlyRemittance,rowTotals} from '../features/payroll/birReports';
+import type {Employee} from '../types/domain';
+describe('9. BIR worksheets (1601-C, 2316, alphalist)',()=>{
+ const row=(input:Partial<PayrollInput>,rates=DEFAULT_RATES,extra:Record<string,unknown>={})=>({position:'',rest:0,hmo:0,input:{...BLANK_PAYROLL_INPUT,empId:'EMP-1',name:'Ana Cruz',...input},result:cutoff(input,{},rates),...extra});
+ it('splits compensation so that compensation − non-taxable = taxable',()=>{
+  const ordinary=rowTotals(row({dailyRate:2000,daysWorked:11,absentDays:1,otHours:5,allowancesExempt:1250,allowancesOtherBenefits:250,thirteenthMonthAndOtherBenefits:5000}));
+  expect(r2(ordinary.compensation-ordinary.nonTaxable)).toBe(ordinary.taxable);
+  expect(ordinary).toMatchObject({deMinimis:1250,benefitsExempt:5250,contributions:1525});
+  const mwe=rowTotals(row({dailyRate:695,daysWorked:11,otHours:20,holidayPay:1390,otherEarnings:15000},{...DEFAULT_RATES,statutoryMinimumWage:695}));
+  expect(r2(mwe.compensation-mwe.nonTaxable)).toBe(mwe.taxable);
+  expect(mwe).toMatchObject({mweBasic:7645,mweHolidayPay:1390});
+ });
+ const run=(id:string,to:string,rows:ReturnType<typeof row>[],status:PayrollRun['status']='Approved'):PayrollRun=>({id,from:to.slice(0,8)+'01',to,status,rows,totals:{gross:0,deductions:0,net:0},preparedBy:'',createdAt:''});
+ it('1601-C: totals the approved runs paid in the month',()=>{
+  const runs=[run('a','2026-10-15',[row({dailyRate:2000,daysWorked:11})]),run('b','2026-10-31',[row({dailyRate:2000,daysWorked:11})]),run('c','2026-11-15',[row({dailyRate:2000,daysWorked:11})]),run('d','2026-10-31',[row({dailyRate:9000,daysWorked:11})],'Pending Approval')];
+  const october=monthlyRemittance(runs,'2026-10');
+  expect(october).toMatchObject({runs:2,employees:1});
+  expect(october.totals.withheld).toBe(r2(2*officialTax('semi-monthly',20475)));
+ });
+ it('2316 / alphalist: annual tax due on present and previous employer pay, less all tax withheld',()=>{
+  const employees=[{id:'e1',employeeNo:'EMP-1',name:'Cruz, Ana',tin:'123-456-789-000',status:'Active'} as Employee];
+  const runs=[run('a','2026-10-15',[row({dailyRate:2000,daysWorked:11,priorEmployerTaxableCompensation:150000,priorEmployerWithheld:5000})])];
+  const [year]=employeeYears(runs,employees,'2026');
+  expect(year).toMatchObject({tin:'123-456-789-000',status:'Active',previousTaxable:150000,annualTaxable:170475,taxDue:officialTax('annual',170475),totalWithheld:r2(year.present.withheld+5000)});
+  const csv=alphalistCsv([year]).split('\n');
+  expect(csv[0].startsWith('Employee No.,TIN,Employee Name')).toBe(true);
+  expect(csv[1]).toContain('"Cruz, Ana"');
+ });
+});
