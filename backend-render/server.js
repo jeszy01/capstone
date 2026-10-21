@@ -4,6 +4,7 @@ import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, keepMissingRuns, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
+import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from './hr2Rules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -2075,13 +2076,51 @@ app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) =
 
 // Known errors from the routes above keep their status and code; anything else falls through to the generic handler.
 const PG_CLIENT_ERRORS = { '22P02': 400, '22007': 400, '22008': 400, '23502': 400, '23514': 400, '42703': 400, '23505': 409, '23503': 409 };
-app.use(['/app-data', '/employees', '/audit-logs', '/account', '/payroll', '/users', '/compensation', '/hmo', '/loans', '/government-loans'], (err, _req, res, next) => {
+app.use(['/app-data', '/employees', '/audit-logs', '/account', '/payroll', '/users', '/compensation', '/hmo', '/loans', '/government-loans', '/integrations'], (err, _req, res, next) => {
   if (err instanceof HttpError || err instanceof AccessError) return fail(res, err.status, err.code, err.message);
   if (PG_CLIENT_ERRORS[err?.code]) return fail(res, PG_CLIENT_ERRORS[err.code], 'INVALID_REQUEST', err.message);
   next(err);
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+// ---- HR2 attendance intake (server to server) ----
+// HR2 posts attendance with the shared key in the X-API-Key header (Render env HR2_API_KEY, at least 32 characters).
+// Records are merged into app_data "attendance:hr2", the store Time & Attendance, Deductions and payroll read.
+// See backend-render/HR2_ATTENDANCE_API.md.
+const hr2Key = Buffer.from(process.env.HR2_API_KEY ?? '');
+const hr2Authorized = req => {
+  const given = Buffer.from(String(req.headers['x-api-key'] ?? ''));
+  return given.length === hr2Key.length && crypto.timingSafeEqual(given, hr2Key);
+};
+app.post('/integrations/hr2/attendance', async (req, res) => {
+  if (hr2Key.length < 32) return fail(res, 503, 'HR2_NOT_CONFIGURED', 'The HR2 integration is not configured on this server.');
+  if (!hr2Authorized(req)) return fail(res, 401, 'INVALID_API_KEY', 'A valid X-API-Key header is required.');
+  const b = input(req);
+  if (!Array.isArray(b.records)) return fail(res, 400, 'VALIDATION_ERROR', 'records must be an array of attendance records.');
+  if (b.records.length > HR2_MAX_RECORDS) return fail(res, 413, 'TOO_MANY_RECORDS', `Send at most ${HR2_MAX_RECORDS} records per request.`);
+  const syncedThrough = b.synced_through ?? null;
+  if (syncedThrough !== null && !isHr2Date(syncedThrough)) return fail(res, 400, 'VALIDATION_ERROR', 'synced_through must be YYYY-MM-DD.');
+  const { rows: employees } = await pool.query('select employee_number from employees');
+  const { accepted, rejected } = validateHr2Records(b.records, employees.map(e => e.employee_number));
+  const receivedAt = new Date().toISOString();
+  const client = await pool.connect();
+  let store;
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:attendance:hr2']);
+    const { rows: [row] } = await client.query(`select value, deleted from app_data where key='attendance:hr2'`);
+    store = mergeHr2Store(row && !row.deleted ? appValue(row.value) : null, accepted, syncedThrough, receivedAt);
+    await client.query(`insert into app_data(key,value,deleted) values('attendance:hr2',$1,false)
+       on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(store)]);
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  await audit('attendance.hr2_received', null, 'Attendance', null, { description: `Received ${accepted.length} attendance record${accepted.length === 1 ? '' : 's'} from HR2${rejected.length ? `; refused ${rejected.length}` : ''}${store.syncedThrough ? ` (synced through ${store.syncedThrough})` : ''}.` });
+  ok(res, { received: accepted.length, rejected, synced_through: store.syncedThrough, total_records: store.records.length });
+});
+
 // Row counts for checking which database this service reads; attendance is the HR2 store in app_data "attendance:hr2".
 app.get('/api/health', async (_req, res) => {
   const { rows: [db] } = await pool.query(`select current_database() as database, (select count(*)::int from employees) as employees`);
