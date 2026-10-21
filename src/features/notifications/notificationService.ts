@@ -4,7 +4,7 @@ import {getCurrentUser} from '../auth/authService';
 import type {User} from '../../types/domain';
 
 export type NotificationRole='admin'|'hr';
-export type NotificationType='claim_submitted'|'claim_approved'|'claim_rejected'|'ot_pending'|'payroll_pending'|'payroll_approved';
+export type NotificationType='claim_submitted'|'claim_approved'|'claim_rejected'|'ot_pending'|'payroll_pending'|'payroll_approved'|'payroll_rejected';
 export interface AppNotification{id:string;type:NotificationType;title:string;message:string;role:NotificationRole;link:string;read:boolean;created_at:string}
 
 // Synchronized through app_data like other records. Each role has its own copy, so reading one never marks the other's.
@@ -57,5 +57,6 @@ const runLink=(runId:string)=>`/payroll/review?run=${runId}`;
 export const notifyClaimSubmitted=(claimNumber:string,amount:string)=>notify('claim_submitted','New claim submitted',`${claimNumber} · ${amount}`,CLAIMS_LINK,['admin','hr']);
 export const notifyClaimDecided=(claimNumber:string,status:'Approved'|'Rejected')=>notify(status==='Approved'?'claim_approved':'claim_rejected',`Claim ${status.toLowerCase()}`,claimNumber,CLAIMS_LINK,['hr']);
 export const notifyOvertimePending=(employeeName:string,date:string)=>notify('ot_pending','OT pending approval',`${employeeName} · ${date}`,'/time-attendance',['admin','hr']);
-export const notifyPayrollPending=(runId:string,label:string)=>notify('payroll_pending','Payroll pending approval',label,runLink(runId),['admin']);
+// Finance decides the run; the Admin is told it was submitted. Finance's decision notifies HR from the server.
+export const notifyPayrollPending=(runId:string,label:string)=>notify('payroll_pending','Payroll submitted to Finance',label,runLink(runId),['admin']);
 export const notifyPayrollApproved=(runId:string,label:string)=>notify('payroll_approved','Payroll approved',`${label} · Ready for payslip`,runLink(runId),['hr']);

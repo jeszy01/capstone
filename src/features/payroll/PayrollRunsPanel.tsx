@@ -14,7 +14,7 @@ import {cell,flushCard,rowHeader,tableHead} from '../../components/common/tableU
 
 // The payroll process, in order, with who does each step.
 const STEPS:[string,string][]=[
- ['Create Payroll','HR'],['Review & Submit','HR'],['Approve','Admin'],['Pay & Generate Payslips','HR'],['Release to ESS','HR'],['Release','HR'],
+ ['Create Payroll','HR'],['Review & Submit','HR'],['Approve','Finance'],['Pay & Generate Payslips','HR'],['Release to ESS','HR'],['Report to Finance','HR'],
 ];
 export function PayrollSteps(){
  return <ol aria-label="Payroll process" className="grid list-none grid-cols-2 gap-2 p-0 lg:grid-cols-3 2xl:grid-cols-6">
@@ -40,12 +40,11 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
   finally{setBusy(false)}
  };
  const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- const isAdmin=can('payroll.approve'),canRelease=can('payroll.release');
+ const canRelease=can('payroll.release');
  const net=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
  const actions=(run:PayrollRun)=>{
   const stage=runStage(run),review=`/payroll/review?run=${run.id}`;
   // One action per run: the step that moves it forward, otherwise View. The cutoff name also opens the run.
-  if(isAdmin&&stage==='Pending Approval')return <Link className={button} to={review}>Review &amp; Approve</Link>;
   if(canRelease&&stage==='Approved')return <button type="button" className={button} onClick={()=>startPayment(run)}>Pay &amp; Generate Payslips</button>;
   if(canRelease&&(stage==='Payslips Generated'||stage==='Released to ESS'))return <Link className={button} to="/payroll?tab=payslip">Go to Payslips</Link>;
   if(run.paidAt)return <button type="button" className={ghost} onClick={()=>setSummary(run)}>View Summary</button>;

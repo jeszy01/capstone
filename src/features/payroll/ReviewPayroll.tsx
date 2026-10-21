@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useState} from 'react';
 import {useNavigate,useSearchParams} from 'react-router-dom';
-import {Button,ConfirmDialog,Empty,LoadingState,Modal,ghost} from '../../components/common/ui';
+import {Button,Empty,LoadingState,Modal,ghost} from '../../components/common/ui';
 import type {PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
@@ -13,10 +13,10 @@ import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFo
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
-import {notifyPayrollApproved,notifyPayrollPending} from '../notifications/notificationService';
+import {notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
-import {BLANK_PAYROLL_INPUT,RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,updateRuns} from './payrollRuns';
+import {BLANK_PAYROLL_INPUT,RUNS_KEY,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,updateRuns} from './payrollRuns';
 import {cutoffSynced} from '../attendance/attendanceService';
 import type {ManualAdjustment,PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
 import {recordAudit} from '../audit/auditService';
@@ -196,16 +196,6 @@ const built:RunRow[]=[];
   notifyPayrollPending(run.id,runLabel(run));
   nav('/payroll');
  };
- // Approve and Reject ask in the app's own dialog before deciding.
- const[deciding,setDeciding]=useState<'Approved'|'Rejected'|null>(null);
- const decide=async(status:'Approved'|'Rejected')=>{
-  if(!saved)return;
-  setDeciding(null);setError('');
-  try{await decideRun(saved.id,status,user?.name??'Admin')}
-  catch(cause){setError(cause instanceof Error&&cause.message?cause.message:'The payroll decision could not be saved.');return}
-  if(status==='Approved')notifyPayrollApproved(saved.id,runLabel(saved));
-  nav('/payroll');
- };
 
  return <div className="space-y-4">
   <style>{`.paper table{border-collapse:collapse;width:100%}.paper th,.paper td{border:1px solid #d7e0ed;padding:7px 8px;font-size:11px;color:#0f172a}.paper th{background:#f1f6fc;text-align:center;font-weight:600}.paper td.n{text-align:right;font-variant-numeric:tabular-nums}.paper-input{width:72px;border:1px solid #cbd5e1;border-radius:6px;padding:4px 5px;text-align:right;font-size:11px}.paper tbody tr:hover{background:#f8fbff}@media print{@page{size:landscape;margin:8mm}aside,header,.no-print{display:none!important}.paper{box-shadow:none!important;border:0!important;padding:0!important}.paper th,.paper td{padding:3px 4px;font-size:8px}.paper-input{width:52px;border:0!important;padding:0!important;background:transparent!important;font-size:8px}}`}</style>
@@ -213,14 +203,15 @@ const built:RunRow[]=[];
    <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title||'Payroll entry'}</div></div>{saved&&<StatusBadge status={runStatusLabel(saved)}/>}</div>
    <div className="flex flex-wrap gap-2">
     <button className={ghost} onClick={()=>window.print()}>Print</button>
-    {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy||negative.length>0} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
-    {saved&&saved.status==='Pending Approval'&&can('payroll.approve')&&<><button className={ghost} onClick={()=>setDeciding('Rejected')}>Reject</button><Button onClick={()=>setDeciding('Approved')}>Approve</Button></>}
+    {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy||negative.length>0} onClick={()=>{setError('');setConfirming(true)}}>Submit to Finance</Button>}
    </div>
   </div>
   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
   {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
   {!loading&&negative.length>0&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">Net pay is below zero for {negative.join(', ')}. This payroll cannot be submitted until their deductions are reduced.</p>}
   {!loading&&gapRows.length>0&&<div role="alert" className="no-print rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Some work days are not paid because their attendance is missing or incomplete. Ask HR2 to complete these records, then reload the preview.</div><ul className="mb-0 mt-1.5 list-disc pl-5">{gapRows.map(row=>{const gaps=row.attendanceGaps!;return <li key={row.input.empId}><b>{row.input.name}</b>: {[gaps.missingDays.length?dayCount(gaps.missingDays.length,'with no attendance record'):'',gaps.incompleteDays.length?dayCount(gaps.incompleteDays.length,'without a time-in or time-out'):''].filter(Boolean).join(', ')} ({[...gaps.missingDays,...gaps.incompleteDays].sort().map(date=>periodLabel(date,date).split(' - ')[0]).join(', ')})</li>})}</ul></div>}
+  {saved?.status==='Pending Approval'&&<p className="no-print mb-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">Submitted to Finance on {periodLabel(saved.createdAt.slice(0,10),saved.createdAt.slice(0,10)).split(' - ')[0]}. Waiting for Finance to approve or reject it.</p>}
+  {saved?.status==='Rejected'&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><b>Rejected by {saved.decidedBy??'Finance'}.</b> {saved.rejectionReason??'No reason given.'} Correct the inputs and submit a new payroll for this cutoff.</p>}
   {savedAdjustments.length>0&&<div className="no-print rounded-lg border border-blue-200 bg-blue-50 p-3 text-[12px] text-[#17345b]"><div className="font-semibold">Amounts typed in by hand in this run</div><ul className="mb-0 mt-1.5 list-disc pl-5">{savedAdjustments.map(change=><li key={`${change.name}|${change.field}`}><b>{change.name}</b> · {change.label}: {peso(change.original)} → {peso(change.amount)} — {change.reason}</li>)}</ul></div>}
   {!loading&&rows.length>0&&<div className="no-print grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Employees</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{rows.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gross compensation</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{peso(totals.gross)}</div></div><div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Net pay</div><div className="mt-1 text-[22px] font-semibold text-blue-800">{peso(totals.net)}</div><div className="mt-1 text-[10px] text-slate-500">Total deductions · {peso(totals.deductions)}</div></div></div>}
   {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_28px_rgba(23,52,91,0.06)]">
@@ -245,16 +236,15 @@ const built:RunRow[]=[];
     </table></div>
     <div className="mt-10 grid grid-cols-2 gap-16 text-center text-[11px]">
      <div><div className="h-5">{saved?.preparedBy??user?.name}</div><div className="border-t border-slate-500 pt-1">Prepared by</div></div>
-     <div><div className="h-5">{saved?.status==='Approved'?saved.decidedBy:''}</div><div className="border-t border-slate-500 pt-1">Approved by</div></div>
+     <div><div className="h-5">{saved?.status==='Approved'?saved.decidedBy:''}</div><div className="border-t border-slate-500 pt-1">Approved by (Finance)</div></div>
     </div>
    </>}
   </div>}
-  {deciding&&saved&&<ConfirmDialog title={deciding==="Approved"?"Approve payroll?":"Reject payroll?"} message={`${deciding==="Approved"?"Approve":"Reject"} payroll for ${runLabel(saved)}?${deciding==="Rejected"?" A rejected run cannot be approved later.":""}`} confirmLabel={deciding==="Approved"?"Approve":"Reject"} danger={deciding==="Rejected"} saving={false} onCancel={()=>setDeciding(null)} onConfirm={()=>void decide(deciding)}/>}
   {confirming&&<Modal title="Confirm Payroll Submission" onClose={()=>setConfirming(false)}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Employees',String(rows.length)],['Gross Pay',peso(totals.gross)],['Total Deductions',peso(totals.deductions)],['Net Pay',peso(totals.net)]].map(([label,value])=><div key={label} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{label}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
    {changes.length>0&&<div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3"><div className="text-[12px] font-semibold text-amber-900">Amounts typed in by hand — give a reason for each. The Admin sees these when reviewing.</div>
     <div className="mt-2 grid gap-2">{changes.map(change=>{const key=changeKey(change.empId,change.field);return <label key={key} className="grid gap-1 text-[12px] text-amber-900"><span><b>{change.name}</b> · {change.label}: {peso(change.original)} → {peso(change.amount)}</span><input className="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[12px] text-slate-800" maxLength={200} placeholder="Reason" value={reasons[key]??''} onChange={event=>setReasons(previous=>({...previous,[key]:event.target.value}))}/></label>})}</div></div>}
-   <p className="mt-4 text-[13px]">Submit this payroll for Admin approval?</p>
+   <p className="mt-4 text-[13px]">Submit this payroll to Finance for approval?</p>
    <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={submitBusy} onClick={()=>setConfirming(false)}>Cancel</button><Button disabled={Boolean(loanError)||submitBusy||missingReason} onClick={submit}>{submitBusy?'Verifying schedule…':'Confirm'}</Button></div>
   </Modal>}
  </div>;

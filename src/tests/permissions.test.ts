@@ -2,8 +2,10 @@ import {describe,expect,it} from 'vitest';
 import {can,canOpen} from '../features/auth/permissions';
 
 describe('role permissions',()=>{
- it('lets an Admin approve, manage accounts and settings, but not generate, release or encode',()=>{
-  for(const permission of ['payroll.approve','compensation.approve','users.manage','settings.edit','audit.view'] as const)expect(can(permission,'Admin')).toBe(true);
+ it('lets an Admin approve compensation, manage accounts and settings, but not approve payroll, generate, release or encode',()=>{
+  // Payroll is approved or rejected by Finance through the Finance API, not by a PBMS role.
+  expect(can('payroll.approve','Admin')).toBe(false);
+  for(const permission of ['compensation.approve','users.manage','settings.edit','audit.view'] as const)expect(can(permission,'Admin')).toBe(true);
   for(const permission of ['payroll.generate','payroll.release','claims.encode','claims.approve','claims.pay','attendance.encode','employees.manage','hmo.manage'] as const)expect(can(permission,'Admin')).toBe(false);
   expect(can('hmo.approve','Admin')).toBe(true);
   expect(can('hmo.approve','HR Staff')).toBe(false);

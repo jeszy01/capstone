@@ -19,31 +19,31 @@ export type ManualAdjustment={field:string;label:string;original:number;amount:n
 export type RunRow={position:string;rest:number;hmo:number;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];separated?:boolean;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
 // released: department name -> ISO date-time when released to ESS
 export type PayrollRunType='regular'|'thirteenth-month';
-export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;releasedAt?:string;releasedBy?:string};
+export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;releasedAt?:string;releasedBy?:string;/** Finance's reason when it rejects the run. */rejectionReason?:string};
 export const RUNS_KEY='payroll:runs';
 /** A payroll input with every amount at zero. */
 export const BLANK_PAYROLL_INPUT:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,govSssLoan:0,govPagibigLoan:0,otherDeductions:0,thirteenthMonthAndOtherBenefits:0,taxExemptBenefits:0,priorEmployerTaxableCompensation:0,priorEmployerBenefitsPaid:0,priorEmployerWithheld:0,priorEmployerPayrollPeriods:0};
 
-/** Pending Approval -> Approved -> Released (to Finance, after payslips are generated); a released run is locked. */
+/** Pending Approval (submitted to Finance) -> Approved or Rejected by Finance -> Released (reported to Finance after payslips are released); a released run is locked. */
 export const runStatusLabel=(run:Pick<PayrollRun,'status'|'releasedAt'>)=>run.status==='Approved'&&run.releasedAt?'Released':run.status;
 
 export type PaymentMethod='Bank Transfer'|'Direct Deposit';
 
 /** Where a run is in the payroll process. */
-export type RunStage='Pending Approval'|'Rejected'|'Approved'|'Payslips Generated'|'Released to ESS'|'Released';
+export type RunStage='Pending Approval'|'Rejected'|'Approved'|'Payslips Generated'|'Released to ESS'|'Reported';
 export function runStage(run:Pick<PayrollRun,'status'|'payslipsGeneratedAt'|'released'|'releasedAt'>):RunStage{
  if(run.status!=='Approved')return run.status;
- if(run.releasedAt)return 'Released';
+ if(run.releasedAt)return 'Reported';
  if(run.released&&Object.keys(run.released).length)return 'Released to ESS';
  return run.payslipsGeneratedAt?'Payslips Generated':'Approved';
 }
 const NEXT_STEP:Record<RunStage,string>={
- 'Pending Approval':'Waiting for Admin approval.',
- 'Rejected':'Closed. Submit a new payroll for this cutoff.',
+ 'Pending Approval':'Waiting for Finance approval.',
+ 'Rejected':'Rejected by Finance. Submit a new payroll for this cutoff.',
  'Approved':'HR pays and generates the payslips.',
  'Payslips Generated':'HR releases payslips to ESS (Payslip tab).',
- 'Released to ESS':'Release remaining departments, then release the run.',
- 'Released':'Complete. The run is locked.',
+ 'Released to ESS':'Release remaining departments, then report to Finance.',
+ 'Reported':'Complete. The run is locked.',
 };
 export const runNextStep=(run:Pick<PayrollRun,'status'|'payslipsGeneratedAt'|'released'|'releasedAt'>)=>NEXT_STEP[runStage(run)];
 
@@ -73,16 +73,7 @@ export async function updateRuns(change:(runs:PayrollRun[])=>PayrollRun[]):Promi
  return stored;
 }
 
-// Approving and rejecting payroll are logged by the server when the run is saved. Throws when the run is no longer pending.
-export async function decideRun(id:string,status:'Approved'|'Rejected',by:string){
- const decided:{run?:PayrollRun}={};
- const next=await updateRuns(runs=>{
-  decided.run=runs.find(item=>item.id===id);
-  if(!decided.run||decided.run.status!=='Pending Approval')throw new Error('This payroll run is no longer pending approval.');
-  return runs.map(item=>item.id===id?{...item,status,decidedBy:by,decidedAt:new Date().toISOString()}:item);
- });
- return next;
-}
+// Finance approves or rejects submitted runs through POST /integrations/finance/payroll-runs/:id/decision.
 
 // Releases payslips to ESS for the given departments after the server verifies the user's passkey; the server logs it.
 export async function releaseDepartments(id:string,departments:string[],all:boolean,passkey:string):Promise<ReleaseRunResult>{

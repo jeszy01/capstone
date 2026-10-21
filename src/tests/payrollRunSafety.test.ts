@@ -25,10 +25,11 @@ describe('a submitted payroll run is approved as it was submitted',()=>{
   const approved=run('r1',{status:'Approved',decidedBy:'Admin',decidedAt:'2026-10-17T00:00:00.000Z'});
   await expect(save(hr,[approved],[{...approved,rows:[{input:{empId:'EMP-1'},result:{net:5000}}]}])).rejects.toThrow('approved payroll run cannot be changed');
  });
- it('still allows HR to submit, the Admin to approve and HR to pay',async()=>{
+ it('lets HR submit and pay, while only Finance (through its API) approves',async()=>{
   expect(await save(hr,[],[run('r1')])).toHaveLength(1);
-  const approved=run('r1',{status:'Approved',decidedBy:'Admin',decidedAt:'2026-10-17T00:00:00.000Z'});
-  expect(await save(admin,[run('r1')],[approved])).toHaveLength(1);
+  const approved=run('r1',{status:'Approved',decidedBy:'Ana Reyes (Finance)',decidedAt:'2026-10-17T00:00:00.000Z'});
+  await expect(save(admin,[run('r1')],[approved])).rejects.toThrow('approved or rejected by Finance');
+  await expect(save(hr,[run('r1')],[approved])).rejects.toThrow('approved or rejected by Finance');
   expect(await save(hr,[approved],[{...approved,paidAt:'2026-10-18T00:00:00.000Z',paidBy:'HR',paymentMethod:'Bank Transfer'}])).toHaveLength(1);
  });
 });
@@ -41,7 +42,30 @@ describe('payroll run stages shown in Payroll Runs',()=>{
   expect(runStage({status:'Approved'})).toBe('Approved');
   expect(runStage({status:'Approved',payslipsGeneratedAt:'x'})).toBe('Payslips Generated');
   expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'}})).toBe('Released to ESS');
-  expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'},releasedAt:'x'})).toBe('Released');
+  expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'},releasedAt:'x'})).toBe('Reported');
   expect(runNextStep({status:'Approved'})).toMatch('generates the payslips');
+ });
+});
+
+import {applyFinanceDecision,financeStatus,runDetail,runSummary} from '../../backend-render/financeRules.js';
+describe('Finance approval API rules',()=>{
+ const pending=run('r1',{rows:[{input:{empId:'EMP-1',name:'Ana Cruz'},result:{gross:11000,deductions:925,net:10075,tax:0,sss:550,phil:275,pagibig:100}}]});
+ it('approves a pending run and records the Finance approver',()=>{
+  const result=applyFinanceDecision(pending,{decision:'approve',decided_by:'Ana Reyes'},'2026-10-17T00:00:00.000Z');
+  expect(result.run).toMatchObject({status:'Approved',decidedBy:'Ana Reyes (Finance)',decidedAt:'2026-10-17T00:00:00.000Z'});
+ });
+ it('requires a reason to reject, and the approver name',()=>{
+  expect(applyFinanceDecision(pending,{decision:'reject',decided_by:'Ana Reyes'},'x').error?.message).toMatch('reason');
+  expect(applyFinanceDecision(pending,{decision:'approve'},'x').error?.message).toMatch('decided_by');
+  expect(applyFinanceDecision(pending,{decision:'reject',decided_by:'Ana Reyes',reason:'Overtime not supported by attendance'},'x').run).toMatchObject({status:'Rejected',rejectionReason:'Overtime not supported by attendance'});
+ });
+ it('refuses deciding a run twice',()=>{
+  expect(applyFinanceDecision({...pending,status:'Approved'},{decision:'reject',decided_by:'Ana',reason:'late'},'x').error?.code).toBe('PAYROLL_ALREADY_DECIDED');
+ });
+ it("shows Finance each run's status, totals and employees",()=>{
+  expect(financeStatus(pending)).toBe('pending');
+  expect(financeStatus({...pending,status:'Approved',paidAt:'x',releasedAt:'y'})).toBe('reported');
+  expect(runSummary(pending)).toMatchObject({id:'r1',status:'pending',employees:1,totals:{gross:11000,deductions:925,net:10075,withholding_tax:0}});
+  expect(runDetail(pending).rows[0]).toMatchObject({employee_no:'EMP-1',name:'Ana Cruz',net:10075,sss:550});
  });
 });

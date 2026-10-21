@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, keepMissingRuns, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
 import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from './hr2Rules.js';
+import { FINANCE_STATUSES, applyFinanceDecision, financeStatus, runDetail, runSummary } from './financeRules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -2119,6 +2120,73 @@ app.post('/integrations/hr2/attendance', async (req, res) => {
   } finally { client.release(); }
   await audit('attendance.hr2_received', null, 'Attendance', null, { description: `Received ${accepted.length} attendance record${accepted.length === 1 ? '' : 's'} from HR2${rejected.length ? `; refused ${rejected.length}` : ''}${store.syncedThrough ? ` (synced through ${store.syncedThrough})` : ''}.` });
   ok(res, { received: accepted.length, rejected, synced_through: store.syncedThrough, total_records: store.records.length });
+});
+
+// ---- Finance payroll approval (server to server) ----
+// Finance's system reads the payroll runs HR submits and sends back its decision with the shared key in the X-API-Key
+// header (Render env FINANCE_API_KEY, at least 32 characters). See backend-render/FINANCE_PAYROLL_API.md.
+const financeKey = Buffer.from(process.env.FINANCE_API_KEY ?? '');
+const financeAuth = (req, res, next) => {
+  if (financeKey.length < 32) return fail(res, 503, 'FINANCE_NOT_CONFIGURED', 'The Finance integration is not configured on this server.');
+  const given = Buffer.from(String(req.headers['x-api-key'] ?? ''));
+  if (given.length !== financeKey.length || !crypto.timingSafeEqual(given, financeKey)) return fail(res, 401, 'INVALID_API_KEY', 'A valid X-API-Key header is required.');
+  next();
+};
+const storedRuns = async () => {
+  const { rows: [row] } = await pool.query(`select value, deleted from app_data where key='payroll:runs'`);
+  const runs = row && !row.deleted ? appValue(row.value) : [];
+  return Array.isArray(runs) ? runs.filter(Boolean) : [];
+};
+// Adds an unread notification for HR (the same app_data list the app shows in its bell).
+async function notifyHr(type, title, message, link) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:notifications:records']);
+    const { rows: [row] } = await client.query(`select value, deleted from app_data where key='notifications:records'`);
+    const list = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
+    const next = [{ id: crypto.randomUUID(), type, title, message, role: 'hr', link, read: false, created_at: new Date().toISOString() }, ...list];
+    await client.query(`insert into app_data(key,value,deleted) values('notifications:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(next)]);
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+}
+app.get('/integrations/finance/payroll-runs', financeAuth, async (req, res) => {
+  const status = text(req.query.status).toLowerCase();
+  if (status && !FINANCE_STATUSES.includes(status)) return fail(res, 400, 'VALIDATION_ERROR', `status must be one of ${FINANCE_STATUSES.join(', ')}.`);
+  const runs = (await storedRuns()).filter(run => !status || financeStatus(run) === status).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+  ok(res, runs.map(runSummary));
+});
+app.get('/integrations/finance/payroll-runs/:id', financeAuth, async (req, res) => {
+  const run = (await storedRuns()).find(item => String(item.id) === req.params.id);
+  if (!run) return fail(res, 404, 'PAYROLL_RUN_NOT_FOUND', 'Payroll run not found.');
+  ok(res, runDetail(run));
+});
+app.post('/integrations/finance/payroll-runs/:id/decision', financeAuth, async (req, res) => {
+  const client = await pool.connect();
+  let decided;
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:payroll:runs']);
+    const { rows: [row] } = await client.query(`select value, deleted from app_data where key='payroll:runs'`);
+    const runs = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
+    const run = runs.find(item => item && String(item.id) === req.params.id);
+    if (!run) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'Payroll run not found.');
+    const result = applyFinanceDecision(run, input(req), new Date().toISOString());
+    if (result.error) throw new HttpError(result.error.status, result.error.code, result.error.message);
+    decided = result.run;
+    await client.query(`update app_data set value=$1, updated_at=now() where key='payroll:runs'`, [JSON.stringify(runs.map(item => item === run ? decided : item))]);
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  const approved = decided.status === 'Approved', label = runPeriod(decided);
+  await audit(approved ? 'payroll.approved' : 'payroll.rejected', null, 'Payroll', decided.id, { description: `${decided.status} payroll for ${label} by ${decided.decidedBy}${approved ? '' : `: ${decided.rejectionReason}`}.` });
+  await notifyHr(approved ? 'payroll_approved' : 'payroll_rejected', approved ? 'Payroll approved by Finance' : 'Payroll rejected by Finance', approved ? `${label} · Ready for payslips` : `${label} · ${decided.rejectionReason}`, `/payroll/review?run=${decided.id}`);
+  ok(res, runSummary(decided));
 });
 
 // Row counts for checking which database this service reads; attendance is the HR2 store in app_data "attendance:hr2".

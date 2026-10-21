@@ -74,7 +74,7 @@ async function payrollRunEvents(user, before, after, releasedRecentlyBy) {
     }
     if (old.status !== row.status) {
       if (old.status !== 'Pending Approval' || !['Approved', 'Rejected'].includes(row.status)) throw forbid('This payroll status change is not allowed.');
-      need(user, 'payroll.approve', 'Only an Admin can approve or reject payroll.');
+      need(user, 'payroll.approve', 'Payroll is approved or rejected by Finance.');
       if (row.paidAt || stable(without(old, RUN_DECISION_FIELDS)) !== stable(without(row, RUN_DECISION_FIELDS))) throw forbid('Approving or rejecting payroll cannot change its contents.');
       log(row.status === 'Approved' ? 'payroll.approved' : 'payroll.rejected', id, `${row.status} payroll for ${runPeriod(row)}.`);
       continue;
