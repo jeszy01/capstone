@@ -1,0 +1,123 @@
+// Read-only audit harness: runs the real PBMS withholding-tax code against expected values computed independently
+// from the BIR tables effective January 1, 2023 onward (RA 10963 / RR 11-2018). Writes results to results.json.
+import {beforeAll,describe,it} from 'vitest';
+import {writeFileSync} from 'node:fs';
+
+const store=new Map<string,string>();
+(globalThis as any).localStorage={getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>{store.set(k,v)},removeItem:(k:string)=>{store.delete(k)},clear:()=>store.clear()};
+
+type Mod={calc:any;wt:any;rules:any};
+let m:Mod;
+beforeAll(async()=>{
+ const calc=await import('C:/PAYROLL SYSTEM/src/features/payroll/payrollCalculator.ts');
+ const wt=await import('C:/PAYROLL SYSTEM/src/features/payroll/withholdingTax.ts');
+ const rules=await import('C:/PAYROLL SYSTEM/src/features/payroll/payrollRules.ts');
+ m={calc,wt,rules};
+});
+
+// ---- Independent copy of the official tables (fixed tax, rate, floor) ----
+const OFFICIAL:Record<string,[number,number,number][]>={
+ daily:[[0,0,0],[685,0,15],[1096,61.65,20],[2192,280.85,25],[5479,1102.6,30],[21918,6034.3,35]],
+ weekly:[[0,0,0],[4808,0,15],[7692,432.6,20],[15385,1971.2,25],[38462,7740.45,30],[153846,42355.65,35]],
+ 'semi-monthly':[[0,0,0],[10417,0,15],[16667,937.5,20],[33333,4270.7,25],[83333,16770.7,30],[333333,91770.7,35]],
+ monthly:[[0,0,0],[20833,0,15],[33333,1875,20],[66667,8541.8,25],[166667,33541.8,30],[666667,183541.8,35]],
+ annual:[[0,0,0],[250000,0,15],[400000,22500,20],[800000,102500,25],[2000000,402500,30],[8000000,2202500,35]],
+};
+const r2=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
+const official=(table:string,amount:number)=>{const row=[...OFFICIAL[table]].reverse().find(([floor])=>amount>=floor)!;return r2(row[1]+row[2]/100*(amount-row[0]))};
+
+type Result={scenario:string;case:string;inputs:string;expected:number|string;actual:number|string;status:'PASS'|'FAIL'|'NOT VERIFIABLE';note?:string};
+const results:Result[]=[];
+const check=(scenario:string,kase:string,inputs:string,expected:number,actual:number,note?:string)=>results.push({scenario,case:kase,inputs,expected,actual,status:Math.abs(expected-actual)<0.005?'PASS':'FAIL',note});
+
+describe('audit',()=>{
+ it('runs every scenario',()=>{
+  const {calc,wt,rules}=m;
+  const RULES=[wt.DEFAULT_WITHHOLDING_RULES];
+  const tables={...wt.DEFAULT_WITHHOLDING_RULES.tables,annual:wt.DEFAULT_WITHHOLDING_RULES.annualTable};
+
+  // 1. Brackets: the stored tables against the official ones, at and around every floor.
+  for(const name of Object.keys(OFFICIAL)){
+   const floors=OFFICIAL[name].map(([f])=>f);
+   const points=[...new Set(floors.flatMap(f=>[Math.max(0,f-1),f,f+1,f+500]))].sort((a,b)=>a-b);
+   for(const p of points)check('1 Brackets',`${name} ₱${p.toLocaleString()}`,`taxable ${name} compensation ₱${p}`,official(name,p),wt.taxFromTable(p,tables[name]));
+  }
+
+  // Helpers: one semi-monthly cutoff through the full payroll calculation.
+  const R=rules.DEFAULT_RATES;
+  const base={empId:'E',name:'E',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,otherDeductions:0};
+  const cutoff=(input:Record<string,unknown>,ctx:Record<string,unknown>={})=>calc.calculatePayroll({...base,...input},R,[],{periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:RULES,...ctx});
+
+  // 2. Statutory contributions.
+  {const c=cutoff({dailyRate:1000,daysWorked:11});
+   check('2 Contributions','₱22,000/month: SSS','daily ₱1,000 × 11 days; SSS 5% of ₱22,000 MSC ÷ 2',550,c.sss);
+   check('2 Contributions','₱22,000/month: PhilHealth','2.5% of ₱22,000 ÷ 2',275,c.phil);
+   check('2 Contributions','₱22,000/month: Pag-IBIG','2% of ₱10,000 cap ÷ 2',100,c.pagibig);
+   check('2 Contributions','₱22,000/month: taxable','₱11,000 − ₱925 contributions',10075,c.taxBreakdown.taxableCompensation);
+   check('2 Contributions','₱22,000/month: tax','₱10,075 is below ₱10,417',0,c.tax);}
+  {const c=cutoff({dailyRate:2000,daysWorked:11});
+   check('2 Contributions','₱44,000/month: contributions','SSS ₱875 (₱35,000 MSC cap) + PhilHealth ₱550 + Pag-IBIG ₱100',1525,c.sss+c.phil+c.pagibig);
+   check('2 Contributions','₱44,000/month: tax','₱22,000 − ₱1,525 = ₱20,475 → ₱937.50 + 20% × ₱3,808',official('semi-monthly',20475),c.tax);}
+
+  // 3. Taxable and non-taxable compensation together.
+  {const c=cutoff({dailyRate:2000,daysWorked:11,otHours:10,nightDifferential:500,holidayPay:1000,allowancesTaxable:1000,allowancesExempt:2000});
+   // Taxable: basic 22,000 + taxable allowance 1,000 + OT 3,125 + ND 500 + holiday 1,000 − contributions 1,525 = 26,100. Exempt allowance 2,000 excluded once.
+   check('3 Taxable vs non-taxable','taxable compensation','basic ₱22,000, OT 10 h (₱3,125), ND ₱500, holiday ₱1,000, taxable allowance ₱1,000, non-taxable allowance ₱2,000',26100,c.taxBreakdown.taxableCompensation,'The ₱2,000 non-taxable allowance is never added to taxable pay, yet it is subtracted from it.');
+   check('3 Taxable vs non-taxable','tax','table on ₱26,100 (bracket of regular ₱21,475: 20%)',official('semi-monthly',26100),c.tax);}
+  {const c=cutoff({dailyRate:2000,daysWorked:11,taxExemptBenefits:3000});
+   check('3 Taxable vs non-taxable','tax-exempt benefit typed in Review Payroll','basic ₱22,000 + ₱3,000 tax-exempt benefit',20475,c.taxBreakdown.taxableCompensation,'The exempt benefit is subtracted from basic pay instead of only being left out.');}
+
+  // 4. 13th month and other benefits (₱90,000 per year).
+  {const t=wt.calculateWithholdingTax({regularCompensation:0,supplementaryCompensation:0,thirteenthMonthAndOtherBenefits:30000,period:'semi-monthly',periodStart:'2026-12-15',periodEnd:'2026-12-15',rules:RULES});
+   check('4 13th month ₱90,000','₱30,000, none paid before: exempt part','₱30,000 13th month, ₱0 benefits earlier in the year',30000,t.benefitExemptionApplied);
+   check('4 13th month ₱90,000','₱30,000, none paid before: tax','fully exempt',0,t.withholdingTax);}
+  {const prior={regular:0,supplementary:0,benefitPayments:80000,taxExemptBenefits:0,mandatoryContributions:0,withheld:0,payrollPeriods:0};
+   const t=wt.calculateWithholdingTax({regularCompensation:0,supplementaryCompensation:0,thirteenthMonthAndOtherBenefits:30000,period:'semi-monthly',periodStart:'2026-12-15',periodEnd:'2026-12-15',priorYear:prior,rules:RULES});
+   check('4 13th month ₱90,000','₱30,000 after ₱80,000: exempt part','only ₱10,000 of the ₱90,000 is left',10000,t.benefitExemptionApplied);
+   check('4 13th month ₱90,000','₱30,000 after ₱80,000: taxable excess','₱20,000 is taxable',20000,t.taxableSupplementary);}
+
+  // 5. Semi-monthly: below, at and above each threshold (regular pay only, no contributions).
+  for(const amount of [10416,10417,10418,16666,16667,16668,33332,33333,33334,83332,83333,83334,333332,333333,333334]){
+   const t=wt.calculateWithholdingTax({regularCompensation:amount,supplementaryCompensation:0,period:'semi-monthly',periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:RULES});
+   check('5 Semi-monthly thresholds',`₱${amount.toLocaleString()}`,`taxable regular ₱${amount}`,official('semi-monthly',amount),t.withholdingTax);
+  }
+  // Supplementary pay that crosses into a higher bracket than regular pay.
+  {const t=wt.calculateWithholdingTax({regularCompensation:15000,supplementaryCompensation:5000,period:'semi-monthly',periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:RULES});
+   results.push({scenario:'5 Semi-monthly thresholds',case:'supplementary crosses a bracket',inputs:'taxable regular ₱15,000 + overtime ₱5,000',expected:`${official('semi-monthly',20000)} if the table is applied to the ₱20,000 total`,actual:t.withholdingTax,status:'NOT VERIFIABLE',note:'PBMS keeps the 15% bracket of the regular pay for the whole ₱20,000. Whether the BIR prescribes this or the table on the total needs confirmation against the RR 11-2018 text.'});}
+
+  // 6–8. A full year of semi-monthly cutoffs: the sum withheld must equal the annual tax due (RR 2-98 annualization).
+  const year=(label:string,cutoffs:{regular:number;supp?:number;benefits?:number}[],prior?:{taxable:number;withheld:number;periods:number})=>{
+   const h={regular:0,supplementary:0,benefitPayments:0,taxExemptBenefits:0,mandatoryContributions:0,withheld:0,payrollPeriods:0,cumulativeAverage:false};
+   if(prior){h.regular+=prior.taxable;h.withheld+=prior.withheld;h.payrollPeriods+=prior.periods;h.cumulativeAverage=true}
+   let total=0,last:any;
+   cutoffs.forEach((c,i)=>{
+    const final=i===cutoffs.length-1;
+    const t=wt.calculateWithholdingTax({regularCompensation:c.regular,supplementaryCompensation:c.supp??0,thirteenthMonthAndOtherBenefits:c.benefits??0,period:'semi-monthly',periodStart:'2026-12-16',periodEnd:final?'2026-12-31':'2026-12-15',priorYear:{...h},finalPeriod:final,rules:RULES});
+    total+=t.withholdingTax;last=t;
+    h.regular+=t.regularCompensation;h.supplementary+=t.supplementaryCompensation;h.benefitPayments+=t.benefitPayments;h.withheld+=t.withholdingTax;h.payrollPeriods+=1;if(t.status==='Cumulative average')h.cumulativeAverage=true;
+   });
+   const annualTaxable=cutoffs.reduce((s,c)=>s+c.regular+(c.supp??0),0)+Math.max(0,cutoffs.reduce((s,c)=>s+(c.benefits??0),0)-90000)+(prior?.taxable??0);
+   return {label,expected:official('annual',annualTaxable)-(prior?.withheld??0),actual:r2(total),annualTaxable,lastStatus:last.status};
+  };
+  const flat=Array.from({length:24},()=>({regular:20000}));
+  const raise=Array.from({length:24},(_,i)=>({regular:i<12?15000:30000}));
+  const irregular=Array.from({length:24},(_,i)=>({regular:20000,supp:i%6===0?15000:0}));
+  const low=Array.from({length:24},(_,i)=>({regular:i===3?4000:20000}));
+  const withBonus=Array.from({length:24},(_,i)=>({regular:20000,benefits:i===22?120000:0}));
+  for(const y of [year('flat ₱20,000 every cutoff',flat),year('salary raise mid-year (₱15,000 → ₱30,000)',raise),year('irregular overtime ₱15,000 every 6th cutoff',irregular),year('one low cutoff (absences) then normal',low),year('₱120,000 13th month + bonus in December',withBonus)])
+   check(y.label.includes('raise')||y.label.includes('irregular')||y.label.includes('low')?'6 Cumulative / irregular':'7 December year-end',y.label,`24 semi-monthly cutoffs; annual taxable ₱${y.annualTaxable.toLocaleString()}; last cutoff is Dec 16–31`,y.expected,y.actual,'Sum withheld over the year vs annual tax due (the December adjustment should make them equal).');
+  // 8. Previous employer: ₱150,000 taxable and ₱5,000 withheld elsewhere, then 12 cutoffs here at ₱20,000.
+  {const y=year('previous employer ₱150,000 taxable, ₱5,000 withheld',Array.from({length:12},()=>({regular:20000})),{taxable:150000,withheld:5000,periods:12});
+   check('8 Previous employer',y.label,'12 cutoffs Jul–Dec at ₱20,000; prior employer BIR 2316 figures',y.expected,y.actual,'Tax due on ₱390,000 is ₱21,000 less ₱5,000 already withheld = ₱16,000 to withhold here.');}
+
+  // 9. Minimum wage earner: NCR ₱695/day, 11 days, 20 hours overtime and holiday pay.
+  {const c=calc.calculatePayroll({...base,dailyRate:695,daysWorked:11,otHours:20,holidayPay:1390},{...R,statutoryMinimumWage:695},[],{periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:RULES});
+   check('9 Minimum wage earner','MWE with overtime and holiday pay','₱695/day × 11 days, 20 h OT, ₱1,390 holiday pay',0,c.tax,'SMW, holiday pay, overtime, night differential and hazard pay of an MWE are exempt; PBMS has no MWE flag.');}
+
+  // 10. Weekly table (used when a payroll period is 3–8 days long).
+  {const t=wt.calculateWithholdingTax({regularCompensation:20000,supplementaryCompensation:0,period:'weekly',periodStart:'2026-10-01',periodEnd:'2026-10-07',rules:RULES});
+   check('10 Weekly period','₱20,000 weekly','taxable weekly ₱20,000',official('weekly',20000),t.withholdingTax);}
+
+  writeFileSync('C:/Users/Dayanara/AppData/Local/Temp/claude/c--PAYROLL-SYSTEM/c7b010a7-9142-49cb-a8ae-efe88dec0913/scratchpad/taxaudit/results-after.json',JSON.stringify(results,null,1));
+ });
+});

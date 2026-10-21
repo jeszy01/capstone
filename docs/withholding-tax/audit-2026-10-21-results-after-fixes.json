@@ -1,0 +1,1236 @@
+[
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱0",
+  "inputs": "taxable daily compensation ₱0",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱1",
+  "inputs": "taxable daily compensation ₱1",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱500",
+  "inputs": "taxable daily compensation ₱500",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱684",
+  "inputs": "taxable daily compensation ₱684",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱685",
+  "inputs": "taxable daily compensation ₱685",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱686",
+  "inputs": "taxable daily compensation ₱686",
+  "expected": 0.15,
+  "actual": 0.15,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱1,095",
+  "inputs": "taxable daily compensation ₱1095",
+  "expected": 61.5,
+  "actual": 61.5,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱1,096",
+  "inputs": "taxable daily compensation ₱1096",
+  "expected": 61.65,
+  "actual": 61.65,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱1,097",
+  "inputs": "taxable daily compensation ₱1097",
+  "expected": 61.85,
+  "actual": 61.85,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱1,185",
+  "inputs": "taxable daily compensation ₱1185",
+  "expected": 79.45,
+  "actual": 79.45,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱1,596",
+  "inputs": "taxable daily compensation ₱1596",
+  "expected": 161.65,
+  "actual": 161.65,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱2,191",
+  "inputs": "taxable daily compensation ₱2191",
+  "expected": 280.65,
+  "actual": 280.65,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱2,192",
+  "inputs": "taxable daily compensation ₱2192",
+  "expected": 280.85,
+  "actual": 280.85,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱2,193",
+  "inputs": "taxable daily compensation ₱2193",
+  "expected": 281.1,
+  "actual": 281.1,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱2,692",
+  "inputs": "taxable daily compensation ₱2692",
+  "expected": 405.85,
+  "actual": 405.85,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱5,478",
+  "inputs": "taxable daily compensation ₱5478",
+  "expected": 1102.35,
+  "actual": 1102.35,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱5,479",
+  "inputs": "taxable daily compensation ₱5479",
+  "expected": 1102.6,
+  "actual": 1102.6,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱5,480",
+  "inputs": "taxable daily compensation ₱5480",
+  "expected": 1102.9,
+  "actual": 1102.9,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱5,979",
+  "inputs": "taxable daily compensation ₱5979",
+  "expected": 1252.6,
+  "actual": 1252.6,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱21,917",
+  "inputs": "taxable daily compensation ₱21917",
+  "expected": 6034,
+  "actual": 6034,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱21,918",
+  "inputs": "taxable daily compensation ₱21918",
+  "expected": 6034.3,
+  "actual": 6034.3,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱21,919",
+  "inputs": "taxable daily compensation ₱21919",
+  "expected": 6034.65,
+  "actual": 6034.65,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "daily ₱22,418",
+  "inputs": "taxable daily compensation ₱22418",
+  "expected": 6209.3,
+  "actual": 6209.3,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱0",
+  "inputs": "taxable weekly compensation ₱0",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱1",
+  "inputs": "taxable weekly compensation ₱1",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱500",
+  "inputs": "taxable weekly compensation ₱500",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱4,807",
+  "inputs": "taxable weekly compensation ₱4807",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱4,808",
+  "inputs": "taxable weekly compensation ₱4808",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱4,809",
+  "inputs": "taxable weekly compensation ₱4809",
+  "expected": 0.15,
+  "actual": 0.15,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱5,308",
+  "inputs": "taxable weekly compensation ₱5308",
+  "expected": 75,
+  "actual": 75,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱7,691",
+  "inputs": "taxable weekly compensation ₱7691",
+  "expected": 432.45,
+  "actual": 432.45,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱7,692",
+  "inputs": "taxable weekly compensation ₱7692",
+  "expected": 432.6,
+  "actual": 432.6,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱7,693",
+  "inputs": "taxable weekly compensation ₱7693",
+  "expected": 432.8,
+  "actual": 432.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱8,192",
+  "inputs": "taxable weekly compensation ₱8192",
+  "expected": 532.6,
+  "actual": 532.6,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱15,384",
+  "inputs": "taxable weekly compensation ₱15384",
+  "expected": 1971,
+  "actual": 1971,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱15,385",
+  "inputs": "taxable weekly compensation ₱15385",
+  "expected": 1971.2,
+  "actual": 1971.2,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱15,386",
+  "inputs": "taxable weekly compensation ₱15386",
+  "expected": 1971.45,
+  "actual": 1971.45,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱15,885",
+  "inputs": "taxable weekly compensation ₱15885",
+  "expected": 2096.2,
+  "actual": 2096.2,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱38,461",
+  "inputs": "taxable weekly compensation ₱38461",
+  "expected": 7740.2,
+  "actual": 7740.2,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱38,462",
+  "inputs": "taxable weekly compensation ₱38462",
+  "expected": 7740.45,
+  "actual": 7740.45,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱38,463",
+  "inputs": "taxable weekly compensation ₱38463",
+  "expected": 7740.75,
+  "actual": 7740.75,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱38,962",
+  "inputs": "taxable weekly compensation ₱38962",
+  "expected": 7890.45,
+  "actual": 7890.45,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱153,845",
+  "inputs": "taxable weekly compensation ₱153845",
+  "expected": 42355.35,
+  "actual": 42355.35,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱153,846",
+  "inputs": "taxable weekly compensation ₱153846",
+  "expected": 42355.65,
+  "actual": 42355.65,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱153,847",
+  "inputs": "taxable weekly compensation ₱153847",
+  "expected": 42356,
+  "actual": 42356,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "weekly ₱154,346",
+  "inputs": "taxable weekly compensation ₱154346",
+  "expected": 42530.65,
+  "actual": 42530.65,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱0",
+  "inputs": "taxable semi-monthly compensation ₱0",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱1",
+  "inputs": "taxable semi-monthly compensation ₱1",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱500",
+  "inputs": "taxable semi-monthly compensation ₱500",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱10,416",
+  "inputs": "taxable semi-monthly compensation ₱10416",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱10,417",
+  "inputs": "taxable semi-monthly compensation ₱10417",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱10,418",
+  "inputs": "taxable semi-monthly compensation ₱10418",
+  "expected": 0.15,
+  "actual": 0.15,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱10,917",
+  "inputs": "taxable semi-monthly compensation ₱10917",
+  "expected": 75,
+  "actual": 75,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱16,666",
+  "inputs": "taxable semi-monthly compensation ₱16666",
+  "expected": 937.35,
+  "actual": 937.35,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱16,667",
+  "inputs": "taxable semi-monthly compensation ₱16667",
+  "expected": 937.5,
+  "actual": 937.5,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱16,668",
+  "inputs": "taxable semi-monthly compensation ₱16668",
+  "expected": 937.7,
+  "actual": 937.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱17,167",
+  "inputs": "taxable semi-monthly compensation ₱17167",
+  "expected": 1037.5,
+  "actual": 1037.5,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱33,332",
+  "inputs": "taxable semi-monthly compensation ₱33332",
+  "expected": 4270.5,
+  "actual": 4270.5,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱33,333",
+  "inputs": "taxable semi-monthly compensation ₱33333",
+  "expected": 4270.7,
+  "actual": 4270.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱33,334",
+  "inputs": "taxable semi-monthly compensation ₱33334",
+  "expected": 4270.95,
+  "actual": 4270.95,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱33,833",
+  "inputs": "taxable semi-monthly compensation ₱33833",
+  "expected": 4395.7,
+  "actual": 4395.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱83,332",
+  "inputs": "taxable semi-monthly compensation ₱83332",
+  "expected": 16770.45,
+  "actual": 16770.45,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱83,333",
+  "inputs": "taxable semi-monthly compensation ₱83333",
+  "expected": 16770.7,
+  "actual": 16770.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱83,334",
+  "inputs": "taxable semi-monthly compensation ₱83334",
+  "expected": 16771,
+  "actual": 16771,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱83,833",
+  "inputs": "taxable semi-monthly compensation ₱83833",
+  "expected": 16920.7,
+  "actual": 16920.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱333,332",
+  "inputs": "taxable semi-monthly compensation ₱333332",
+  "expected": 91770.4,
+  "actual": 91770.4,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱333,333",
+  "inputs": "taxable semi-monthly compensation ₱333333",
+  "expected": 91770.7,
+  "actual": 91770.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱333,334",
+  "inputs": "taxable semi-monthly compensation ₱333334",
+  "expected": 91771.05,
+  "actual": 91771.05,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "semi-monthly ₱333,833",
+  "inputs": "taxable semi-monthly compensation ₱333833",
+  "expected": 91945.7,
+  "actual": 91945.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱0",
+  "inputs": "taxable monthly compensation ₱0",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱1",
+  "inputs": "taxable monthly compensation ₱1",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱500",
+  "inputs": "taxable monthly compensation ₱500",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱20,832",
+  "inputs": "taxable monthly compensation ₱20832",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱20,833",
+  "inputs": "taxable monthly compensation ₱20833",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱20,834",
+  "inputs": "taxable monthly compensation ₱20834",
+  "expected": 0.15,
+  "actual": 0.15,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱21,333",
+  "inputs": "taxable monthly compensation ₱21333",
+  "expected": 75,
+  "actual": 75,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱33,332",
+  "inputs": "taxable monthly compensation ₱33332",
+  "expected": 1874.85,
+  "actual": 1874.85,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱33,333",
+  "inputs": "taxable monthly compensation ₱33333",
+  "expected": 1875,
+  "actual": 1875,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱33,334",
+  "inputs": "taxable monthly compensation ₱33334",
+  "expected": 1875.2,
+  "actual": 1875.2,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱33,833",
+  "inputs": "taxable monthly compensation ₱33833",
+  "expected": 1975,
+  "actual": 1975,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱66,666",
+  "inputs": "taxable monthly compensation ₱66666",
+  "expected": 8541.6,
+  "actual": 8541.6,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱66,667",
+  "inputs": "taxable monthly compensation ₱66667",
+  "expected": 8541.8,
+  "actual": 8541.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱66,668",
+  "inputs": "taxable monthly compensation ₱66668",
+  "expected": 8542.05,
+  "actual": 8542.05,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱67,167",
+  "inputs": "taxable monthly compensation ₱67167",
+  "expected": 8666.8,
+  "actual": 8666.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱166,666",
+  "inputs": "taxable monthly compensation ₱166666",
+  "expected": 33541.55,
+  "actual": 33541.55,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱166,667",
+  "inputs": "taxable monthly compensation ₱166667",
+  "expected": 33541.8,
+  "actual": 33541.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱166,668",
+  "inputs": "taxable monthly compensation ₱166668",
+  "expected": 33542.1,
+  "actual": 33542.1,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱167,167",
+  "inputs": "taxable monthly compensation ₱167167",
+  "expected": 33691.8,
+  "actual": 33691.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱666,666",
+  "inputs": "taxable monthly compensation ₱666666",
+  "expected": 183541.5,
+  "actual": 183541.5,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱666,667",
+  "inputs": "taxable monthly compensation ₱666667",
+  "expected": 183541.8,
+  "actual": 183541.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱666,668",
+  "inputs": "taxable monthly compensation ₱666668",
+  "expected": 183542.15,
+  "actual": 183542.15,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "monthly ₱667,167",
+  "inputs": "taxable monthly compensation ₱667167",
+  "expected": 183716.8,
+  "actual": 183716.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱0",
+  "inputs": "taxable annual compensation ₱0",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱1",
+  "inputs": "taxable annual compensation ₱1",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱500",
+  "inputs": "taxable annual compensation ₱500",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱249,999",
+  "inputs": "taxable annual compensation ₱249999",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱250,000",
+  "inputs": "taxable annual compensation ₱250000",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱250,001",
+  "inputs": "taxable annual compensation ₱250001",
+  "expected": 0.15,
+  "actual": 0.15,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱250,500",
+  "inputs": "taxable annual compensation ₱250500",
+  "expected": 75,
+  "actual": 75,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱399,999",
+  "inputs": "taxable annual compensation ₱399999",
+  "expected": 22499.85,
+  "actual": 22499.85,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱400,000",
+  "inputs": "taxable annual compensation ₱400000",
+  "expected": 22500,
+  "actual": 22500,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱400,001",
+  "inputs": "taxable annual compensation ₱400001",
+  "expected": 22500.2,
+  "actual": 22500.2,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱400,500",
+  "inputs": "taxable annual compensation ₱400500",
+  "expected": 22600,
+  "actual": 22600,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱799,999",
+  "inputs": "taxable annual compensation ₱799999",
+  "expected": 102499.8,
+  "actual": 102499.8,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱800,000",
+  "inputs": "taxable annual compensation ₱800000",
+  "expected": 102500,
+  "actual": 102500,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱800,001",
+  "inputs": "taxable annual compensation ₱800001",
+  "expected": 102500.25,
+  "actual": 102500.25,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱800,500",
+  "inputs": "taxable annual compensation ₱800500",
+  "expected": 102625,
+  "actual": 102625,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱1,999,999",
+  "inputs": "taxable annual compensation ₱1999999",
+  "expected": 402499.75,
+  "actual": 402499.75,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱2,000,000",
+  "inputs": "taxable annual compensation ₱2000000",
+  "expected": 402500,
+  "actual": 402500,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱2,000,001",
+  "inputs": "taxable annual compensation ₱2000001",
+  "expected": 402500.3,
+  "actual": 402500.3,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱2,000,500",
+  "inputs": "taxable annual compensation ₱2000500",
+  "expected": 402650,
+  "actual": 402650,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱7,999,999",
+  "inputs": "taxable annual compensation ₱7999999",
+  "expected": 2202499.7,
+  "actual": 2202499.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱8,000,000",
+  "inputs": "taxable annual compensation ₱8000000",
+  "expected": 2202500,
+  "actual": 2202500,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱8,000,001",
+  "inputs": "taxable annual compensation ₱8000001",
+  "expected": 2202500.35,
+  "actual": 2202500.35,
+  "status": "PASS"
+ },
+ {
+  "scenario": "1 Brackets",
+  "case": "annual ₱8,000,500",
+  "inputs": "taxable annual compensation ₱8000500",
+  "expected": 2202675,
+  "actual": 2202675,
+  "status": "PASS"
+ },
+ {
+  "scenario": "2 Contributions",
+  "case": "₱22,000/month: SSS",
+  "inputs": "daily ₱1,000 × 11 days; SSS 5% of ₱22,000 MSC ÷ 2",
+  "expected": 550,
+  "actual": 550,
+  "status": "PASS"
+ },
+ {
+  "scenario": "2 Contributions",
+  "case": "₱22,000/month: PhilHealth",
+  "inputs": "2.5% of ₱22,000 ÷ 2",
+  "expected": 275,
+  "actual": 275,
+  "status": "PASS"
+ },
+ {
+  "scenario": "2 Contributions",
+  "case": "₱22,000/month: Pag-IBIG",
+  "inputs": "2% of ₱10,000 cap ÷ 2",
+  "expected": 100,
+  "actual": 100,
+  "status": "PASS"
+ },
+ {
+  "scenario": "2 Contributions",
+  "case": "₱22,000/month: taxable",
+  "inputs": "₱11,000 − ₱925 contributions",
+  "expected": 10075,
+  "actual": 10075,
+  "status": "PASS"
+ },
+ {
+  "scenario": "2 Contributions",
+  "case": "₱22,000/month: tax",
+  "inputs": "₱10,075 is below ₱10,417",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "2 Contributions",
+  "case": "₱44,000/month: contributions",
+  "inputs": "SSS ₱875 (₱35,000 MSC cap) + PhilHealth ₱550 + Pag-IBIG ₱100",
+  "expected": 1525,
+  "actual": 1525,
+  "status": "PASS"
+ },
+ {
+  "scenario": "2 Contributions",
+  "case": "₱44,000/month: tax",
+  "inputs": "₱22,000 − ₱1,525 = ₱20,475 → ₱937.50 + 20% × ₱3,808",
+  "expected": 1699.1,
+  "actual": 1699.1,
+  "status": "PASS"
+ },
+ {
+  "scenario": "3 Taxable vs non-taxable",
+  "case": "taxable compensation",
+  "inputs": "basic ₱22,000, OT 10 h (₱3,125), ND ₱500, holiday ₱1,000, taxable allowance ₱1,000, non-taxable allowance ₱2,000",
+  "expected": 26100,
+  "actual": 26100,
+  "status": "PASS",
+  "note": "The ₱2,000 non-taxable allowance is never added to taxable pay, yet it is subtracted from it."
+ },
+ {
+  "scenario": "3 Taxable vs non-taxable",
+  "case": "tax",
+  "inputs": "table on ₱26,100 (bracket of regular ₱21,475: 20%)",
+  "expected": 2824.1,
+  "actual": 2824.1,
+  "status": "PASS"
+ },
+ {
+  "scenario": "3 Taxable vs non-taxable",
+  "case": "tax-exempt benefit typed in Review Payroll",
+  "inputs": "basic ₱22,000 + ₱3,000 tax-exempt benefit",
+  "expected": 20475,
+  "actual": 20475,
+  "status": "PASS",
+  "note": "The exempt benefit is subtracted from basic pay instead of only being left out."
+ },
+ {
+  "scenario": "4 13th month ₱90,000",
+  "case": "₱30,000, none paid before: exempt part",
+  "inputs": "₱30,000 13th month, ₱0 benefits earlier in the year",
+  "expected": 30000,
+  "actual": 30000,
+  "status": "PASS"
+ },
+ {
+  "scenario": "4 13th month ₱90,000",
+  "case": "₱30,000, none paid before: tax",
+  "inputs": "fully exempt",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "4 13th month ₱90,000",
+  "case": "₱30,000 after ₱80,000: exempt part",
+  "inputs": "only ₱10,000 of the ₱90,000 is left",
+  "expected": 10000,
+  "actual": 10000,
+  "status": "PASS"
+ },
+ {
+  "scenario": "4 13th month ₱90,000",
+  "case": "₱30,000 after ₱80,000: taxable excess",
+  "inputs": "₱20,000 is taxable",
+  "expected": 20000,
+  "actual": 20000,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱10,416",
+  "inputs": "taxable regular ₱10416",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱10,417",
+  "inputs": "taxable regular ₱10417",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱10,418",
+  "inputs": "taxable regular ₱10418",
+  "expected": 0.15,
+  "actual": 0.15,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱16,666",
+  "inputs": "taxable regular ₱16666",
+  "expected": 937.35,
+  "actual": 937.35,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱16,667",
+  "inputs": "taxable regular ₱16667",
+  "expected": 937.5,
+  "actual": 937.5,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱16,668",
+  "inputs": "taxable regular ₱16668",
+  "expected": 937.7,
+  "actual": 937.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱33,332",
+  "inputs": "taxable regular ₱33332",
+  "expected": 4270.5,
+  "actual": 4270.5,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱33,333",
+  "inputs": "taxable regular ₱33333",
+  "expected": 4270.7,
+  "actual": 4270.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱33,334",
+  "inputs": "taxable regular ₱33334",
+  "expected": 4270.95,
+  "actual": 4270.95,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱83,332",
+  "inputs": "taxable regular ₱83332",
+  "expected": 16770.45,
+  "actual": 16770.45,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱83,333",
+  "inputs": "taxable regular ₱83333",
+  "expected": 16770.7,
+  "actual": 16770.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱83,334",
+  "inputs": "taxable regular ₱83334",
+  "expected": 16771,
+  "actual": 16771,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱333,332",
+  "inputs": "taxable regular ₱333332",
+  "expected": 91770.4,
+  "actual": 91770.4,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱333,333",
+  "inputs": "taxable regular ₱333333",
+  "expected": 91770.7,
+  "actual": 91770.7,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "₱333,334",
+  "inputs": "taxable regular ₱333334",
+  "expected": 91771.05,
+  "actual": 91771.05,
+  "status": "PASS"
+ },
+ {
+  "scenario": "5 Semi-monthly thresholds",
+  "case": "supplementary crosses a bracket",
+  "inputs": "taxable regular ₱15,000 + overtime ₱5,000",
+  "expected": "1604.1 if the table is applied to the ₱20,000 total",
+  "actual": 1437.45,
+  "status": "NOT VERIFIABLE",
+  "note": "PBMS keeps the 15% bracket of the regular pay for the whole ₱20,000. Whether the BIR prescribes this or the table on the total needs confirmation against the RR 11-2018 text."
+ },
+ {
+  "scenario": "7 December year-end",
+  "case": "flat ₱20,000 every cutoff",
+  "inputs": "24 semi-monthly cutoffs; annual taxable ₱480,000; last cutoff is Dec 16–31",
+  "expected": 38500,
+  "actual": 38500,
+  "status": "PASS",
+  "note": "Sum withheld over the year vs annual tax due (the December adjustment should make them equal)."
+ },
+ {
+  "scenario": "6 Cumulative / irregular",
+  "case": "salary raise mid-year (₱15,000 → ₱30,000)",
+  "inputs": "24 semi-monthly cutoffs; annual taxable ₱540,000; last cutoff is Dec 16–31",
+  "expected": 50500,
+  "actual": 50500,
+  "status": "PASS",
+  "note": "Sum withheld over the year vs annual tax due (the December adjustment should make them equal)."
+ },
+ {
+  "scenario": "6 Cumulative / irregular",
+  "case": "irregular overtime ₱15,000 every 6th cutoff",
+  "inputs": "24 semi-monthly cutoffs; annual taxable ₱540,000; last cutoff is Dec 16–31",
+  "expected": 50500,
+  "actual": 50500,
+  "status": "PASS",
+  "note": "Sum withheld over the year vs annual tax due (the December adjustment should make them equal)."
+ },
+ {
+  "scenario": "6 Cumulative / irregular",
+  "case": "one low cutoff (absences) then normal",
+  "inputs": "24 semi-monthly cutoffs; annual taxable ₱464,000; last cutoff is Dec 16–31",
+  "expected": 35300,
+  "actual": 35300,
+  "status": "PASS",
+  "note": "Sum withheld over the year vs annual tax due (the December adjustment should make them equal)."
+ },
+ {
+  "scenario": "7 December year-end",
+  "case": "₱120,000 13th month + bonus in December",
+  "inputs": "24 semi-monthly cutoffs; annual taxable ₱510,000; last cutoff is Dec 16–31",
+  "expected": 44500,
+  "actual": 44500,
+  "status": "PASS",
+  "note": "Sum withheld over the year vs annual tax due (the December adjustment should make them equal)."
+ },
+ {
+  "scenario": "8 Previous employer",
+  "case": "previous employer ₱150,000 taxable, ₱5,000 withheld",
+  "inputs": "12 cutoffs Jul–Dec at ₱20,000; prior employer BIR 2316 figures",
+  "expected": 16000,
+  "actual": 16000,
+  "status": "PASS",
+  "note": "Tax due on ₱390,000 is ₱21,000 less ₱5,000 already withheld = ₱16,000 to withhold here."
+ },
+ {
+  "scenario": "9 Minimum wage earner",
+  "case": "MWE with overtime and holiday pay",
+  "inputs": "₱695/day × 11 days, 20 h OT, ₱1,390 holiday pay",
+  "expected": 0,
+  "actual": 0,
+  "status": "PASS",
+  "note": "SMW, holiday pay, overtime, night differential and hazard pay of an MWE are exempt; PBMS has no MWE flag."
+ },
+ {
+  "scenario": "10 Weekly period",
+  "case": "₱20,000 weekly",
+  "inputs": "taxable weekly ₱20,000",
+  "expected": 3124.95,
+  "actual": 3124.95,
+  "status": "PASS"
+ }
+]

@@ -204,3 +204,12 @@ describe('9. BIR worksheets (1601-C, 2316, alphalist)',()=>{
   expect(csv[1]).toContain('"Cruz, Ana"');
  });
 });
+
+describe('8. Contribution schedule defaults (2025–2026)',()=>{
+ // SSS 15% (employee 5%, employer 10%) on a ₱5,000–₱35,000 salary credit, EC ₱10/₱30 at ₱15,000; PhilHealth 5% split
+ // equally on ₱10,000–₱100,000; Pag-IBIG 2% each on up to ₱10,000 (employee 1% up to ₱1,500). Agency circulars to be
+ // confirmed by the accountant (docs/withholding-tax/accountant-review.md).
+ it('match the schedules reviewed in the audit',()=>{
+  expect(DEFAULT_RATES).toMatchObject({sssRate:5,sssEmployerRate:10,sssMin:5000,sssMax:35000,sssEcLow:10,sssEcHigh:30,sssEcThreshold:15000,philRate:2.5,philEmployerRate:2.5,philTotalRate:5,philMin:10000,philMax:100000,pagibigRate:2,pagibigEmployerRate:2,pagibigMax:10000,pagibigLowerSalaryThreshold:1500,pagibigLowerEmployeeRate:1});
+ });
+});
