@@ -14,9 +14,9 @@ const TONES:Record<string,StatusTone>={};
 const tone=(value:StatusTone,statuses:string[])=>statuses.forEach(status=>{TONES[status]=value});
 tone('success',['active','paid','released','released to finance','reported','reimbursed','verified','eligible','included in payroll','applied','effective','connected','actual','present']);
 tone('info',['approved','payslips generated','released to ess','ready for reimbursement','ready for submission','scheduled','on leave']);
-tone('warning',['pending','pending approval','pending hr approval','pending admin approval','pending hr review','pending estimate','estimate','submitted','awaiting maxicare approval','returned','planned','partially released','pending backend','late']);
+tone('warning',['pending','pending approval','pending hr approval','pending admin approval','pending hr review','pending estimate','estimate','submitted','awaiting maxicare approval','returned','planned','partially released','pending backend','late','incomplete']);
 tone('danger',['rejected','rejected by maxicare','not eligible','validation error','absent','failed']);
-tone('neutral',['inactive','closed','ended','terminated','expired','archived','draft','not released','not submitted','day off']);
+tone('neutral',['inactive','closed','ended','terminated','expired','archived','draft','not released','not submitted','day off','rest day']);
 
 export const statusTone=(status:string):StatusTone=>TONES[status.trim().toLowerCase()]??'neutral';
 /** The pill classes for a status, for places that need a class string instead of the component. */

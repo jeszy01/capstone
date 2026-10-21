@@ -1,11 +1,13 @@
 import {useEffect,useMemo,useState} from 'react';
-import {CalendarCheck,ChevronRight,Clock,Download,Search} from 'lucide-react';
+import {useSearchParams} from 'react-router-dom';
+import {CalendarCheck,ChevronLeft,ChevronRight,Clock,Download,Search} from 'lucide-react';
 import {Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
 import {formatDate} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {fetchAttendance,hr2SyncedThrough,lastHr2Sync,runningRange} from './attendanceService';
-import {recentCutoffs,shortDate,shortRange} from '../settings/payrollSettings';
+import {cutoffFor,loadRates,recentCutoffs,shortDate,shortRange} from '../settings/payrollSettings';
+import {StatusBadge} from '../../components/common/StatusBadge';
 import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
 import {confirmWithPasskey} from '../auth/passkeyGate';
@@ -23,7 +25,6 @@ function workedHours(record:AttendanceRecord){
  return record.status==='Present'&&record.workedHours!=null&&Number.isFinite(Number(record.workedHours))?Number(record.workedHours).toFixed(2):'—';
 }
 const figures=(record:AttendanceRecord)=>({late:record.lateMin??0,under:record.undertimeMin??0,ot:record.otMin??0});
-const weekday=(date:string)=>new Date(`${date}T00:00:00`).toLocaleDateString('en-US',{weekday:'short'});
 const syncedText=(iso:string|null)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'—';
 function useAttendance(from:string,to:string){
  const[records,setRecords]=useState<AttendanceRecord[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
@@ -52,36 +53,88 @@ export default function TimeAttendance(){
  </div>;
 }
 
+const PAGE_SIZE=25;
+const longDay=(date:string)=>new Date(`${date}T00:00:00`).toLocaleDateString('en-US',{weekday:'long'});
+const thisMonth=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
+
+/** Attendance Records: the month's dates grouped by payroll cutoff; a date opens its employees' records. */
 function DailyAttendance({employees}:{employees:Employee[]}){
- // One row per employee per date in the selected cutoff, up to the latest HR2 sync (weekly syncs extend it).
- const cutoffs=useMemo(()=>recentCutoffs(),[]);
- const[cutoff,setCutoff]=useState(cutoffs[0]),[q,setQ]=useState(''),[status,setStatus]=useState('');
- // Only the dates show at first; clicking a date shows its employees (a search shows every matching date's employees).
- const[openDates,setOpenDates]=useState<Set<string>>(new Set());
- const toggleDate=(date:string)=>setOpenDates(current=>{const next=new Set(current);if(next.has(date))next.delete(date);else next.add(date);return next});
- const isOpen=(date:string)=>Boolean(q.trim())||openDates.has(date);
- const running=runningRange(cutoff),through=hr2SyncedThrough();
- const{records,loading,error,reload}=useAttendance(running?.from??'',running?.to??'');
- const employeeFor=(reference:string)=>findAttendanceEmployee(employees,reference);
- const shown=records.filter(record=>{const employee=employeeFor(record.empId);return(!q||`${employee?.name??record.name} ${employee?.employeeNo??record.empId}`.toLowerCase().includes(q.toLowerCase()))&&(!status||attendanceStatus(record)===status)}).sort((a,b)=>a.date.localeCompare(b.date)||(employeeFor(a.empId)?.name||a.name).localeCompare(employeeFor(b.empId)?.name||b.name));
- const headers=['Employee','Date','Time In','Time Out','Worked Hours','Late (min)','Undertime (min)','OT (min)','Leave','Status'];
- // The table groups records by date (a header row per date), so its rows have no Date column; the CSV keeps it.
- const tableHeaders=headers.filter(h=>h!=='Date');
- const byDate=[...new Set(shown.map(r=>r.date))].map(date=>({date,rows:shown.filter(r=>r.date===date)}));
- // Leave in days, matching the Timesheet's Leave total.
- const leaveDays=(record:AttendanceRecord)=>record.status==='On Leave'?1:0;
- const exportRows=async()=>{if(!await confirmWithPasskey('export',`Attendance records (${shortRange(cutoff.from,cutoff.to)}) CSV`))return;exportCsv(`attendance-${cutoff.from}-${cutoff.to}.csv`,headers,shown.map(record=>{const c=figures(record);return [employeeFor(record.empId)?.name||record.name,record.date,record.timeIn||'—',record.timeOut||'—',workedHours(record),c.late,c.under,c.ot,leaveDays(record),attendanceStatus(record)]}))};
+ // The month and the opened date are kept in the address, so Back and refresh keep the view.
+ const[params,setParams]=useSearchParams();
+ const date=params.get('date'),month=params.get('month')??date?.slice(0,7)??thisMonth();
+ return date
+  ?<DateAttendance date={date} employees={employees} onBack={()=>setParams({month:date.slice(0,7)})}/>
+  :<AttendanceDates month={month} employees={employees} onMonth={value=>setParams({month:value},{replace:true})} onOpen={value=>setParams({month:value.slice(0,7),date:value})}/>;
+}
+
+function AttendanceDates({month,employees,onMonth,onOpen}:{month:string;employees:Employee[];onMonth:(month:string)=>void;onOpen:(date:string)=>void}){
+ const rates=loadRates();
+ const cutoffs=rates.payPeriodsPerMonth===2?[{label:'1st Cutoff',...cutoffFor(month,1,rates)},{label:'2nd Cutoff',...cutoffFor(month,2,rates)}]:[{label:'Monthly Cutoff',...cutoffFor(month,1,rates)}];
+ const{records,loading,error,reload}=useAttendance(cutoffs[0].from,cutoffs[cutoffs.length-1].to);
+ const through=hr2SyncedThrough();
+ // Each date with its number of employees (one record per employee per date).
+ const dates=useMemo(()=>{const byDate=new Map<string,Set<string>>();for(const record of records){const key=findAttendanceEmployee(employees,record.empId)?.id??record.empId;byDate.set(record.date,(byDate.get(record.date)??new Set()).add(key))}return [...byDate.entries()].map(([value,people])=>({date:value,employees:people.size})).sort((a,b)=>a.date.localeCompare(b.date))},[records,employees]);
  return <div>
-  <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
-   <select aria-label="Cutoff" className={`${input} !w-auto min-w-[190px] !py-3 max-sm:flex-1`} value={`${cutoff.from}|${cutoff.to}`} onChange={event=>setCutoff(cutoffs.find(item=>`${item.from}|${item.to}`===event.target.value)??cutoffs[0])}>{cutoffs.map(item=><option key={item.from} value={`${item.from}|${item.to}`}>{shortRange(item.from,item.to)}</option>)}</select>
-   <span className="text-[12px] font-medium text-slate-600">Synced up to {running&&through?shortDate(running.to):'—'}</span>
-   <div className="flex min-w-[210px] flex-1 items-center gap-2 rounded-lg border border-[#e3e7ef] bg-white px-3 py-3 max-sm:min-w-full"><Search size={16} className="text-slate-400"/><input aria-label="Employee Search" placeholder="Search employee..." value={q} onChange={event=>setQ(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"/></div>
-   <select aria-label="Attendance status filter" className={`${input} !w-auto min-w-[150px] !py-3 max-sm:flex-1`} value={status} onChange={event=>setStatus(event.target.value)}><option value="">All Status</option>{[['Present','Present'],['Late','Late'],['Absent','Absent'],['On Leave','Leave'],['Rest Day','Rest Day'],['Incomplete','Incomplete']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>
-   <span className="text-[12px] text-slate-500">Last synced: {syncedText(lastHr2Sync())}</span>
-   <button className={ghost} onClick={exportRows}><Download size={15}/>Export</button>
+  <div className="mt-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+   <div className="w-full sm:w-56"><Field label="Month"><TextInput type="month" value={month} onChange={event=>event.target.value&&onMonth(event.target.value)}/></Field></div>
+   <span className="text-[12px] text-slate-500">HR2 data through {through?shortDate(through):'—'} · last received {syncedText(lastHr2Sync())}</span>
   </div>
   {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
-  <Card className="mt-4 overflow-hidden border-slate-200/80 p-0 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">Attendance Records</h2>{byDate.length>0&&!q.trim()&&<div className="flex gap-2"><button type="button" className={ghost} onClick={()=>setOpenDates(new Set(byDate.map(group=>group.date)))}>Show all</button><button type="button" className={ghost} onClick={()=>setOpenDates(new Set())}>Hide all</button></div>}</div><div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[13px]"><thead><tr className={head}>{tableHeaders.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={tableHeaders.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={tableHeaders.length}><Empty>No attendance records for this cutoff.</Empty></td></tr>:byDate.flatMap(({date,rows})=>{const count=(value:string)=>rows.filter(r=>attendanceStatus(r)===value).length;const counts=[['Present',count('Present')],['Late',count('Late')],['Absent',count('Absent')],['On Leave',count('On Leave')],['Incomplete',count('Incomplete')]].filter(([,n])=>Number(n)>0);return [<tr key={date} className={`border-b border-[#e3e7ef] ${isOpen(date)?'bg-blue-50/60':'bg-white hover:bg-slate-50'}`}><td colSpan={tableHeaders.length} className="p-0"><button type="button" aria-expanded={isOpen(date)} onClick={()=>toggleDate(date)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-left"><ChevronRight size={16} className={`shrink-0 text-slate-400 transition-transform ${isOpen(date)?'rotate-90':''}`}/><span className="text-[13px] font-semibold text-[#17345b]">{weekday(date)}, {formatDate(date)}</span><span className="text-[12px] text-[#6b7794]">{rows.length} {rows.length===1?'employee':'employees'}</span><span className="ml-auto text-[11px] text-[#6b7794]">{counts.map(([label,n])=>`${n} ${label}`).join(' · ')}</span></button></td></tr>,...(isOpen(date)?rows.map(r=>{const c=figures(r);return <tr key={`${r.empId}-${r.date}`} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{employeeFor(r.empId)?.name||r.name}</div><div className="text-[11px] text-[#6b7794]">{employeeFor(r.empId)?.employeeNo||r.empId}</div></td><td className="px-4 py-3 tabular-nums">{r.timeIn||'—'}</td><td className="px-4 py-3 tabular-nums">{r.timeOut||'—'}</td><td className="px-4 py-3 tabular-nums">{workedHours(r)}</td><td className="px-4 py-3 tabular-nums">{c.late}</td><td className="px-4 py-3 tabular-nums">{c.under}</td><td className="px-4 py-3 tabular-nums">{c.ot}</td><td className="px-4 py-3 tabular-nums">{leaveDays(r)}</td><td className="px-4 py-3"><span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{attendanceStatus(r)}</span></td></tr>}):[])]})}</tbody></table></div></Card>
+  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+   {cutoffs.map(cutoff=>{const shown=dates.filter(item=>item.date>=cutoff.from&&item.date<=cutoff.to);return <Card key={cutoff.label} className="min-w-0 overflow-hidden border-slate-200/80 !p-0 shadow-sm">
+    <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-5 py-4"><div><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">{cutoff.label}</h2><p className="mb-0 mt-0.5 text-[12px] text-slate-500">{shortRange(cutoff.from,cutoff.to)}</p></div><span className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500">{shown.length} {shown.length===1?'date':'dates'}</span></div>
+    <table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Date','Day','Employees',''].map((label,i)=><th key={label||i} className={`px-5 py-3 ${label==='Employees'?'text-right':''}`}>{label}</th>)}</tr></thead>
+     <tbody>{loading?<tr><td colSpan={4}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={4}><Empty>No attendance received from HR2 for this cutoff yet.</Empty></td></tr>:shown.map(item=><tr key={item.date} className="cursor-pointer border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40" onClick={()=>onOpen(item.date)}>
+      <td className="px-5 py-3"><button type="button" className="font-semibold text-[#17345b] hover:text-blue-700" onClick={event=>{event.stopPropagation();onOpen(item.date)}}>{formatDate(item.date)}</button></td>
+      <td className="px-5 py-3 text-slate-600">{longDay(item.date)}</td>
+      <td className="px-5 py-3 text-right tabular-nums">{item.employees}</td>
+      <td className="w-10 px-3 py-3 text-slate-400"><ChevronRight size={16}/></td>
+     </tr>)}</tbody>
+    </table>
+   </Card>})}
+  </div>
+ </div>;
+}
+
+function DateAttendance({date,employees,onBack}:{date:string;employees:Employee[];onBack:()=>void}){
+ const[q,setQ]=useState(''),[status,setStatus]=useState(''),[page,setPage]=useState(1);
+ const{records,loading,error,reload}=useAttendance(date,date);
+ const employeeFor=(reference:string)=>findAttendanceEmployee(employees,reference);
+ const nameOf=(record:AttendanceRecord)=>employeeFor(record.empId)?.name||record.name||record.empId;
+ const shown=records.filter(record=>{const employee=employeeFor(record.empId);return(!q||`${nameOf(record)} ${employee?.employeeNo??record.empId} ${employee?.department??''}`.toLowerCase().includes(q.toLowerCase()))&&(!status||attendanceStatus(record)===status)}).sort((a,b)=>nameOf(a).localeCompare(nameOf(b)));
+ useEffect(()=>setPage(1),[q,status,date]);
+ const pages=Math.max(1,Math.ceil(shown.length/PAGE_SIZE)),current=Math.min(page,pages),pageRows=shown.slice((current-1)*PAGE_SIZE,current*PAGE_SIZE);
+ const count=(value:string)=>records.filter(record=>attendanceStatus(record)===value).length;
+ const summary:[string,number,string][]=[['Present',count('Present'),'text-emerald-700'],['Late',count('Late'),'text-amber-700'],['Absent',count('Absent'),'text-red-700'],['On Leave',count('On Leave'),'text-blue-700'],['Incomplete',count('Incomplete'),'text-orange-700'],['Rest Day',count('Rest Day'),'text-slate-600']];
+ const headers=['Employee','Time In','Time Out','Worked Hours','Late (min)','Undertime (min)','OT (min)','Leave','Status'];
+ const exportRows=async()=>{if(!await confirmWithPasskey('export',`Attendance records (${formatDate(date)}) CSV`))return;exportCsv(`attendance-${date}.csv`,['Employee','Employee No.','Department','Date',...headers.slice(1)],shown.map(record=>{const c=figures(record),employee=employeeFor(record.empId);return [nameOf(record),employee?.employeeNo??record.empId,employee?.department??'',record.date,record.timeIn||'—',record.timeOut||'—',workedHours(record),c.late,c.under,c.ot,record.status==='On Leave'?(record.leaveType||'Leave'):'—',attendanceStatus(record)]}))};
+ return <div>
+  <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+   <div className="flex items-center gap-3"><button type="button" className={ghost} onClick={onBack}><ChevronLeft size={15}/>Back to Dates</button><div><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">{longDay(date)}, {formatDate(date)}</h2><p className="mb-0 mt-0.5 text-[12px] text-slate-500">Employee Attendance Records · {records.length} {records.length===1?'employee':'employees'}</p></div></div>
+   <button type="button" className={ghost} disabled={!shown.length} onClick={()=>void exportRows()}><Download size={15}/>Export</button>
+  </div>
+  {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
+  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{summary.map(([label,value,color])=><Card key={label} className="border-slate-200/70 !p-4"><div className="text-[11px] font-medium text-slate-500">{label}</div><div className={`mt-1 text-[22px] font-semibold tabular-nums ${color}`}>{loading?'—':value}</div></Card>)}</div>
+  <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+   <Field label="Employee"><div className="relative"><Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><TextInput aria-label="Employee search" placeholder="Name, employee no. or department" value={q} onChange={event=>setQ(event.target.value)} className="pl-9"/></div></Field>
+   <Field label="Status"><select className={input} value={status} onChange={event=>setStatus(event.target.value)}><option value="">All statuses</option>{summary.map(([label])=><option key={label} value={label}>{label}</option>)}</select></Field>
+  </div>
+  <Card className="mt-4 min-w-0 overflow-hidden border-slate-200/80 !p-0 shadow-sm">
+   <div className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-[13px]"><thead><tr className={head}>{headers.map(h=><th key={h} className="whitespace-nowrap px-4 py-3">{h}</th>)}</tr></thead>
+    <tbody>{loading?<tr><td colSpan={headers.length}><LoadingState/></td></tr>:!pageRows.length?<tr><td colSpan={headers.length}><Empty>{records.length?'No employees match these filters.':'No attendance records for this date.'}</Empty></td></tr>:pageRows.map(record=>{const c=figures(record),employee=employeeFor(record.empId);return <tr key={`${record.empId}-${record.date}`} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40">
+     <td className="px-4 py-3"><div className="font-semibold text-slate-800">{nameOf(record)}</div><div className="text-[11px] text-[#6b7794]">{employee?.employeeNo??record.empId}{employee?.department?` · ${employee.department}`:''}</div></td>
+     <td className="px-4 py-3 tabular-nums">{record.timeIn||(record.status==='Present'?<span className="font-semibold text-red-600">Missing</span>:'—')}</td>
+     <td className="px-4 py-3 tabular-nums">{record.timeOut||(record.status==='Present'?<span className="font-semibold text-red-600">Missing</span>:'—')}</td>
+     <td className="px-4 py-3 tabular-nums">{workedHours(record)}</td>
+     <td className={`px-4 py-3 tabular-nums ${c.late?'font-semibold text-amber-700':'text-slate-400'}`}>{c.late||'—'}</td>
+     <td className={`px-4 py-3 tabular-nums ${c.under?'font-semibold text-orange-700':'text-slate-400'}`}>{c.under||'—'}</td>
+     <td className={`px-4 py-3 tabular-nums ${c.ot?'font-semibold text-blue-700':'text-slate-400'}`}>{c.ot||'—'}{c.ot>0&&record.otStatus&&record.otStatus!=='Approved'&&<div className="text-[11px] font-normal text-slate-500">{record.otStatus}</div>}</td>
+     <td className="px-4 py-3 text-slate-600">{record.status==='On Leave'?(record.leaveType||'Leave'):'—'}</td>
+     <td className="px-4 py-3"><StatusBadge status={attendanceStatus(record)}/></td>
+    </tr>})}</tbody>
+   </table></div>
+   {shown.length>PAGE_SIZE&&<div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 text-[12px] text-slate-500"><span>Showing {(current-1)*PAGE_SIZE+1}–{Math.min(current*PAGE_SIZE,shown.length)} of {shown.length}</span><div className="flex items-center gap-2"><button type="button" className={ghost} disabled={current===1} onClick={()=>setPage(current-1)}><ChevronLeft size={14}/>Previous</button><span>Page {current} of {pages}</span><button type="button" className={ghost} disabled={current===pages} onClick={()=>setPage(current+1)}>Next<ChevronRight size={14}/></button></div></div>}
+  </Card>
  </div>;
 }
 
