@@ -14,7 +14,7 @@ import {cell,flushCard,rowHeader,tableHead} from '../../components/common/tableU
 
 // The payroll process, in order, with who does each step.
 const STEPS:[string,string][]=[
- ['Create Payroll','HR'],['Review & Submit','HR'],['Approve','Admin'],['Pay & Generate Payslips','HR'],['Release to ESS','HR'],['Release to Finance','HR'],
+ ['Create Payroll','HR'],['Review & Submit','HR'],['Approve','Admin'],['Pay & Generate Payslips','HR'],['Release to ESS','HR'],['Release','HR'],
 ];
 export function PayrollSteps(){
  return <ol aria-label="Payroll process" className="grid list-none grid-cols-2 gap-2 p-0 lg:grid-cols-3 2xl:grid-cols-6">

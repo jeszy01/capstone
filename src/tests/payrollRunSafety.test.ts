@@ -41,7 +41,7 @@ describe('payroll run stages shown in Payroll Runs',()=>{
   expect(runStage({status:'Approved'})).toBe('Approved');
   expect(runStage({status:'Approved',payslipsGeneratedAt:'x'})).toBe('Payslips Generated');
   expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'}})).toBe('Released to ESS');
-  expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'},releasedAt:'x'})).toBe('Released to Finance');
+  expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'},releasedAt:'x'})).toBe('Released');
   expect(runNextStep({status:'Approved'})).toMatch('generates the payslips');
  });
 });

@@ -30,10 +30,10 @@ export const runStatusLabel=(run:Pick<PayrollRun,'status'|'releasedAt'>)=>run.st
 export type PaymentMethod='Bank Transfer'|'Direct Deposit';
 
 /** Where a run is in the payroll process. */
-export type RunStage='Pending Approval'|'Rejected'|'Approved'|'Payslips Generated'|'Released to ESS'|'Released to Finance';
+export type RunStage='Pending Approval'|'Rejected'|'Approved'|'Payslips Generated'|'Released to ESS'|'Released';
 export function runStage(run:Pick<PayrollRun,'status'|'payslipsGeneratedAt'|'released'|'releasedAt'>):RunStage{
  if(run.status!=='Approved')return run.status;
- if(run.releasedAt)return 'Released to Finance';
+ if(run.releasedAt)return 'Released';
  if(run.released&&Object.keys(run.released).length)return 'Released to ESS';
  return run.payslipsGeneratedAt?'Payslips Generated':'Approved';
 }
@@ -42,8 +42,8 @@ const NEXT_STEP:Record<RunStage,string>={
  'Rejected':'Closed. Submit a new payroll for this cutoff.',
  'Approved':'HR pays and generates the payslips.',
  'Payslips Generated':'HR releases payslips to ESS (Payslip tab).',
- 'Released to ESS':'Release remaining departments, then to Finance.',
- 'Released to Finance':'Complete. The run is locked.',
+ 'Released to ESS':'Release remaining departments, then release the run.',
+ 'Released':'Complete. The run is locked.',
 };
 export const runNextStep=(run:Pick<PayrollRun,'status'|'payslipsGeneratedAt'|'released'|'releasedAt'>)=>NEXT_STEP[runStage(run)];
 
