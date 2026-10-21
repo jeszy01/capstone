@@ -74,7 +74,9 @@ export interface WithholdingTaxInput{
 }
 export interface WithholdingTaxBreakdown{
  status:'Calculated'|'Cumulative average'|'Year-end adjusted';ruleId:string;ruleSource:string;period:PayrollPeriod;
- grossCompensation:number;regularCompensation:number;supplementaryCompensation:number;benefitPayments:number;benefitExemptionApplied:number;taxExemptBenefits:number;mandatoryContributions:number;taxableRegular:number;taxableSupplementary:number;taxableCompensation:number;taxBeforeAdjustment:number;yearToDateTaxableCompensation?:number;annualTaxLiability?:number;priorTaxWithheld?:number;withholdingTax:number;explanation:string;
+ grossCompensation:number;regularCompensation:number;supplementaryCompensation:number;benefitPayments:number;benefitExemptionApplied:number;taxExemptBenefits:number;mandatoryContributions:number;taxableRegular:number;taxableSupplementary:number;taxableCompensation:number;taxBeforeAdjustment:number;yearToDateTaxableCompensation?:number;
+ /** Minimum wage earner: the exempt statutory minimum wage, holiday pay, overtime, night differential and paid leave. */
+ minimumWageEarner?:boolean;mweExempt?:{basic:number;holidayPay:number;overtime:number;nightDifferential:number;leavePay:number};annualTaxLiability?:number;priorTaxWithheld?:number;withholdingTax:number;explanation:string;
 }
 export function calculateWithholdingTax(input:WithholdingTaxInput):WithholdingTaxBreakdown{
  const rules=input.rules??loadWithholdingRules();const rule=ruleForDate(input.periodEnd||input.periodStart,rules);

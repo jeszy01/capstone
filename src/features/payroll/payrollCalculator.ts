@@ -52,9 +52,15 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const pagibig=has?round(Math.min(monthly,R.pagibigMax)*pagibigEmployeeRate(monthly,R)/100/R.payPeriodsPerMonth):0;
  const periodStart=taxContext.periodStart??new Date().toISOString().slice(0,10),periodEnd=taxContext.periodEnd??periodStart;
  const period=taxContext.period??(taxContext.periodStart||taxContext.periodEnd?detectPayrollPeriod(periodStart,periodEnd,R.payPeriodsPerMonth):(R.payPeriodsPerMonth===1?'monthly':'semi-monthly'));
- const regular=Math.max(0,basic-absences-late-undertime)+taxableAllowances;
- const supplementary=overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+numberValue(r.otherEarnings);
- const taxBreakdown=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:thirteenth,taxExemptBenefits:taxExempt,mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules});
+ // A minimum wage earner (daily rate at or below the statutory minimum wage set in Payroll Settings) is exempt on the
+ // statutory minimum wage, holiday pay, overtime and night differential (NIRC Sec. 24(A)(2), RR 11-2018); paid leave is
+ // treated as part of the minimum wage. Taxable allowances, bonuses and benefits above ₱90,000 stay taxable.
+ const minimumWage=numberValue(R.statutoryMinimumWage),mwe=minimumWage>0&&rate>0&&rate<=minimumWage;
+ const earnedBasicPay=Math.max(0,basic-absences-late-undertime);
+ const regular=mwe?taxableAllowances:earnedBasicPay+taxableAllowances;
+ const supplementary=mwe?numberValue(r.slConversion)+numberValue(r.otherEarnings):overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+numberValue(r.otherEarnings);
+ const computedTax=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:thirteenth,taxExemptBenefits:taxExempt,mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules});
+ const taxBreakdown=mwe?{...computedTax,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:computedTax;
  const tax=taxBreakdown.withholdingTax;
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance)+numberValue(r.govSssLoan)+numberValue(r.govPagibigLoan));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));

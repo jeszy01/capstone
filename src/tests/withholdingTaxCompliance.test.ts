@@ -119,3 +119,26 @@ describe('4. Annualization when an employee leaves before year end',()=>{
   expect(isFinalTaxRow({runType:'thirteenth-month',to:'2026-12-31'},{separated:true})).toBe(false);
  });
 });
+
+describe('5. Minimum wage earners',()=>{
+ const ncr={...DEFAULT_RATES,statutoryMinimumWage:695};
+ it('withholds nothing on the minimum wage, overtime and holiday pay',()=>{
+  const c=cutoff({dailyRate:695,daysWorked:11,otHours:20,holidayPay:1390,nightDifferential:300},{},ncr);
+  expect(c.tax).toBe(0);
+  expect(c.taxBreakdown).toMatchObject({minimumWageEarner:true,mweExempt:{basic:7645,holidayPay:1390,nightDifferential:300}});
+ });
+ it('still taxes a taxable bonus paid to a minimum wage earner',()=>{
+  // Contributions on ₱15,290/month: SSS ₱387.50, PhilHealth ₱191.13, Pag-IBIG ₱100 = ₱678.63; taxable ₱15,000 − ₱678.63.
+  const c=cutoff({dailyRate:695,daysWorked:11,otherEarnings:15000},{},ncr);
+  expect(c.taxBreakdown!.taxableCompensation).toBe(r2(15000-678.63));
+  expect(c.tax).toBe(officialTax('semi-monthly',r2(15000-678.63)));
+ });
+ it('treats a daily rate above the minimum wage as an ordinary employee',()=>{
+  const c=cutoff({dailyRate:1000,daysWorked:11,otHours:20},{},ncr);
+  expect(c.taxBreakdown!.minimumWageEarner).toBeUndefined();
+  expect(c.tax).toBeGreaterThan(0);
+ });
+ it('applies no exemption while the minimum wage is not set',()=>{
+  expect(cutoff({dailyRate:695,daysWorked:11,otHours:20,holidayPay:1390}).taxBreakdown!.minimumWageEarner).toBeUndefined();
+ });
+});

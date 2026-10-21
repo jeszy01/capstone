@@ -47,6 +47,7 @@ export const RATE_FIELDS:Record<'time'|'schedule'|'holiday'|'sss'|'philhealth'|'
   {key:'otRestMultiplier',label:'Rest day overtime multiplier',unit:'x'},
   {key:'ndRate',label:'Night differential',unit:'%',percent:true},
   {key:'otMinMinutes',label:'Overtime minimum threshold',unit:'min',integer:true},
+  {key:'statutoryMinimumWage',label:'Statutory minimum wage per day (minimum wage earner tax exemption; 0 = not used)',unit:'₱'},
  ],
  schedule:[
   {key:'payPeriodsPerMonth',label:'Pay periods per month',unit:'periods',integer:true},
