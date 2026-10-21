@@ -49,6 +49,10 @@ describe('13th month pay',()=>{
   const lines=computeThirteenthMonth({runs,employees,rules:{...DEFAULT_THIRTEENTH_MONTH_RULES,excludeOvertime:false,managerialPositions:['Operations Manager']},releaseDate:'2026-12-15'});
   expect(lines[0]).toMatchObject({basicEarned:129000,accrued:10750});
  });
+ it('uses basic pay after late and undertime deductions',()=>{
+  const late=[run({},[{empId:'A',position:'Engineer',earned:12000,extra:{late:600,undertime:600}}])];
+  expect(computeThirteenthMonth({runs:late,employees,rules:DEFAULT_THIRTEENTH_MONTH_RULES,releaseDate:'2026-12-15'})[0]).toMatchObject({basicEarned:10800,accrued:900});
+ });
  it('counts full months of service',()=>{
   expect(monthsOfService('2026-11-16','2026-12-15')).toBe(0);
   expect(monthsOfService('2026-11-15','2026-12-15')).toBe(1);

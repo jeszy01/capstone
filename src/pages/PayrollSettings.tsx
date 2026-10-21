@@ -72,7 +72,9 @@ function WorkingTimeSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps
  return <SectionShell title="Working Time & Overtime" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}><div className={grid}>
   {rate('hoursPerDay')}{rate('daysPerMonth')}{time('shiftStart','Shift start')}{time('shiftEnd','Shift end')}{rate('otMultiplier')}{rate('otRestMultiplier')}{rate('ndRate')}{time('ndStart','Night differential start')}{time('ndEnd','Night differential end')}{rate('otMinMinutes')}
   <Field label="Rounding rule"><select className={input} disabled={!editing} value={draft.time.otRounding} onChange={event=>setDraft({...draft,time:{...draft.time,otRounding:event.target.value as OvertimeRounding}})}>{OVERTIME_ROUNDING.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field>
- </div></SectionShell>;
+ </div>
+  <p className="mb-0 mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-600">Shift start and end, the overtime minimum threshold and the rounding rule are for reference only. HR2 computes late, undertime and overtime minutes, and payroll uses its figures as received (overtime only when approved).</p>
+ </SectionShell>;
 }
 
 function PayScheduleSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){

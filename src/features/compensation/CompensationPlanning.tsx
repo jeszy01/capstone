@@ -28,12 +28,12 @@ import {
 } from '../../components/common/ui';
 import {employeeService} from '../employees/employeeService';
 import {employeePositionOptions} from '../employees/positionOptions';
-import type {Employee,PayrollInput} from '../../types/domain';
+import type {Employee} from '../../types/domain';
 import {recordAudit} from '../audit/auditService';
 import {can} from '../auth/permissions';
 import {loadRates} from '../settings/payrollSettings';
 import {useSearchParams} from 'react-router-dom';
-import {numberValue,peso,read,write} from '../../utils/storage';
+import {numberValue,peso,read} from '../../utils/storage';
 import {compensationService} from './compensationService';
 import {AllowancesPanel,IncentivesPanel} from './RewardPanels';
 import {ConfirmDialog,InlineError,SearchToolbar,SectionHeading,StatusBadge,TableMessage,actionCell,actionLabel,formatDate,headerClass,matches,rowClass,tableClass,wholePeso} from './compensationUi';
@@ -315,26 +315,6 @@ export default function CompensationPlanning({section}:{section:Section}){
     });
   };
 
-  useEffect(()=>{
-    const records=read<PayrollInput[]>('payroll:records',[]);
-    if(!records.length||!activeAssignments.length)return;
-    let changed=false;
-    const next=records.map(record=>{
-      const assignment=activeAssignments.find(item=>{
-        const employee=findCompensationEmployee(employees,item.employeeId);
-        return record.empId===item.employeeId||record.empId===employee?.employeeNo;
-      });
-      if(!assignment)return record;
-      const employee=findCompensationEmployee(employees,assignment.employeeId);
-      const name=employee?.name||record.name;
-      const graded=grades.some(grade=>grade.code.trim().toLowerCase()===assignment.salaryCode.trim().toLowerCase());
-      const dailyRate=graded?assignment.dailyRate:dailyFromSalary(assignment.fixedSalary,daysPerMonth);
-      if(Number(record.dailyRate)===dailyRate&&record.name===name)return record;
-      changed=true;
-      return {...record,dailyRate,name};
-    });
-    if(changed)write('payroll:records',next);
-  },[activeAssignments,employees,daysPerMonth,grades]);
 
   const employeePanel=!(section==='salary-structure'&&structureTab==='grades');
   return <div className="space-y-5">

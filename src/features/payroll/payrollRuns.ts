@@ -33,6 +33,8 @@ export const periodLabel=(from:string,to:string)=>`${label(from)} - ${label(to)}
 export const isThirteenthMonthRun=(run:Pick<PayrollRun,'runType'>)=>run.runType==='thirteenth-month';
 // A 13th month run is dated on its release day; tax it with the regular pay-period table.
 export const runTaxPeriod=(run:Pick<PayrollRun,'runType'>,payPeriodsPerMonth:number)=>isThirteenthMonthRun(run)?(payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const):undefined;
+/** The most recently created regular payroll run that was not rejected; the Dashboard and payroll cards summarize it. */
+export const latestPayrollRun=(runs:PayrollRun[])=>runs.filter(run=>run.status!=='Rejected'&&!isThirteenthMonthRun(run)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
 export const runLabel=(run:Pick<PayrollRun,'runType'|'from'|'to'>)=>isThirteenthMonthRun(run)?`13th Month Pay · ${label(run.to)}`:periodLabel(run.from,run.to);
 /** The cutoff containing today, from the Pay Schedule settings. */
 export const cutoffRange=()=>{const d=new Date(),date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;return cutoffFor(date.slice(0,7),cutoffNumberFor(date))};
@@ -59,7 +61,6 @@ export async function decideRun(id:string,status:'Approved'|'Rejected',by:string
   if(!decided.run||decided.run.status!=='Pending Approval')throw new Error('This payroll run is no longer pending approval.');
   return runs.map(item=>item.id===id?{...item,status,decidedBy:by,decidedAt:new Date().toISOString()}:item);
  });
- if(status==='Approved'&&decided.run){const stamp=Date.now();write('payroll:records',decided.run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
  return next;
 }
 

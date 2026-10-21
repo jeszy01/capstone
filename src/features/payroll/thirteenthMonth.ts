@@ -46,7 +46,8 @@ export function computeThirteenthMonth({runs,employees,rules,releaseDate}:{runs:
   if(isThirteenthMonthRun(run))line.released+=numberValue(row.input.thirteenthMonthAndOtherBenefits);
   else{
    const result=row.result;
-   line.basicEarned+=(result.earnedBasic??result.basic-(result.absences??0))+result.leavePay
+   // Basic pay actually earned: after absences, late and undertime.
+   line.basicEarned+=Math.max(0,(result.earnedBasic??result.basic-(result.absences??0))-(result.late??0)-(result.undertime??0))+result.leavePay
     +(rules.excludeAllowances?0:result.allowances??0)
     +(rules.excludeOvertime?0:result.overtime)
     +(rules.excludeHolidayPay?0:numberValue(row.input.holidayPay))
