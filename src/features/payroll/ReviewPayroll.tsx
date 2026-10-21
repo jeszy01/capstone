@@ -8,6 +8,7 @@ import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
 import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
 import {fetchAttendance} from '../attendance/attendanceService';
 import {attendanceGaps} from '../attendance/workDays';
+import {finalCutoffBlocked,isYearEndCutoff,yearToDateHistory} from './taxHistory';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
@@ -15,7 +16,7 @@ import {getCurrentUser} from '../auth/authService';
 import {notifyPayrollApproved,notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
-import {BLANK_PAYROLL_INPUT,RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod,updateRuns} from './payrollRuns';
+import {BLANK_PAYROLL_INPUT,RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,updateRuns} from './payrollRuns';
 import {cutoffSynced} from '../attendance/attendanceService';
 import type {ManualAdjustment,PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
 import {recordAudit} from '../audit/auditService';
@@ -23,8 +24,7 @@ import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
 import {activeCompensations,isBonusReward} from '../compensation/compensationState';
 import {numberValue,peso,read} from '../../utils/storage';
-import {loadWithholdingRules,ruleForDate} from './withholdingTax';
-import type {AnnualTaxHistory} from './withholdingTax';
+import {loadWithholdingRules} from './withholdingTax';
 import {compensationService} from '../compensation/compensationService';
 import {loanService} from '../deductions/loanService';
 import {governmentLoanService} from '../governmentLoans/governmentLoanService';
@@ -60,16 +60,10 @@ export default function ReviewPayroll(){
  const[error,setError]=useState('');
  const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
  const[loanError,setLoanError]=useState('');
- const priorHistory=(employeeId:string):AnnualTaxHistory=>{
-  const year=from.slice(0,4);const priorRuns=read<PayrollRun[]>(RUNS_KEY,[]).filter(run=>run.status==='Approved'&&run.from.slice(0,4)===year&&run.to<from);
-  return priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===employeeId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{
-   const historical=calculatePayroll(entry.item.input,rates,[],{periodStart:entry.run.from,periodEnd:entry.run.to,period:runTaxPeriod(entry.run,rates.payPeriodsPerMonth)});
-   const b=entry.item.result.taxBreakdown??historical.taxBreakdown!;
-   total.regular+=b.regularCompensation;total.supplementary+=b.supplementaryCompensation;total.benefitPayments+=b.benefitPayments;total.taxExemptBenefits+=b.taxExemptBenefits;total.mandatoryContributions+=b.mandatoryContributions;total.withheld+=entry.item.result.tax;total.payrollPeriods+=1;if(b.status==='Cumulative average')total.cumulativeAverage=true;return total;
-  },{regular:0,supplementary:0,benefitPayments:0,taxExemptBenefits:0,mandatoryContributions:0,withheld:0,payrollPeriods:0});
- };
  const payPeriod=rates.payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const;
- const calc=(row:RunRow)=>{const rules=loadWithholdingRules();const history=priorHistory(row.input.empId);const previousBenefits=numberValue(row.input.priorEmployerBenefitsPaid);const previousTaxable=numberValue(row.input.priorEmployerTaxableCompensation);const previousPeriods=numberValue(row.input.priorEmployerPayrollPeriods);const cap=ruleForDate(to,rules).annualBenefitsExemption;history.regular+=Math.max(0,previousTaxable-Math.max(0,previousBenefits-cap));history.benefitPayments+=previousBenefits;history.withheld+=numberValue(row.input.priorEmployerWithheld);history.payrollPeriods+=previousPeriods;if(previousTaxable>0||previousPeriods>0)history.cumulativeAverage=true;if(thirteenth)return calculatePayroll(row.input,rates,[],{periodStart:from,periodEnd:to,period:payPeriod,priorYear:history,rules});return calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:to.slice(5,7)==='12'&&Number(to.slice(8,10))===new Date(Date.UTC(Number(to.slice(0,4)),12,0)).getUTCDate(),rules})};
+ // The last December payroll is the year-end adjustment: it annualizes the year's pay and withholding.
+ const yearEnd=!thirteenth&&isYearEndCutoff(to);
+ const calc=(row:RunRow)=>{const rules=loadWithholdingRules();const history=yearToDateHistory(read<PayrollRun[]>(RUNS_KEY,[]),row,{year:from.slice(0,4),from,to,currentRunId:saved?.id,final:yearEnd},rates,rules);if(thirteenth)return calculatePayroll(row.input,rates,[],{periodStart:from,periodEnd:to,period:payPeriod,priorYear:history,rules});return calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:yearEnd,rules})};
 
  useEffect(()=>{
   if(saved||!from||!to)return;
@@ -180,7 +174,9 @@ const built:RunRow[]=[];
   // Checked against the server's current runs, so a run another user submitted meanwhile is seen.
   const blockedBy=(runs:PayrollRun[])=>{
    if(runs.some(run=>run.from===from&&run.to===to&&run.status!=='Rejected'))return 'A payroll for this cutoff has already been submitted.';
+   if(yearEnd)return finalCutoffBlocked(runs,from.slice(0,4));
    if(!thirteenth)return '';
+   if(runs.some(run=>!isThirteenthMonthRun(run)&&run.status!=='Rejected'&&run.to===`${to.slice(0,4)}-12-31`))return `The ${to.slice(0,4)} year-end tax adjustment was already made in the last December payroll. Release 13th month pay before submitting the last December payroll.`;
    const rules=loadThirteenthMonthRules(),year=to.slice(0,4),deadline=releaseDeadlineFor(year,rules);
    const releases=runs.filter(run=>isThirteenthMonthRun(run)&&run.to.slice(0,4)===year&&run.status!=='Rejected');
    return to>deadline?`13th month pay for ${year} must be released on or before ${periodLabel(deadline,deadline).split(' - ')[0]}.`

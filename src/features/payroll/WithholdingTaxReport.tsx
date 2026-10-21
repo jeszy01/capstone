@@ -9,8 +9,9 @@ import {calculatePayroll} from './payrollCalculator';
 import {loadRates} from '../settings/payrollSettings';
 import {RUNS_KEY,periodLabel,isThirteenthMonthRun,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
-import {loadWithholdingRules,ruleForDate,validateRuleSet} from './withholdingTax';
+import {loadWithholdingRules,validateRuleSet} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
+import {isYearEndCutoff,yearToDateHistory} from './taxHistory';
 import {confirmWithPasskey} from '../auth/passkeyGate';
 import {StatusBadge} from '../../components/common/StatusBadge';
 
@@ -21,15 +22,9 @@ type Entry={key:string;run:PayrollRun;row:RunRow;result:PayrollResult;employee?:
 const rowKey=(runId:string,empId:string,index:number)=>`${runId}:${empId}:${index}`;
 function employeeFor(employees:Employee[],input:PayrollInput){return employees.find(employee=>employee.id===input.empId||employee.employeeNo===input.empId)}
 function reportStatus(entry:Entry){return entry.error?'Validation error':entry.run.status==='Approved'?'Actual':entry.run.status==='Rejected'?'Rejected':entry.recalculated||entry.result.taxBreakdown?'Estimate':'Pending estimate'}
+// The same year-to-date history Review Payroll uses (see taxHistory.ts).
 function priorHistory(runs:PayrollRun[],currentRun:PayrollRun,row:RunRow,allRules=loadWithholdingRules(),currentRates:PayrollRates=rates):AnnualTaxHistory{
- const priorRuns=runs.filter(run=>run.id!==currentRun.id&&run.status==='Approved'&&run.from.slice(0,4)===currentRun.from.slice(0,4)&&run.to<currentRun.from);
- const history=priorRuns.flatMap(run=>run.rows.filter(item=>item.input.empId===row.input.empId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,entry)=>{
-  const breakdown=entry.item.result.taxBreakdown??calculatePayroll(entry.item.input,currentRates,[],{periodStart:entry.run.from,periodEnd:entry.run.to,period:runTaxPeriod(entry.run,currentRates.payPeriodsPerMonth),rules:allRules}).taxBreakdown!;
-  total.regular+=breakdown.regularCompensation;total.supplementary+=breakdown.supplementaryCompensation;total.benefitPayments+=breakdown.benefitPayments;total.taxExemptBenefits+=breakdown.taxExemptBenefits;total.mandatoryContributions+=breakdown.mandatoryContributions;total.withheld+=entry.item.result.tax;total.payrollPeriods+=1;if(breakdown.status==='Cumulative average')total.cumulativeAverage=true;return total;
- },{regular:0,supplementary:0,benefitPayments:0,taxExemptBenefits:0,mandatoryContributions:0,withheld:0,payrollPeriods:0});
- const previousBenefits=numberValue(row.input.priorEmployerBenefitsPaid),previousTaxable=numberValue(row.input.priorEmployerTaxableCompensation),previousPeriods=numberValue(row.input.priorEmployerPayrollPeriods),cap=ruleForDate(currentRun.to,allRules).annualBenefitsExemption;
- history.regular+=Math.max(0,previousTaxable-Math.max(0,previousBenefits-cap));history.benefitPayments+=previousBenefits;history.withheld+=numberValue(row.input.priorEmployerWithheld);history.payrollPeriods+=previousPeriods;if(previousTaxable>0||previousPeriods>0)history.cumulativeAverage=true;
- return history;
+ return yearToDateHistory(runs,row,{year:currentRun.from.slice(0,4),from:currentRun.from,to:currentRun.to,currentRunId:currentRun.id,final:!isThirteenthMonthRun(currentRun)&&isYearEndCutoff(currentRun.to)},currentRates,allRules);
 }
 function validationForRun(run:PayrollRun,employees:Employee[],rosterReady:boolean,rules=loadWithholdingRules()):string[]{
  const errors:string[]=[];

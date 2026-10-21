@@ -52,3 +52,46 @@ describe('2. Non-taxable amounts are left out once, not subtracted from taxable 
   expect(c.tax).toBe(officialTax('semi-monthly',20475));
  });
 });
+
+import {finalCutoffBlocked,taxHistoryRuns,yearToDateHistory} from '../features/payroll/taxHistory';
+import type {PayrollRun} from '../features/payroll/payrollRuns';
+const cutoffs2026=()=>Array.from({length:12},(_,m)=>{const mm=String(m+1).padStart(2,'0'),last=new Date(Date.UTC(2026,m+1,0)).getUTCDate();return [[`2026-${mm}-01`,`2026-${mm}-15`],[`2026-${mm}-16`,`2026-${mm}-${last}`]]}).flat();
+// Runs a year of payroll the way Review Payroll does: each cutoff is computed from the history of the runs before it.
+function payYear(thirteenthOn:string|null,status:PayrollRun['status']='Approved'){
+ const rules=[DEFAULT_WITHHOLDING_RULES],runs:PayrollRun[]=[];let withheld=0;
+ const add=(id:string,from:string,to:string,input:Partial<PayrollInput>,thirteenth:boolean)=>{
+  const row={input:{...BLANK_PAYROLL_INPUT,empId:'E',name:'E',...input}};
+  const final=!thirteenth&&to.endsWith('-12-31');
+  const history=yearToDateHistory(runs,row,{year:'2026',from,to,final},DEFAULT_RATES,rules);
+  const result=calculatePayroll(row.input,DEFAULT_RATES,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:final,rules,...(thirteenth?{period:'semi-monthly' as const}:{})});
+  withheld+=result.tax;
+  runs.push({id,runType:thirteenth?'thirteenth-month':'regular',from,to,status,rows:[{position:'',rest:0,hmo:0,input:row.input,result}],totals:{gross:0,deductions:0,net:0},preparedBy:'',createdAt:''});
+ };
+ for(const [i,[from,to]] of cutoffs2026().entries()){
+  if(thirteenthOn&&from<=thirteenthOn&&thirteenthOn<=to&&to!=='2026-12-31')continue;
+  if(to==='2026-12-31'&&thirteenthOn)add('13th',thirteenthOn,thirteenthOn,{thirteenthMonthAndOtherBenefits:120000},true);
+  add(`r${i}`,from,to,{dailyRate:2000,daysWorked:10},false);
+ }
+ return {runs,withheld:r2(withheld)};
+}
+
+describe('3. December year-end adjustment',()=>{
+ // Each cutoff: ₱20,000 basic − ₱1,525 contributions = ₱18,475 taxable; 24 cutoffs = ₱443,400.
+ // 13th month ₱120,000: ₱30,000 above the ₱90,000 exemption. Annual taxable ₱473,400 → ₱22,500 + 20% × ₱73,400.
+ it('includes a 13th month run released inside the last December cutoff',()=>{
+  const {withheld}=payYear('2026-12-20');
+  expect(withheld).toBe(officialTax('annual',473400));
+ });
+ it('withholds the annual tax due without a 13th month run',()=>{
+  expect(payYear(null).withheld).toBe(officialTax('annual',443400));
+ });
+ it('counts pending runs in ordinary cutoffs but only approved runs in the year-end adjustment',()=>{
+  const runs=[{id:'a',from:'2026-11-16',to:'2026-11-30',status:'Pending Approval'},{id:'b',from:'2026-12-01',to:'2026-12-15',status:'Approved'},{id:'c',from:'2026-12-20',to:'2026-12-20',status:'Approved',runType:'thirteenth-month'}] as PayrollRun[];
+  expect(taxHistoryRuns(runs,{year:'2026',from:'2026-12-01',to:'2026-12-15',final:false}).map(run=>run.id)).toEqual(['a']);
+  expect(taxHistoryRuns(runs,{year:'2026',from:'2026-12-16',to:'2026-12-31',final:true}).map(run=>run.id)).toEqual(['b','c']);
+ });
+ it('blocks the year-end payroll while a run of the year is still pending',()=>{
+  expect(finalCutoffBlocked([{id:'a',from:'2026-12-20',to:'2026-12-20',status:'Pending Approval'} as PayrollRun],'2026')).toMatch('Approve or reject the pending payroll first');
+  expect(finalCutoffBlocked([{id:'a',from:'2026-12-01',to:'2026-12-15',status:'Approved'} as PayrollRun],'2026')).toBe('');
+ });
+});
