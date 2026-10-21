@@ -35,6 +35,8 @@ type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeduction
 const editLabels:Record<EditKey,string>={sssLoan:'SSS Loan',pagibigLoan:'Pag-IBIG Loan',companyLoan:'Company Loan',cashAdvance:'Cash Advance',otherDeductions:'Other Deductions',thirteenthMonthAndOtherBenefits:'13th-month & other benefits',taxExemptBenefits:'Tax-exempt benefits',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
 const blank=BLANK_PAYROLL_INPUT;
+// Loan installments come from the approved loan schedules and cannot be typed in.
+const automatedLoanFields:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance'];
 const governmentLoanSum=(row:RunRow)=>{const loans=rowLoanAmounts(row.input,row.governmentLoans);return loans.govSssLoan+loans.govPagibigLoan};
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Night Differential','Holiday Pay','Leave Pay','Allowances','Incentives & Bonuses','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','Government Loans','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','13th-month & other benefits','Tax-exempt benefits','Prior-employer taxable YTD','Prior-employer benefits YTD','Prior-employer tax withheld','Prior-employer payroll periods','Total'];
@@ -151,7 +153,6 @@ const built:RunRow[]=[];
  const adjustmentsFor=(row:RunRow):ManualAdjustment[]=>changes.filter(change=>change.empId===row.input.empId).map(({field,label,original,amount,empId})=>({field,label,original,amount,reason:(reasons[changeKey(empId,field)]??'').trim()}));
  const savedAdjustments=saved?saved.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>({...change,name:row.input.name}))):[];
  const dayCount=(n:number,what:string)=>`${n} ${n===1?'day':'days'} ${what}`;
- const automatedLoanFields:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance'];
  // 13th month pay is released only through its own run type.
  const editCell=(index:number,row:RunRow,key:EditKey)=>saved||thirteenth||key==='thirteenthMonthAndOtherBenefits'||automatedLoanFields.includes(key)?nf(numberValue(row.input[key])):<input className="paper-input" type="number" min="0" step="0.01" value={String(row.input[key]??0)} onChange={event=>setField(index,key,event.target.value)}/>;
 
