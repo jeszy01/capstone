@@ -57,42 +57,57 @@ const PAGE_SIZE=25;
 const longDay=(date:string)=>new Date(`${date}T00:00:00`).toLocaleDateString('en-US',{weekday:'long'});
 const thisMonth=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
 
-/** Attendance Records: the month's dates grouped by payroll cutoff; a date opens its employees' records. */
+const DATES_PAGE_SIZE=15;
+type CutoffFilter='all'|'1'|'2';
+
+/** Attendance Records: the month's attendance dates in one table; a date opens its employees' records. */
 function DailyAttendance({employees}:{employees:Employee[]}){
- // The month and the opened date are kept in the address, so Back and refresh keep the view.
+ // Month, cutoff and the opened date are kept in the address, so Back and refresh keep the view.
  const[params,setParams]=useSearchParams();
  const date=params.get('date'),month=params.get('month')??date?.slice(0,7)??thisMonth();
+ const cutoff=(['1','2'].includes(params.get('cutoff')??'')?params.get('cutoff'):'all') as CutoffFilter;
+ const keep=(next:Record<string,string>)=>({...next,...(cutoff!=='all'&&!('cutoff' in next)?{cutoff}:{})});
  return date
-  ?<DateAttendance date={date} employees={employees} onBack={()=>setParams({month:date.slice(0,7)})}/>
-  :<AttendanceDates month={month} employees={employees} onMonth={value=>setParams({month:value},{replace:true})} onOpen={value=>setParams({month:value.slice(0,7),date:value})}/>;
+  ?<DateAttendance date={date} employees={employees} onBack={()=>setParams(keep({month:date.slice(0,7)}))}/>
+  :<AttendanceDates month={month} cutoff={cutoff} employees={employees}
+    onFilter={(nextMonth,nextCutoff)=>setParams({month:nextMonth,...(nextCutoff!=='all'?{cutoff:nextCutoff}:{})},{replace:true})}
+    onOpen={value=>setParams(keep({month:value.slice(0,7),date:value}))}/>;
 }
 
-function AttendanceDates({month,employees,onMonth,onOpen}:{month:string;employees:Employee[];onMonth:(month:string)=>void;onOpen:(date:string)=>void}){
- const rates=loadRates();
- const cutoffs=rates.payPeriodsPerMonth===2?[{label:'1st Cutoff',...cutoffFor(month,1,rates)},{label:'2nd Cutoff',...cutoffFor(month,2,rates)}]:[{label:'Monthly Cutoff',...cutoffFor(month,1,rates)}];
- const{records,loading,error,reload}=useAttendance(cutoffs[0].from,cutoffs[cutoffs.length-1].to);
+function AttendanceDates({month,cutoff,employees,onFilter,onOpen}:{month:string;cutoff:CutoffFilter;employees:Employee[];onFilter:(month:string,cutoff:CutoffFilter)=>void;onOpen:(date:string)=>void}){
+ const rates=loadRates(),twoCutoffs=rates.payPeriodsPerMonth===2;
+ const first=cutoffFor(month,1,rates),second=cutoffFor(month,2,rates);
+ const{records,loading,error,reload}=useAttendance(first.from,twoCutoffs?second.to:first.to);
+ const[page,setPage]=useState(1);
+ useEffect(()=>setPage(1),[month,cutoff]);
  const through=hr2SyncedThrough();
- // Each date with its number of employees (one record per employee per date).
- const dates=useMemo(()=>{const byDate=new Map<string,Set<string>>();for(const record of records){const key=findAttendanceEmployee(employees,record.empId)?.id??record.empId;byDate.set(record.date,(byDate.get(record.date)??new Set()).add(key))}return [...byDate.entries()].map(([value,people])=>({date:value,employees:people.size})).sort((a,b)=>a.date.localeCompare(b.date))},[records,employees]);
+ const cutoffOf=(value:string):'1'|'2'=>twoCutoffs&&value>first.to?'2':'1';
+ const cutoffLabel=(value:'1'|'2')=>!twoCutoffs?'Monthly':value==='1'?'1st Cutoff':'2nd Cutoff';
+ // Each date with its number of employees (one record per employee per date), newest first.
+ const dates=useMemo(()=>{const byDate=new Map<string,Set<string>>();for(const record of records){const key=findAttendanceEmployee(employees,record.empId)?.id??record.empId;byDate.set(record.date,(byDate.get(record.date)??new Set()).add(key))}return [...byDate.entries()].map(([value,people])=>({date:value,employees:people.size})).sort((a,b)=>b.date.localeCompare(a.date))},[records,employees]);
+ const shown=dates.filter(item=>cutoff==='all'||!twoCutoffs||cutoffOf(item.date)===cutoff);
+ const pages=Math.max(1,Math.ceil(shown.length/DATES_PAGE_SIZE)),current=Math.min(page,pages),pageRows=shown.slice((current-1)*DATES_PAGE_SIZE,current*DATES_PAGE_SIZE);
+ const range=cutoff==='1'||!twoCutoffs?first:cutoff==='2'?second:{from:first.from,to:second.to};
  return <div>
-  <div className="mt-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-   <div className="w-full sm:w-56"><Field label="Month"><TextInput type="month" value={month} onChange={event=>event.target.value&&onMonth(event.target.value)}/></Field></div>
-   <span className="text-[12px] text-slate-500">HR2 data through {through?shortDate(through):'—'} · last received {syncedText(lastHr2Sync())}</span>
+  <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-[220px_220px_1fr] lg:items-end">
+   <Field label="Month"><TextInput type="month" value={month} onChange={event=>event.target.value&&onFilter(event.target.value,cutoff)}/></Field>
+   <Field label="Payroll Cutoff"><select className={input} value={twoCutoffs?cutoff:'all'} disabled={!twoCutoffs} onChange={event=>onFilter(month,event.target.value as CutoffFilter)}><option value="all">All</option>{twoCutoffs&&<><option value="1">1st Cutoff ({shortRange(first.from,first.to)})</option><option value="2">2nd Cutoff ({shortRange(second.from,second.to)})</option></>}</select></Field>
+   <span className="text-[12px] text-slate-500 sm:col-span-2 lg:col-span-1 lg:pb-2.5 lg:text-right">HR2 data through {through?shortDate(through):'—'} · last received {syncedText(lastHr2Sync())}</span>
   </div>
   {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
-  <div className="mt-4 grid gap-4 lg:grid-cols-2">
-   {cutoffs.map(cutoff=>{const shown=dates.filter(item=>item.date>=cutoff.from&&item.date<=cutoff.to);return <Card key={cutoff.label} className="min-w-0 overflow-hidden border-slate-200/80 !p-0 shadow-sm">
-    <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-5 py-4"><div><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">{cutoff.label}</h2><p className="mb-0 mt-0.5 text-[12px] text-slate-500">{shortRange(cutoff.from,cutoff.to)}</p></div><span className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500">{shown.length} {shown.length===1?'date':'dates'}</span></div>
-    <table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Date','Day','Employees',''].map((label,i)=><th key={label||i} className={`px-5 py-3 ${label==='Employees'?'text-right':''}`}>{label}</th>)}</tr></thead>
-     <tbody>{loading?<tr><td colSpan={4}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={4}><Empty>No attendance received from HR2 for this cutoff yet.</Empty></td></tr>:shown.map(item=><tr key={item.date} className="cursor-pointer border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40" onClick={()=>onOpen(item.date)}>
-      <td className="px-5 py-3"><button type="button" className="font-semibold text-[#17345b] hover:text-blue-700" onClick={event=>{event.stopPropagation();onOpen(item.date)}}>{formatDate(item.date)}</button></td>
-      <td className="px-5 py-3 text-slate-600">{longDay(item.date)}</td>
-      <td className="px-5 py-3 text-right tabular-nums">{item.employees}</td>
-      <td className="w-10 px-3 py-3 text-slate-400"><ChevronRight size={16}/></td>
-     </tr>)}</tbody>
-    </table>
-   </Card>})}
-  </div>
+  <Card className="mt-4 min-w-0 overflow-hidden border-slate-200/80 !p-0 shadow-sm">
+   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4"><div><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">Attendance Dates</h2><p className="mb-0 mt-0.5 text-[12px] text-slate-500">{shortRange(range.from,range.to)} · Select a date to see its employees.</p></div><span className="rounded-lg bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500">{shown.length} {shown.length===1?'date':'dates'}</span></div>
+   <div className="overflow-x-auto"><table className="w-full text-left text-[13px] sm:min-w-[560px]"><thead><tr className={head}>{['Date','Day','Cutoff','Employees',''].map((label,i)=><th key={label||i} className={`whitespace-nowrap px-4 py-3 sm:px-5 ${label==='Employees'?'text-right':''} ${label==='Day'?'hidden sm:table-cell':''}`}>{label}</th>)}</tr></thead>
+    <tbody>{loading?<tr><td colSpan={5}><LoadingState/></td></tr>:!pageRows.length?<tr><td colSpan={5}><Empty>No attendance received from HR2 for this period yet.</Empty></td></tr>:pageRows.map(item=><tr key={item.date} tabIndex={0} role="link" aria-label={`Open attendance for ${formatDate(item.date)}`} className="cursor-pointer border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40 focus-visible:bg-blue-50/60 focus-visible:outline-none" onClick={()=>onOpen(item.date)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onOpen(item.date)}}}>
+     <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-[#17345b] sm:px-5">{formatDate(item.date)}<div className="text-[11px] font-normal text-slate-500 sm:hidden">{longDay(item.date)}</div></td>
+     <td className="hidden px-5 py-3.5 text-slate-600 sm:table-cell">{longDay(item.date)}</td>
+     <td className="px-4 py-3.5 sm:px-5"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{cutoffLabel(cutoffOf(item.date))}</span></td>
+     <td className="px-4 py-3.5 text-right tabular-nums sm:px-5">{item.employees}</td>
+     <td className="w-8 px-2 py-3.5 text-slate-400 sm:w-10 sm:px-3"><ChevronRight size={16}/></td>
+    </tr>)}</tbody>
+   </table></div>
+   {shown.length>DATES_PAGE_SIZE&&<div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 text-[12px] text-slate-500"><span>Showing {(current-1)*DATES_PAGE_SIZE+1}–{Math.min(current*DATES_PAGE_SIZE,shown.length)} of {shown.length}</span><div className="flex items-center gap-2"><button type="button" className={ghost} disabled={current===1} onClick={()=>setPage(current-1)}><ChevronLeft size={14}/>Previous</button><span>Page {current} of {pages}</span><button type="button" className={ghost} disabled={current===pages} onClick={()=>setPage(current+1)}>Next<ChevronRight size={14}/></button></div></div>}
+  </Card>
  </div>;
 }
 
