@@ -30,3 +30,25 @@ describe('1. BIR tables',()=>{
   expect(taxFromTable(7692,loadWithholdingRules()[0].tables.weekly)).toBe(432.6);
  });
 });
+
+// One semi-monthly cutoff through the full payroll calculation.
+import {calculatePayroll} from '../features/payroll/payrollCalculator';
+import {DEFAULT_RATES} from '../features/payroll/payrollRules';
+import {BLANK_PAYROLL_INPUT} from '../features/payroll/payrollRuns';
+import type {PayrollInput} from '../types/domain';
+export const cutoff=(input:Partial<PayrollInput>,context:Parameters<typeof calculatePayroll>[3]={},rates=DEFAULT_RATES)=>calculatePayroll({...BLANK_PAYROLL_INPUT,empId:'E',name:'E',...input},rates,[],{periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:[DEFAULT_WITHHOLDING_RULES],...context});
+
+describe('2. Non-taxable amounts are left out once, not subtracted from taxable pay',()=>{
+ it('a non-taxable allowance does not lower the tax on other pay',()=>{
+  // Basic ₱22,000 + taxable allowance ₱1,000 + OT ₱3,125 + ND ₱500 + holiday ₱1,000 − contributions ₱1,525 = ₱26,100.
+  const c=cutoff({dailyRate:2000,daysWorked:11,otHours:10,nightDifferential:500,holidayPay:1000,allowancesTaxable:1000,allowancesExempt:2000});
+  expect(c.taxBreakdown!.taxableCompensation).toBe(26100);
+  expect(c.tax).toBe(officialTax('semi-monthly',26100));
+  expect(c.gross).toBe(22000+1000+2000+3125+500+1000);
+ });
+ it('a tax-exempt benefit typed in Review Payroll does not lower the tax on basic pay',()=>{
+  const c=cutoff({dailyRate:2000,daysWorked:11,taxExemptBenefits:3000});
+  expect(c.taxBreakdown!.taxableCompensation).toBe(20475);
+  expect(c.tax).toBe(officialTax('semi-monthly',20475));
+ });
+});
