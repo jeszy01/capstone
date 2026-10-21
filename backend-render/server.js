@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, keepMissingRuns, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
 import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from './hr2Rules.js';
 import { FINANCE_STATUSES, applyFinanceDecision, financeStatus, runDetail, runSummary } from './financeRules.js';
+import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -119,8 +120,8 @@ async function saveAppData(req, key, isDel, value) {
     await client.query('select pg_advisory_xact_lock(hashtext($1))', [`app_data:${key}`]);
     const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [key]);
     const existed = Boolean(row && !row.deleted);
-    if (key === 'payroll:runs') {
-      if (isDel) throw new AccessError('Payroll runs cannot be deleted.');
+    if (key === 'payroll:runs' || key === 'claims:records') {
+      if (isDel) throw new AccessError(key === 'payroll:runs' ? 'Payroll runs cannot be deleted.' : 'Claims cannot be deleted.');
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
     }
     events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed, releasedRecentlyBy);
@@ -2137,15 +2138,16 @@ const storedRuns = async () => {
   const runs = row && !row.deleted ? appValue(row.value) : [];
   return Array.isArray(runs) ? runs.filter(Boolean) : [];
 };
-// Adds an unread notification for HR (the same app_data list the app shows in its bell).
-async function notifyHr(type, title, message, link) {
+// Adds unread notifications for the given roles ('admin', 'hr'): the same app_data list the app shows in its bell.
+async function notifyRoles(roles, type, title, message, link) {
   const client = await pool.connect();
   try {
     await client.query('begin');
     await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:notifications:records']);
     const { rows: [row] } = await client.query(`select value, deleted from app_data where key='notifications:records'`);
     const list = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
-    const next = [{ id: crypto.randomUUID(), type, title, message, role: 'hr', link, read: false, created_at: new Date().toISOString() }, ...list];
+    const created = new Date().toISOString();
+    const next = [...roles.map(role => ({ id: crypto.randomUUID(), type, title, message, role, link, read: false, created_at: created })), ...list];
     await client.query(`insert into app_data(key,value,deleted) values('notifications:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(next)]);
     await client.query('commit');
   } catch (e) {
@@ -2185,8 +2187,86 @@ app.post('/integrations/finance/payroll-runs/:id/decision', financeAuth, async (
   } finally { client.release(); }
   const approved = decided.status === 'Approved', label = runPeriod(decided);
   await audit(approved ? 'payroll.approved' : 'payroll.rejected', null, 'Payroll', decided.id, { description: `${decided.status} payroll for ${label} by ${decided.decidedBy}${approved ? '' : `: ${decided.rejectionReason}`}.` });
-  await notifyHr(approved ? 'payroll_approved' : 'payroll_rejected', approved ? 'Payroll approved by Finance' : 'Payroll rejected by Finance', approved ? `${label} · Ready for payslips` : `${label} · ${decided.rejectionReason}`, `/payroll/review?run=${decided.id}`);
+  await notifyRoles(['hr'], approved ? 'payroll_approved' : 'payroll_rejected', approved ? 'Payroll approved by Finance' : 'Payroll rejected by Finance', approved ? `${label} · Ready for payslips` : `${label} · ${decided.rejectionReason}`, `/payroll/review?run=${decided.id}`);
   ok(res, runSummary(decided));
+});
+
+// ---- ESS expense claims (server to server) ----
+// Employees submit expense claims from ESS; ESS sends them with the shared key in the X-API-Key header (Render env
+// ESS_API_KEY, at least 32 characters) and reads back each claim's status. HR reviews and pays them in PBMS.
+// See backend-render/ESS_CLAIMS_API.md.
+const essKey = Buffer.from(process.env.ESS_API_KEY ?? '');
+const essAuth = (req, res, next) => {
+  if (essKey.length < 32) return fail(res, 503, 'ESS_NOT_CONFIGURED', 'The ESS integration is not configured on this server.');
+  const given = Buffer.from(String(req.headers['x-api-key'] ?? ''));
+  if (given.length !== essKey.length || !crypto.timingSafeEqual(given, essKey)) return fail(res, 401, 'INVALID_API_KEY', 'A valid X-API-Key header is required.');
+  next();
+};
+const manilaDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
+const essEmployee = async employeeNo => {
+  const number = text(employeeNo);
+  if (!number) throw new HttpError(400, 'VALIDATION_ERROR', 'employee_no is required.');
+  const { rows: [employee] } = await pool.query('select id, employee_number, department, first_name, last_name from employees where lower(employee_number)=lower($1)', [number]);
+  if (!employee) throw new HttpError(404, 'EMPLOYEE_NOT_FOUND', 'employee_no is not a PBMS employee.');
+  return employee;
+};
+// Reads and saves the claims list in one locked transaction; change returns the claim it added or changed.
+async function withClaims(change) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:claims:records']);
+    const { rows: [row] } = await client.query(`select value, deleted from app_data where key='claims:records'`);
+    const claims = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
+    const { claims: next, claim, created } = change(claims);
+    if (next !== claims) await client.query(`insert into app_data(key,value,deleted) values('claims:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(next)]);
+    await client.query('commit');
+    return { claim, created };
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+}
+app.post('/integrations/ess/claims', essAuth, async (req, res) => {
+  const b = input(req), employee = await essEmployee(b.employee_no);
+  const parsed = essClaimFields(b, manilaDate());
+  if (parsed.error) return fail(res, 400, 'VALIDATION_ERROR', parsed.error);
+  const reference = text(b.ess_reference).slice(0, 100) || null;
+  const { claim, created } = await withClaims(claims => {
+    // Sending the same ess_reference again returns the claim already received instead of a duplicate.
+    const existing = reference && claims.find(item => item?.essReference === reference);
+    if (existing) return { claims, claim: existing, created: false };
+    const now = new Date().toISOString();
+    const claim = { id: crypto.randomUUID(), claimNumber: nextClaimNumber(claims, manilaDate().slice(0, 4)), employeeId: employee.id, department: employee.department ?? '', ...parsed.fields,
+      approvalStatus: 'Pending Approval', paymentStatus: 'Unpaid', paymentMethod: '', paymentDate: '', notes: '', createdAt: now, updatedAt: now, source: 'ESS', ...(reference ? { essReference: reference } : {}) };
+    return { claims: [...claims, claim], claim, created: true };
+  });
+  if (created) {
+    const label = `${claim.claimNumber} · ₱${Number(claim.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+    await audit('claim.submitted', null, 'Claims', claim.id, { description: `${employee.employee_number} submitted claim ${label} from ESS.` });
+    await notifyRoles(['admin', 'hr'], 'claim_submitted', 'New claim from ESS', label, '/claims-reimbursement/claims');
+  }
+  res.status(created ? 201 : 200).json({ data: essClaimView(claim) });
+});
+app.put('/integrations/ess/claims/:claimNumber', essAuth, async (req, res) => {
+  const b = input(req), employee = await essEmployee(b.employee_no);
+  const parsed = essClaimFields(b, manilaDate());
+  if (parsed.error) return fail(res, 400, 'VALIDATION_ERROR', parsed.error);
+  const { claim } = await withClaims(claims => {
+    const current = claims.find(item => item && String(item.claimNumber).toLowerCase() === req.params.claimNumber.toLowerCase());
+    if (!current || String(current.employeeId) !== String(employee.id)) throw new HttpError(404, 'CLAIM_NOT_FOUND', 'No claim with that number for this employee.');
+    if (current.approvalStatus !== 'Returned') throw new HttpError(409, 'CLAIM_NOT_RETURNED', 'Only a claim returned for correction can be resubmitted.');
+    const claim = { ...current, ...parsed.fields, approvalStatus: 'Pending Approval', notes: '', updatedAt: new Date().toISOString(), resubmittedAt: new Date().toISOString() };
+    return { claims: claims.map(item => item === current ? claim : item), claim };
+  });
+  await audit('claim.resubmitted', null, 'Claims', claim.id, { description: `${employee.employee_number} resubmitted claim ${claim.claimNumber} from ESS.` });
+  await notifyRoles(['admin', 'hr'], 'claim_submitted', 'Claim resubmitted from ESS', claim.claimNumber, '/claims-reimbursement/claims');
+  ok(res, essClaimView(claim));
+});
+app.get('/integrations/ess/claims', essAuth, async (req, res) => {
+  const employee = await essEmployee(req.query.employee_no);
+  const { claim: list } = await withClaims(claims => ({ claims, claim: claims.filter(item => item && String(item.employeeId) === String(employee.id)) }));
+  ok(res, list.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''))).map(essClaimView));
 });
 
 // Row counts for checking which database this service reads; attendance is the HR2 store in app_data "attendance:hr2".

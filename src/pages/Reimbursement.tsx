@@ -3,7 +3,8 @@ import {Check,History,Wallet} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,LoadingState,Tabs} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
-import {normalizeClaims,saveClaims} from '../features/claims/claimsTypes';
+import {normalizeClaims,updateClaim} from '../features/claims/claimsTypes';
+import type {ClaimReview} from '../features/claims/claimsTypes';
 import {can} from '../features/auth/permissions';
 import type {ExpenseClaim} from '../features/claims/claimsTypes';
 import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
@@ -20,7 +21,8 @@ export default function Reimbursement(){
   const[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
   const load=()=>{setLoading(true);setLoadError('');employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))}).catch(cause=>{setClaims(normalizeClaims([]));setLoadError(cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded.')}).finally(()=>setLoading(false))};
   useEffect(()=>{load()},[]);
-  const update=(id:string,patch:Partial<ExpenseClaim>)=>setClaims(current=>{const next=current.map(item=>item.id===id?{...item,...patch,updatedAt:new Date().toISOString()}:item);saveClaims(next);return next});
+  // Payment is saved on the server's current claims list, so claims employees submit from ESS meanwhile are kept.
+  const update=(id:string,patch:ClaimReview)=>{void updateClaim(id,patch).then(()=>setClaims(normalizeClaims(employees))).catch(cause=>setLoadError(cause instanceof Error&&cause.message?cause.message:'The payment could not be saved.'))};
   const forReimbursement=claims.filter(item=>item.approvalStatus==='Approved'&&item.paymentStatus==='Unpaid');
   const history=claims.filter(item=>item.paymentStatus!=='Unpaid').sort((a,b)=>b.paymentDate.localeCompare(a.paymentDate));
   const outstanding=forReimbursement.reduce((sum,claim)=>sum+claim.amount,0);

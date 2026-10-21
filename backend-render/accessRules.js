@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { changedClaimDetails } from './claimRules.js';
 
 // Role-based access rules for the Render backend. permissions.json is the one role -> allowed actions map;
 // the frontend imports the same file for its route guards, sidebar and buttons.
@@ -119,19 +120,14 @@ const claimApproval = claim => {
 function claimEvents(user, before, after) {
   const prev = byId(before), next = byId(after), events = [];
   const paid = claim => claim.paymentStatus === 'Paid';
-  for (const [id, old] of prev) if (!next.has(id)) {
-    if (paid(old)) throw forbid('Paid claims cannot be deleted.');
-    need(user, 'claims.encode');
-  }
+  // Employees submit claims through ESS (POST /integrations/ess/claims); PBMS users review and pay them.
+  for (const [id] of prev) if (!next.has(id)) throw forbid('Claims cannot be deleted; reject the claim instead.');
   for (const [id, claim] of next) {
     const old = prev.get(id);
-    if (!old) {
-      need(user, 'claims.encode', 'Only HR Staff can encode claims.');
-      if (paid(claim)) throw forbid('A new claim cannot be marked Paid.');
-      continue;
-    }
+    if (!old) throw forbid('Claims are submitted by employees through ESS.');
     if (stable(old) === stable(claim)) continue;
     if (paid(old)) throw forbid('Paid claims are locked.');
+    if (changedClaimDetails(old, claim).length) throw forbid("Claim details come from the employee's ESS submission and cannot be changed in PBMS.");
     need(user, 'claims.encode');
     const label = `${claim.claimNumber || id} (${pesoText(claim.amount)})`;
     const was = claimApproval(old), now = claimApproval(claim);

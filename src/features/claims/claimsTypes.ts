@@ -1,19 +1,33 @@
 import type {Employee} from '../../types/domain';
 import {read,write} from '../../utils/storage';
+import {apiClient} from '../../services/api/apiClient';
 
 export type ClaimApprovalStatus='Pending Approval'|'Approved'|'Rejected'|'Returned';
 export type ClaimPaymentStatus='Unpaid'|'Included in Payroll'|'Paid';
 export type ClaimPaymentMethod='Paid Separately'|'Include in Payroll'|'';
 export type ClaimType='Food'|'Transportation'|'Office Supplies';
 export const claimTypes:ClaimType[]=['Food','Transportation','Office Supplies'];
-export interface ExpenseClaim{id:string;claimNumber:string;claimType:ClaimType;employeeId:string;department:string;amount:number;date:string;businessPurpose:string;projectSite:string;receiptName:string;receiptData?:string;certified:boolean;approvalStatus:ClaimApprovalStatus;paymentStatus:ClaimPaymentStatus;paymentMethod:ClaimPaymentMethod;paymentDate:string;createdAt:string;updatedAt:string;notes:string}
+export interface ExpenseClaim{id:string;claimNumber:string;claimType:ClaimType;employeeId:string;department:string;amount:number;date:string;businessPurpose:string;projectSite:string;receiptName:string;receiptData?:string;certified:boolean;approvalStatus:ClaimApprovalStatus;paymentStatus:ClaimPaymentStatus;paymentMethod:ClaimPaymentMethod;paymentDate:string;createdAt:string;updatedAt:string;notes:string;/** 'ESS' when the employee submitted it from ESS. */source?:'ESS'}
 export interface LegacyClaim{[key:string]:unknown}
 
 const approval=(value:unknown):ClaimApprovalStatus=>{if(value==='Submitted'||value==='Pending Approval'||value==='Pending Finance Approval')return 'Pending Approval';if(value==='Approved'||value==='Ready for Claim'||value==='Sent to Finance')return 'Approved';if(value==='Rejected'||value==='Returned')return value;return 'Pending Approval'};
 const payment=(value:unknown):ClaimPaymentStatus=>value==='Paid'?'Paid':value==='Included in Payroll'?'Included in Payroll':'Unpaid';
-function normalizeRow(row:LegacyClaim,index:number,employees:Employee[]):ExpenseClaim{const employee=employees.find(item=>item.id===String(row.employeeId??''));const rawType=String(row.claimType??row.category??'Office Supplies');const mappedType=rawType==='Meals'?'Food':rawType;const claimType=(claimTypes.includes(mappedType as ClaimType)?mappedType:'Office Supplies') as ClaimType;return{id:String(row.id??crypto.randomUUID()),claimNumber:String(row.claimNumber??`CLM-${String(index+1).padStart(4,'0')}`),claimType,employeeId:String(row.employeeId??''),department:String(row.department??employee?.department??''),amount:Number(row.amount??0),date:String(row.date??String(row.createdAt??'').slice(0,10)),businessPurpose:String(row.businessPurpose??''),projectSite:String(row.projectSite??''),receiptName:String(row.receiptName??''),receiptData:row.receiptData?String(row.receiptData):undefined,certified:Boolean(row.certified),approvalStatus:approval(row.approvalStatus??row.status),paymentStatus:payment(row.paymentStatus),paymentMethod:(row.paymentMethod==='Paid Separately'||row.paymentMethod==='Include in Payroll'?row.paymentMethod:''),paymentDate:String(row.paymentDate??''),createdAt:String(row.createdAt??new Date().toISOString()),updatedAt:String(row.updatedAt??row.createdAt??new Date().toISOString()),notes:String(row.notes??'')}}
+function normalizeRow(row:LegacyClaim,index:number,employees:Employee[]):ExpenseClaim{const employee=employees.find(item=>item.id===String(row.employeeId??''));const rawType=String(row.claimType??row.category??'Office Supplies');const mappedType=rawType==='Meals'?'Food':rawType;const claimType=(claimTypes.includes(mappedType as ClaimType)?mappedType:'Office Supplies') as ClaimType;return{id:String(row.id??crypto.randomUUID()),claimNumber:String(row.claimNumber??`CLM-${String(index+1).padStart(4,'0')}`),claimType,employeeId:String(row.employeeId??''),department:String(row.department??employee?.department??''),amount:Number(row.amount??0),date:String(row.date??String(row.createdAt??'').slice(0,10)),businessPurpose:String(row.businessPurpose??''),projectSite:String(row.projectSite??''),receiptName:String(row.receiptName??''),receiptData:row.receiptData?String(row.receiptData):undefined,certified:Boolean(row.certified),approvalStatus:approval(row.approvalStatus??row.status),paymentStatus:payment(row.paymentStatus),paymentMethod:(row.paymentMethod==='Paid Separately'||row.paymentMethod==='Include in Payroll'?row.paymentMethod:''),paymentDate:String(row.paymentDate??''),createdAt:String(row.createdAt??new Date().toISOString()),updatedAt:String(row.updatedAt??row.createdAt??new Date().toISOString()),notes:String(row.notes??''),...(row.source==='ESS'?{source:'ESS' as const}:{})}}
 export function normalizeClaims(employees:Employee[]):ExpenseClaim[]{const rows=read<LegacyClaim[]>('claims:records',[]);const existing=rows.map((row,index)=>normalizeRow(row,index,employees));return [...new Map(existing.map(item=>[item.claimNumber,item])).values()]}
 export function saveClaims(claims:ExpenseClaim[]){write('claims:records',claims)}
+export type ClaimReview=Partial<Pick<ExpenseClaim,'approvalStatus'|'paymentStatus'|'paymentMethod'|'paymentDate'|'notes'>>;
+/**
+ * Changes one claim's review or payment fields on the server's current claims list, so a claim an employee submitted
+ * from ESS since this page loaded is never overwritten. Only these fields may change in PBMS.
+ */
+export async function updateClaim(id:string,patch:ClaimReview){
+ const {data}=await apiClient.get<{data:{key:string;value:unknown;deleted?:boolean}[]}>('/app-data');
+ const rows=(data.find(entry=>entry.key==='claims:records'&&!entry.deleted)?.value as LegacyClaim[]|undefined)??[];
+ if(!rows.some(row=>row.id===id))throw new Error('This claim was not found on the server. Reload the page and try again.');
+ const next=rows.map(row=>row.id===id?{...row,...patch,updatedAt:new Date().toISOString()}:row);
+ const saved=await apiClient.post<{key:string;value:unknown},{data?:{value?:unknown}}>('/app-data',{key:'claims:records',value:next});
+ write('claims:records',Array.isArray(saved?.data?.value)?saved.data.value:next);
+}
 export function nextClaimNumber(items:ExpenseClaim[]){const highest=items.reduce((max,item)=>{const match=/^CLM-(?:2026-)?(\d+)$/i.exec(item.claimNumber);return match?Math.max(max,Number(match[1])):max},0);return `CLM-2026-${String(highest+1).padStart(4,'0')}`}
 export function employeeName(employees:Employee[],id:string){const employee=employees.find(item=>item.id===id);if(employee)return `${employee.name} (${employee.employeeNo})`;return id}
 export function statusClass(status:string){return status==='Approved'||status==='Ready for Claim'||status==='Sent to Finance'||status==='Paid'||status==='Included in Payroll'?'bg-emerald-50 text-emerald-700':status==='Rejected'?'bg-red-50 text-red-700':status==='Returned'?'bg-amber-50 text-amber-700':'bg-slate-100 text-slate-700'}
