@@ -17,7 +17,8 @@ import {can} from '../auth/permissions';
 import {calculatePayroll} from './payrollCalculator';
 import {BLANK_PAYROLL_INPUT,RUNS_KEY,decideRun,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,runTaxPeriod,updateRuns} from './payrollRuns';
 import {cutoffSynced} from '../attendance/attendanceService';
-import type {PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
+import type {ManualAdjustment,PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
+import {recordAudit} from '../audit/auditService';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
 import {activeCompensations,isBonusReward} from '../compensation/compensationState';
@@ -31,6 +32,7 @@ import {governmentLoanDeductions,governmentLoanTotals,rowLoanAmounts} from '../g
 import {StatusBadge} from '../../components/common/StatusBadge';
 
 type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions'|'thirteenthMonthAndOtherBenefits'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
+const editLabels:Record<EditKey,string>={sssLoan:'SSS Loan',pagibigLoan:'Pag-IBIG Loan',companyLoan:'Company Loan',cashAdvance:'Cash Advance',otherDeductions:'Other Deductions',thirteenthMonthAndOtherBenefits:'13th-month & other benefits',taxExemptBenefits:'Tax-exempt benefits',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
 const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
 const blank=BLANK_PAYROLL_INPUT;
 const governmentLoanSum=(row:RunRow)=>{const loans=rowLoanAmounts(row.input,row.governmentLoans);return loans.govSssLoan+loans.govPagibigLoan};
@@ -50,6 +52,8 @@ export default function ReviewPayroll(){
  const rates=useMemo<PayrollRates>(()=>saved?.settings?.rates??loadRates(),[saved]);
  const payDate=saved?.payDate??(from&&to?(thirteenth?to:payDateFor(from,to,rates)):'');
  const[rows,setRows]=useState<RunRow[]>(saved?.rows??[]);
+ // The amounts as loaded, so typed changes can be listed with a reason before submission.
+ const[originals,setOriginals]=useState<Record<string,PayrollInput>>({}),[reasons,setReasons]=useState<Record<string,string>>({});
  const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
  const[error,setError]=useState('');
  const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
@@ -75,7 +79,7 @@ export default function ReviewPayroll(){
   const employees=await employeeService.getAllFromServer();
   const lines=computeThirteenthMonth({runs:read<PayrollRun[]>(RUNS_KEY,[]),employees,rules:loadThirteenthMonthRules(),releaseDate:to});
   const built=lines.map(line=>{const input:PayrollInput={...blank,empId:line.empId,name:line.name,thirteenthMonthAndOtherBenefits:line.amount};return {position:line.position,rest:0,hmo:0,input,result:calculatePayroll(input,rates,[],{periodStart:from,periodEnd:to,period:payPeriod,rules:loadWithholdingRules()})}});
-  if(active){setRows(built);setLoading(false)}
+  if(active){setRows(built);setOriginals(Object.fromEntries(built.map(row=>[row.input.empId,row.input])));setLoading(false)}
   return;
  }
  const employees=await employeeService.getAllFromServer();
@@ -119,11 +123,13 @@ const built:RunRow[]=[];
      const governmentTotals=governmentLoanTotals(governmentLoans);
      // Government loans have their own fields so they never mix with employee loan installments.
      input.govSssLoan=governmentTotals.sssLoan;input.govPagibigLoan=governmentTotals.pagibigLoan;
-     const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to,holidays});
+     // An employee who is no longer active is checked only up to their last attendance day.
+     const lastDay=mine.map(record=>record.date).sort().pop()??to;
+     const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to:employee.status==='Active'?to:lastDay,holidays});
      const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
-    if(active){setRows(built);setLoading(false)}
+    if(active){setRows(built);setOriginals(Object.fromEntries(built.map(row=>[row.input.empId,row.input])));setLoading(false)}
    }catch(cause){if(active){const message=cause instanceof Error?cause.message:'The approved loan installment schedule could not be loaded.';setLoanError(`Payroll cannot be submitted or paid until compensation records and approved loan schedules load from the database. ${message}`);setError('Payroll data could not be loaded. Please retry after the employee, attendance, compensation, and loan schedule services are available.');setLoading(false)}}
   })();
   return()=>{active=false};
@@ -138,6 +144,12 @@ const built:RunRow[]=[];
  // Employees whose deductions exceed their pay; the run cannot be submitted until these are fixed.
  const negative=view.filter(({c})=>c.net<0).map(({row})=>row.input.name);
  const gapRows=rows.filter(row=>row.attendanceGaps);
+ const changeKey=(empId:string,field:string)=>`${empId}|${field}`;
+ const changes=saved||thirteenth?[]:rows.flatMap(row=>editKeys.filter(key=>!automatedLoanFields.includes(key)&&key!=='thirteenthMonthAndOtherBenefits'&&numberValue(row.input[key])!==numberValue(originals[row.input.empId]?.[key]))
+  .map(key=>({empId:row.input.empId,name:row.input.name,field:key,label:editLabels[key],original:numberValue(originals[row.input.empId]?.[key]),amount:numberValue(row.input[key])})));
+ const missingReason=changes.some(change=>(reasons[changeKey(change.empId,change.field)]??'').trim().length<3);
+ const adjustmentsFor=(row:RunRow):ManualAdjustment[]=>changes.filter(change=>change.empId===row.input.empId).map(({field,label,original,amount,empId})=>({field,label,original,amount,reason:(reasons[changeKey(empId,field)]??'').trim()}));
+ const savedAdjustments=saved?saved.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>({...change,name:row.input.name}))):[];
  const dayCount=(n:number,what:string)=>`${n} ${n===1?'day':'days'} ${what}`;
  const automatedLoanFields:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance'];
  // 13th month pay is released only through its own run type.
@@ -147,6 +159,7 @@ const built:RunRow[]=[];
   if(loanError){setConfirming(false);setError(loanError);return}
   // A regular cutoff can be submitted only once HR2 attendance covers the whole period.
   if(!thirteenth&&!cutoffSynced({from,to})){setConfirming(false);setError('Attendance not yet synced for this cutoff');return}
+  if(missingReason){setError('Give a reason for every amount typed in by hand.');return}
   if(negative.length){setConfirming(false);setError(`Net pay is below zero for ${negative.join(', ')}. Reduce their other deductions or loan installments before submitting.`);return}
   setSubmitBusy(true);setError('');
   if(!thirteenth)try{
@@ -173,11 +186,12 @@ const built:RunRow[]=[];
     :releases.some(run=>run.status==='Pending Approval')?`A 13th month run for ${year} is awaiting approval.`
     :releases.length>=(rules.allowInstallments?rules.installments:1)?`All 13th month releases for ${year} have been submitted.`:'';
   };
-  const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,payDate,settings:payrollSettingsSnapshot(to),status:'Pending Approval',rows:rows.map(row=>({...row,result:calc(row)})),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
+  const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,payDate,settings:payrollSettingsSnapshot(to),status:'Pending Approval',rows:rows.map(row=>{const manualAdjustments=adjustmentsFor(row);return {...row,result:calc(row),...(manualAdjustments.length?{manualAdjustments}:{})}}),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
   setSubmitBusy(true);
   try{await updateRuns(runs=>{const blocked=blockedBy(runs);if(blocked)throw new Error(blocked);return [...runs,run]})}
   catch(cause){setConfirming(false);setError(cause instanceof Error&&cause.message?cause.message:'The payroll could not be submitted.');return}
   finally{setSubmitBusy(false)}
+  if(changes.length)recordAudit({action:'Changed payroll amounts by hand',module:'Payroll',description:`Submitted ${runLabel(run)} with ${changes.length} hand-typed amount${changes.length===1?'':'s'}: ${changes.map(change=>`${change.name} ${change.label} ${peso(change.original)} → ${peso(change.amount)} (${(reasons[changeKey(change.empId,change.field)]??'').trim()})`).join('; ')}.`});
   notifyPayrollPending(run.id,runLabel(run));
   nav('/payroll');
  };
@@ -206,6 +220,7 @@ const built:RunRow[]=[];
   {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
   {!loading&&negative.length>0&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">Net pay is below zero for {negative.join(', ')}. This payroll cannot be submitted until their deductions are reduced.</p>}
   {!loading&&gapRows.length>0&&<div role="alert" className="no-print rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Some work days are not paid because their attendance is missing or incomplete. Ask HR2 to complete these records, then reload the preview.</div><ul className="mb-0 mt-1.5 list-disc pl-5">{gapRows.map(row=>{const gaps=row.attendanceGaps!;return <li key={row.input.empId}><b>{row.input.name}</b>: {[gaps.missingDays.length?dayCount(gaps.missingDays.length,'with no attendance record'):'',gaps.incompleteDays.length?dayCount(gaps.incompleteDays.length,'without a time-in or time-out'):''].filter(Boolean).join(', ')} ({[...gaps.missingDays,...gaps.incompleteDays].sort().map(date=>periodLabel(date,date).split(' - ')[0]).join(', ')})</li>})}</ul></div>}
+  {savedAdjustments.length>0&&<div className="no-print rounded-lg border border-blue-200 bg-blue-50 p-3 text-[12px] text-[#17345b]"><div className="font-semibold">Amounts typed in by hand in this run</div><ul className="mb-0 mt-1.5 list-disc pl-5">{savedAdjustments.map(change=><li key={`${change.name}|${change.field}`}><b>{change.name}</b> · {change.label}: {peso(change.original)} → {peso(change.amount)} — {change.reason}</li>)}</ul></div>}
   {!loading&&rows.length>0&&<div className="no-print grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Employees</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{rows.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gross compensation</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{peso(totals.gross)}</div></div><div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Net pay</div><div className="mt-1 text-[22px] font-semibold text-blue-800">{peso(totals.net)}</div><div className="mt-1 text-[10px] text-slate-500">Total deductions · {peso(totals.deductions)}</div></div></div>}
   {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_28px_rgba(23,52,91,0.06)]">
    <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title||'-'}</div>{payDate&&!thirteenth&&<div className="text-[11px]">Pay Date: {periodLabel(payDate,payDate).split(' - ')[0]}</div>}{saved&&<div className="text-[11px]">Status: {runStatusLabel(saved)}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
@@ -236,8 +251,10 @@ const built:RunRow[]=[];
   {deciding&&saved&&<ConfirmDialog title={deciding==="Approved"?"Approve payroll?":"Reject payroll?"} message={`${deciding==="Approved"?"Approve":"Reject"} payroll for ${runLabel(saved)}?${deciding==="Rejected"?" A rejected run cannot be approved later.":""}`} confirmLabel={deciding==="Approved"?"Approve":"Reject"} danger={deciding==="Rejected"} saving={false} onCancel={()=>setDeciding(null)} onConfirm={()=>void decide(deciding)}/>}
   {confirming&&<Modal title="Confirm Payroll Submission" onClose={()=>setConfirming(false)}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Employees',String(rows.length)],['Gross Pay',peso(totals.gross)],['Total Deductions',peso(totals.deductions)],['Net Pay',peso(totals.net)]].map(([label,value])=><div key={label} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{label}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
+   {changes.length>0&&<div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3"><div className="text-[12px] font-semibold text-amber-900">Amounts typed in by hand — give a reason for each. The Admin sees these when reviewing.</div>
+    <div className="mt-2 grid gap-2">{changes.map(change=>{const key=changeKey(change.empId,change.field);return <label key={key} className="grid gap-1 text-[12px] text-amber-900"><span><b>{change.name}</b> · {change.label}: {peso(change.original)} → {peso(change.amount)}</span><input className="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[12px] text-slate-800" maxLength={200} placeholder="Reason" value={reasons[key]??''} onChange={event=>setReasons(previous=>({...previous,[key]:event.target.value}))}/></label>})}</div></div>}
    <p className="mt-4 text-[13px]">Submit this payroll for Admin approval?</p>
-   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={submitBusy} onClick={()=>setConfirming(false)}>Cancel</button><Button disabled={Boolean(loanError)||submitBusy} onClick={submit}>{submitBusy?'Verifying schedule…':'Confirm'}</Button></div>
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={submitBusy} onClick={()=>setConfirming(false)}>Cancel</button><Button disabled={Boolean(loanError)||submitBusy||missingReason} onClick={submit}>{submitBusy?'Verifying schedule…':'Confirm'}</Button></div>
   </Modal>}
  </div>;
 }

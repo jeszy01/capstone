@@ -53,6 +53,17 @@ describe('approved leave in payroll attendance',()=>{
  });
 });
 
+describe('employees who are no longer active',()=>{
+ const rows=(status:Employee['status'],records:{empId:string;date:string}[])=>computeDeductions({employees:[{...employee,status}],records:records.map((record,index)=>({id:index,name:'',status:'Present' as const,timeIn:'08:00',timeOut:'17:00',...record})),schedule:{start:'08:00',end:'17:00',otMin:0},assignments:[],grades:[],rates:DEFAULT_RATES,from:'2026-10-01',to:'2026-10-15'});
+ it('are paid for the days they have attendance in the cutoff',()=>{
+  expect(rows('Inactive',[{empId:'EMP-0001',date:'2026-10-01'},{empId:'EMP-0001',date:'2026-10-02'}])).toEqual([expect.objectContaining({daysWorked:2})]);
+ });
+ it('are left out when they have no attendance in the cutoff',()=>{
+  expect(rows('Inactive',[])).toEqual([]);
+  expect(rows('Inactive',[{empId:'EMP-0001',date:'2026-09-30'}])).toEqual([]);
+ });
+});
+
 describe('attendance gaps',()=>{
  it('lists work days with no record and Present days without a time-out',()=>{
   const records=[hr2('2026-10-01'),hr2('2026-10-02',{time_out:null})].map(record=>({id:1,empId:record.employee_no,name:'',date:record.date,status:record.status,timeIn:record.time_in??'',timeOut:record.time_out??''}));

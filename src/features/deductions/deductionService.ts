@@ -10,9 +10,12 @@ type Grade={position?:string;fixedSalary:number;status?:string};
 export type DeductionRow={employee:Employee;salary:number|null;lateMin:number;undertimeMin:number;daysWorked:number;otHours:number;absentDays:number;late:number;undertime:number;sss:number;phil:number;pagibig:number;total:number};
 
 // Late, undertime and OT come from the HR2 records as received (OT only when approved); they are not recomputed here.
+// Active employees are always included; an Inactive or On Leave employee is included when they have attendance in the
+// period (for example, the last days before separation), so the days they worked are still paid.
 export function computeDeductions(a:{employees:Employee[];records:AttendanceRecord[];schedule:AttendanceSchedule;assignments:EmployeeCompensation[];grades:Grade[];rates:PayrollRates;from:string;to:string}):DeductionRow[]{
  const active=activeCompensations(a.assignments,a.to);
- return a.employees.filter(e=>e.status==='Active').map(employee=>{
+ const withAttendance=new Set(a.records.filter(r=>r.date>=a.from&&r.date<=a.to).map(r=>r.empId));
+ return a.employees.filter(e=>e.status==='Active'||withAttendance.has(e.employeeNo)||withAttendance.has(e.id)).map(employee=>{
   const assignment=active.find(x=>x.employeeId===employee.id||x.employeeId===employee.employeeNo);
   const grade=a.grades.find(g=>g.status!=='Inactive'&&(g.position??'').trim().toLowerCase()===(employee.position??'').trim().toLowerCase());
   const employeeSalary=Number(employee.basicSalary??0);
