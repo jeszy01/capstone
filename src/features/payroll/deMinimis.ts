@@ -19,7 +19,10 @@ export const DE_MINIMIS_RULES:DeMinimisRule[]=[
 ];
 export const deMinimisRuleFor=(date:string)=>[...DE_MINIMIS_RULES].reverse().find(rule=>rule.effectiveFrom<=date)??DE_MINIMIS_RULES[0];
 
-/** The de minimis category of an allowance type, by name. Types not listed here are not de minimis. */
+/** Labels for the tax treatment choices in Allowance Types. */
+export const DE_MINIMIS_LABELS:Record<DeMinimisCategory,string>={rice:'Rice subsidy',laundry:'Laundry allowance',uniform:'Uniform and clothing allowance',medicalAssistance:'Actual medical assistance',medicalDependents:'Medical cash allowance to dependents'};
+export const deMinimisCeilingLabel=(category:DeMinimisCategory,date:string)=>{const rule=deMinimisRuleFor(date);return category==='uniform'||category==='medicalAssistance'?`₱${rule.annual[category].toLocaleString()} a year`:`₱${rule.monthly[category].toLocaleString()} a month`};
+/** The suggested de minimis category of an allowance type from its name, until one is chosen in Allowance Types. */
 export function deMinimisCategory(allowanceType:string):DeMinimisCategory|null{
  const name=allowanceType.trim().toLowerCase();
  if(name.includes('rice'))return 'rice';

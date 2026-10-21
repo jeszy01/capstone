@@ -213,3 +213,20 @@ describe('8. Contribution schedule defaults (2025–2026)',()=>{
   expect(DEFAULT_RATES).toMatchObject({sssRate:5,sssEmployerRate:10,sssMin:5000,sssMax:35000,sssEcLow:10,sssEcHigh:30,sssEcThreshold:15000,philRate:2.5,philEmployerRate:2.5,philTotalRate:5,philMin:10000,philMax:100000,pagibigRate:2,pagibigEmployerRate:2,pagibigMax:10000,pagibigLowerSalaryThreshold:1500,pagibigLowerEmployeeRate:1});
  });
 });
+
+import {allowanceTreatment} from '../features/compensation/allowanceRules';
+describe('Policy settings for accountant decisions',()=>{
+ it('uses the tax treatment chosen in Allowance Types over the name-based suggestion',()=>{
+  const types=[{id:'m',name:'Medical',taxTreatment:'medicalDependents' as const},{id:'g',name:'Grocery',taxTreatment:'rice' as const},{id:'r',name:'Rice Subsidy',taxTreatment:'taxable' as const}];
+  expect(allowanceTreatment('Medical',types)).toBe('medicalDependents');
+  expect(allowanceTreatment('Laundry',types)).toBe('laundry');
+  expect(allowancePay([allowance('Medical',1000)],2,'2026-10-15',types)).toEqual({taxable:0,exempt:166.5,otherBenefits:333.5});
+  expect(allowancePay([allowance('Grocery',2000)],2,'2026-10-15',types)).toEqual({taxable:0,exempt:1000,otherBenefits:0});
+  expect(allowancePay([allowance('Rice Subsidy',2000)],2,'2026-10-15',types)).toEqual({taxable:1000,exempt:0,otherBenefits:0});
+ });
+ it('classifies paid leave as set on the withholding rule version (supplementary unless set to regular)',()=>{
+  const input={dailyRate:1000,daysWorked:5,vlDays:6};
+  expect(cutoff(input).taxBreakdown).toMatchObject({regularCompensation:5000,supplementaryCompensation:6000});
+  expect(cutoff(input,{rules:[{...DEFAULT_WITHHOLDING_RULES,paidLeaveAs:'regular'}]}).taxBreakdown).toMatchObject({regularCompensation:11000,supplementaryCompensation:0});
+ });
+});

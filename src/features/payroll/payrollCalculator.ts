@@ -1,6 +1,6 @@
 import type {PayrollInput,PayrollRates,PayrollResult} from '../../types/domain';
 import {numberValue} from '../../utils/storage';
-import {calculateWithholdingTax,detectPayrollPeriod} from './withholdingTax';
+import {calculateWithholdingTax,detectPayrollPeriod,loadWithholdingRules,ruleForDate} from './withholdingTax';
 import type {AnnualTaxHistory,PayrollPeriod,WithholdingTaxRuleSet} from './withholdingTax';
 import {pagibigEmployeeRate} from '../contributions/contributionCalculator';
 import {deMinimisRuleFor} from './deMinimis';
@@ -59,8 +59,10 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  // treated as part of the minimum wage. Taxable allowances, bonuses and benefits above ₱90,000 stay taxable.
  const minimumWage=numberValue(R.statutoryMinimumWage),mwe=minimumWage>0&&rate>0&&rate<=minimumWage;
  const earnedBasicPay=Math.max(0,basic-absences-late-undertime);
- const regular=mwe?taxableAllowances:earnedBasicPay+taxableAllowances;
- const supplementary=mwe?numberValue(r.otherEarnings):overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.otherEarnings);
+ // Paid leave is classified per the withholding rule version in Payroll Settings (supplementary unless set to regular).
+ const leaveIsRegular=ruleForDate(periodEnd,taxContext.rules??loadWithholdingRules()).paidLeaveAs==='regular';
+ const regular=mwe?taxableAllowances:earnedBasicPay+taxableAllowances+(leaveIsRegular?leavePay:0);
+ const supplementary=mwe?numberValue(r.otherEarnings):overtime+nightDifferential+(leaveIsRegular?0:leavePay)+numberValue(r.holidayPay)+numberValue(r.otherEarnings);
  // Monetized unused leave is de minimis up to the yearly day limit at the daily rate (12 days under RR 29-2025);
  // the rest, and de minimis allowances above their ceiling, are other benefits under the ₱90,000 exemption.
  const monetizedLeave=round(numberValue(r.slConversion));

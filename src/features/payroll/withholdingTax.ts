@@ -7,6 +7,9 @@ export interface WithholdingTaxRuleSet{
  id:string; effectiveFrom:string; effectiveTo?:string; source:string;
  tables:Record<PayrollPeriod,TaxBracket[]>; annualTable:TaxBracket[];
  annualBenefitsExemption:number;
+ /** How pay for approved paid-leave days is classified for withholding: with regular pay (basic salary) or as
+  * supplementary pay. RR 2-98 does not say; the accountant decides. Missing means 'supplementary'. */
+ paidLeaveAs?:'regular'|'supplementary';
 }
 export const WITHHOLDING_RULES_KEY='payroll:withholding-tax-rules';
 const RETIRED_RULE_FIELDS=['deMinimisEffectiveFrom','deMinimisSource','deMinimisCaps'];

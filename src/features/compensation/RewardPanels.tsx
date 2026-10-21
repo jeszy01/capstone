@@ -7,8 +7,10 @@ import {recordAudit} from '../audit/auditService';
 import {can} from '../auth/permissions';
 import {periodLabel} from '../payroll/payrollRuns';
 import {cutoffFor,cutoffNumberFor,loadRates} from '../settings/payrollSettings';
-import {loadAllowanceTypes,saveAllowanceTypes} from './allowanceRules';
-import type {AllowanceType} from './allowanceRules';
+import {allowanceTreatment,loadAllowanceTypes,saveAllowanceTypes} from './allowanceRules';
+import {DE_MINIMIS_LABELS,deMinimisCeilingLabel} from '../payroll/deMinimis';
+import type {DeMinimisCategory} from '../payroll/deMinimis';
+import type {AllowanceTaxTreatment,AllowanceType} from './allowanceRules';
 import {compensationService} from './compensationService';
 import {isBonusReward,today} from './compensationState';
 import type {BonusIncentive,RewardFrequency} from './compensationState';
@@ -98,7 +100,7 @@ function AllowanceModal({editing,draft,employees,types,error,saving,onClose,onSa
   <div className="grid gap-4 sm:grid-cols-2"><Field label="Amount"><TextInput type="number" min="0.01" step="0.01" value={form.amount} onChange={event=>setForm({...form,amount:event.target.value})} placeholder="0.00"/></Field><Field label="Frequency"><select className={input} value={form.frequency} onChange={event=>setForm({...form,frequency:event.target.value as RewardFrequency})}><option>Per Cutoff</option><option>Monthly</option></select></Field></div>
   <div className="grid gap-4 sm:grid-cols-2"><Field label="Effective Date"><TextInput type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></Field><Field label="Status"><select className={input} value={form.status} onChange={event=>setForm({...form,status:event.target.value as Draft['status']})}><option>Active</option><option>Inactive</option></select></Field></div>
   <Field label="Taxable"><select className={input} value={yesNo(form.taxable)} onChange={event=>setForm({...form,taxable:event.target.value==='Yes'})}><option>Yes</option><option>No</option></select></Field>
-  {!form.taxable&&<p className="m-0 text-[11px] leading-relaxed text-slate-500 sm:col-span-2">Only de minimis allowances are tax-free: rice subsidy, laundry, uniform or clothing, and medical, each up to its BIR ceiling (RR 29-2025). The part above the ceiling counts toward the ₱90,000 13th month and other benefits exemption. Other allowance types are taxed as regular pay.</p>}
+  {!form.taxable&&<p className="m-0 text-[11px] leading-relaxed text-slate-500 sm:col-span-2">Only allowance types set as de minimis in Allowance Types are tax-free, each up to its BIR ceiling (RR 29-2025). The part above the ceiling counts toward the ₱90,000 13th month and other benefits exemption. Types set as taxable are taxed as regular pay.</p>}
  </div><InlineError error={error}/><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button disabled={saving||!valid} onClick={()=>onSave(value)}>{saving?'Saving…':'Save'}</Button></div></Modal>;
 }
 
@@ -119,7 +121,8 @@ function AllowanceTypesModal({types,inUse,onClose,onSaved}:{types:AllowanceType[
   return '';
  };
  const save=()=>{
-  const next=rows.map(row=>({...row,name:row.name.trim()}));
+  // Each type is saved with an explicit tax treatment (the name-based suggestion until one is chosen).
+  const next=rows.map(row=>({...row,name:row.name.trim(),taxTreatment:allowanceTreatment(row.name,[row])}));
 
   saveAllowanceTypes(next);
 
@@ -129,7 +132,8 @@ function AllowanceTypesModal({types,inUse,onClose,onSaved}:{types:AllowanceType[
  if(confirming)return <ConfirmDialog title="Save allowance types?" message="Apply the changes to allowance types?" confirmLabel="Confirm" saving={false} onCancel={()=>setConfirming(false)} onConfirm={save}/>;
  return <Modal title="Allowance Types" wide onClose={onClose}><div className="grid gap-3">
   {rows.map((row,index)=><div key={row.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-xl border border-slate-200 p-3">
-   <Field label="Name"><TextInput value={row.name} onChange={event=>update(index,{name:event.target.value})}/></Field>
+   <div className="grid gap-3 sm:grid-cols-2"><Field label="Name"><TextInput value={row.name} onChange={event=>update(index,{name:event.target.value})}/></Field>
+   <Field label="Tax treatment"><select className={input} value={allowanceTreatment(row.name,[row])} onChange={event=>update(index,{taxTreatment:event.target.value as AllowanceTaxTreatment})}><option value="taxable">Taxable (fixed allowance)</option>{(Object.keys(DE_MINIMIS_LABELS) as DeMinimisCategory[]).map(category=><option key={category} value={category}>De minimis: {DE_MINIMIS_LABELS[category]} (up to {deMinimisCeilingLabel(category,new Date().toISOString().slice(0,10))})</option>)}</select></Field></div>
    <button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Remove ${row.name||'allowance type'}`} onClick={()=>removeRow(index)}><Trash2 size={14}/><span className="max-sm:sr-only">Remove</span></button>
   </div>)}
   <div><button type="button" className={ghost} onClick={()=>setRows(list=>[...list,{id:crypto.randomUUID(),name:''}])}><Plus size={14}/>Add Type</button></div>
