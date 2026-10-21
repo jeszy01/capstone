@@ -7,6 +7,7 @@ import {hmoService} from '../hmo/hmoService';
 import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
 import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
 import {fetchAttendance} from '../attendance/attendanceService';
+import {attendanceGaps} from '../attendance/workDays';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
@@ -77,9 +78,9 @@ export default function ReviewPayroll(){
   if(active){setRows(built);setLoading(false)}
   return;
  }
- const[employees,records,bundle,scheduledLoans,scheduledGovernmentLoans,hmoLines]=await Promise.all([
- employeeService.getAllFromServer(),
- fetchAttendance({from,to}),
+ const employees=await employeeService.getAllFromServer();
+ const[records,bundle,scheduledLoans,scheduledGovernmentLoans,hmoLines]=await Promise.all([
+ fetchAttendance({from,to},employees),
  compensationService.load(),
  loanService.schedule(from,to),
  governmentLoanService.schedule(from,to),
@@ -118,7 +119,8 @@ const built:RunRow[]=[];
      const governmentTotals=governmentLoanTotals(governmentLoans);
      // Government loans have their own fields so they never mix with employee loan installments.
      input.govSssLoan=governmentTotals.sssLoan;input.govPagibigLoan=governmentTotals.pagibigLoan;
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
+     const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to,holidays});
+     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
     if(active){setRows(built);setLoading(false)}
@@ -133,6 +135,10 @@ const built:RunRow[]=[];
  const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
  const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
  const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
+ // Employees whose deductions exceed their pay; the run cannot be submitted until these are fixed.
+ const negative=view.filter(({c})=>c.net<0).map(({row})=>row.input.name);
+ const gapRows=rows.filter(row=>row.attendanceGaps);
+ const dayCount=(n:number,what:string)=>`${n} ${n===1?'day':'days'} ${what}`;
  const automatedLoanFields:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance'];
  // 13th month pay is released only through its own run type.
  const editCell=(index:number,row:RunRow,key:EditKey)=>saved||thirteenth||key==='thirteenthMonthAndOtherBenefits'||automatedLoanFields.includes(key)?nf(numberValue(row.input[key])):<input className="paper-input" type="number" min="0" step="0.01" value={String(row.input[key]??0)} onChange={event=>setField(index,key,event.target.value)}/>;
@@ -141,6 +147,7 @@ const built:RunRow[]=[];
   if(loanError){setConfirming(false);setError(loanError);return}
   // A regular cutoff can be submitted only once HR2 attendance covers the whole period.
   if(!thirteenth&&!cutoffSynced({from,to})){setConfirming(false);setError('Attendance not yet synced for this cutoff');return}
+  if(negative.length){setConfirming(false);setError(`Net pay is below zero for ${negative.join(', ')}. Reduce their other deductions or loan installments before submitting.`);return}
   setSubmitBusy(true);setError('');
   if(!thirteenth)try{
    const [currentEmployees,currentSchedule]=await Promise.all([employeeService.getAllFromServer(),loanService.schedule(from,to)]);
@@ -186,12 +193,14 @@ const built:RunRow[]=[];
    <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title||'Payroll entry'}</div></div>{saved&&<StatusBadge status={runStatusLabel(saved)}/>}</div>
    <div className="flex flex-wrap gap-2">
     <button className={ghost} onClick={()=>window.print()}>Print</button>
-    {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
+    {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy||negative.length>0} onClick={()=>{setError('');setConfirming(true)}}>Submit for Approval</Button>}
     {saved&&saved.status==='Pending Approval'&&can('payroll.approve')&&<><button className={ghost} onClick={()=>setDeciding('Rejected')}>Reject</button><Button onClick={()=>setDeciding('Approved')}>Approve</Button></>}
    </div>
   </div>
   {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
   {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
+  {!loading&&negative.length>0&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">Net pay is below zero for {negative.join(', ')}. This payroll cannot be submitted until their deductions are reduced.</p>}
+  {!loading&&gapRows.length>0&&<div role="alert" className="no-print rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Some work days are not paid because their attendance is missing or incomplete. Ask HR2 to complete these records, then reload the preview.</div><ul className="mb-0 mt-1.5 list-disc pl-5">{gapRows.map(row=>{const gaps=row.attendanceGaps!;return <li key={row.input.empId}><b>{row.input.name}</b>: {[gaps.missingDays.length?dayCount(gaps.missingDays.length,'with no attendance record'):'',gaps.incompleteDays.length?dayCount(gaps.incompleteDays.length,'without a time-in or time-out'):''].filter(Boolean).join(', ')} ({[...gaps.missingDays,...gaps.incompleteDays].sort().map(date=>periodLabel(date,date).split(' - ')[0]).join(', ')})</li>})}</ul></div>}
   {!loading&&rows.length>0&&<div className="no-print grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Employees</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{rows.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gross compensation</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{peso(totals.gross)}</div></div><div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Net pay</div><div className="mt-1 text-[22px] font-semibold text-blue-800">{peso(totals.net)}</div><div className="mt-1 text-[10px] text-slate-500">Total deductions · {peso(totals.deductions)}</div></div></div>}
   {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_28px_rgba(23,52,91,0.06)]">
    <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title||'-'}</div>{payDate&&!thirteenth&&<div className="text-[11px]">Pay Date: {periodLabel(payDate,payDate).split(' - ')[0]}</div>}{saved&&<div className="text-[11px]">Status: {runStatusLabel(saved)}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>

@@ -1,4 +1,4 @@
-import type {AttendanceRecord,AttendanceStatus} from '../../types/domain';
+import type {AttendanceRecord,AttendanceStatus,Employee} from '../../types/domain';
 import {read,write} from '../../utils/storage';
 import {approvedLeaveAttendance} from '../leave/leaveService';
 
@@ -56,11 +56,18 @@ async function fetchHr2Attendance(query:AttendanceQuery):Promise<AttendanceRecor
  return loadStore().records.filter(record=>record.date>=query.from&&record.date<=query.to).map(toAttendanceRecord);
 }
 
-/** HR2 attendance with approved leave applied: a leave day replaces that employee's record for the date. */
-export async function fetchAttendance(query:AttendanceQuery):Promise<AttendanceRecord[]>{
- const leave=approvedLeaveAttendance(query.from,query.to);
- const onLeave=new Set(leave.map(record=>`${record.empId}|${record.date}`));
+/**
+ * HR2 attendance with approved leave applied: a leave day replaces that employee's HR2 record for the date, except
+ * an HR2 Day Off. Leave is filed by employee id and HR2 sends the employee number, so leave records are given the
+ * employee number to match. Pass the employees when already loaded; otherwise they are read here.
+ */
+export async function fetchAttendance(query:AttendanceQuery,employees?:Pick<Employee,'id'|'employeeNo'>[]):Promise<AttendanceRecord[]>{
  const records=await fetchHr2Attendance(query);
+ const people=employees??await import('../employees/employeeService').then(module=>module.employeeService.getAll()).catch(()=>[]);
+ const numberOf=new Map(people.map(employee=>[employee.id,employee.employeeNo]));
+ const dayOff=new Set(records.filter(record=>record.status==='Day Off').map(record=>`${record.empId}|${record.date}`));
+ const leave=approvedLeaveAttendance(query.from,query.to).map(record=>({...record,empId:numberOf.get(record.empId)??record.empId})).filter(record=>!dayOff.has(`${record.empId}|${record.date}`));
+ const onLeave=new Set(leave.map(record=>`${record.empId}|${record.date}`));
  return [...records.filter(record=>!onLeave.has(`${record.empId}|${record.date}`)),...leave];
 }
 

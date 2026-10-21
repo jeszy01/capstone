@@ -26,7 +26,7 @@ describe('leave',()=>{
  });
  it('deducts unpaid leave as an absence and not paid leave',()=>{
   const employee:Employee={id:'e1',employeeNo:'EMP-0001',name:'A',email:null,position:'',department:'',dateHired:'2025-01-01',basicSalary:22000,positionRate:0,status:'Active'};
-  const records=approvedLeaveAttendance('2026-10-01','2026-10-15',[leave({}),leave({id:'l2',leaveType:'Unpaid',paid:false,from:'2026-10-09',to:'2026-10-10',days:2})]);
+  const records=approvedLeaveAttendance('2026-10-01','2026-10-15',[leave({}),leave({id:'l2',leaveType:'Unpaid',paid:false,from:'2026-10-08',to:'2026-10-09',days:2})]);
   const [row]=computeDeductions({employees:[employee],records,schedule:{start:'08:00',end:'17:00',otMin:30},assignments:[],grades:[],rates:DEFAULT_RATES,from:'2026-10-01',to:'2026-10-15'});
   expect(row.absentDays).toBe(2);
  });

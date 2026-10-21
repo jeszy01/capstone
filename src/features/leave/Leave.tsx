@@ -53,7 +53,7 @@ export default function Leave(){
 function LeaveModal({employees,onClose,onSave}:{employees:Employee[];onClose:()=>void;onSave:(leave:LeaveRecord)=>void}){
  const[f,setF]=useState({employeeId:'',leaveType:leaveTypes[0] as LeaveType,from:today(),to:today()});
  const days=leaveDays(f.from,f.to);
- const problem=!f.employeeId?'Select an employee.':!days?'The end date must be on or after the start date.':overlaps(loadLeaves(),f.employeeId,f.from,f.to)?'This employee already has leave on these dates.':'';
+ const problem=!f.employeeId?'Select an employee.':f.to<f.from?'The end date must be on or after the start date.':!days?'These dates have no work days; weekends and non-working holidays are not leave days.':overlaps(loadLeaves(),f.employeeId,f.from,f.to)?'This employee already has leave on these dates.':'';
  const active=employees.filter(employee=>employee.status==='Active');
  const save=()=>{if(problem)return;onSave({id:crypto.randomUUID(),employeeId:f.employeeId,leaveType:f.leaveType,from:f.from,to:f.to,days,paid:isPaidLeave(f.leaveType),status:'Pending',createdAt:new Date().toISOString(),createdBy:getCurrentUser()?.name??''})};
  return <Modal title="Add Leave" onClose={onClose}><div className="grid gap-4 sm:grid-cols-2">

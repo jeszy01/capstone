@@ -11,7 +11,8 @@ import type {PayrollSettingsSnapshot} from '../settings/payrollSettings';
 export type RunStatus='Pending Approval'|'Approved'|'Rejected';
 export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:'Loan'|'Cash Advance';loanType:string;amount:number;installmentNumber:number;installmentCount:number};
 // hmoCompany: the company's HMO premium cost for the cutoff (not deducted); missing on runs saved before it was recorded.
-export type RunRow={position:string;rest:number;hmo:number;hmoCompany?:number;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
+// attendanceGaps: work days Payroll could not pay (no HR2 record, or Present without a time-in or time-out).
+export type RunRow={position:string;rest:number;hmo:number;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
 // released: department name -> ISO date-time when released to ESS
 export type PayrollRunType='regular'|'thirteenth-month';
 export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;releasedAt?:string;releasedBy?:string};
