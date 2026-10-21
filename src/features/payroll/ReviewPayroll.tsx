@@ -4,7 +4,7 @@ import {Button,ConfirmDialog,Empty,LoadingState,Modal,ghost} from '../../compone
 import type {PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
-import {hmoCutoffDeduction} from '../hmo/hmoPayroll';
+import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
 import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
 import {fetchAttendance} from '../attendance/attendanceService';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
@@ -104,7 +104,7 @@ const built:RunRow[]=[];
      const nonTaxableBonus=approvedBonuses.filter(entry=>!entry.taxable).reduce((total,entry)=>total+entry.amount,0);
      const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),rates.payPeriodsPerMonth);
      // The same HMO cutoff deduction shown under Deductions → HMO.
-     const hmo=hmoCutoffDeduction(hmoLines,employee.id);
+     const hmo=hmoCutoffDeduction(hmoLines,employee.id),hmoCompany=hmoCompanyCutoffShare(hmoLines,employee.id);
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
      const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
      // A graded assignment carries the grade's whole-peso daily rate; a manual salary keeps salary ÷ working days.
@@ -118,7 +118,7 @@ const built:RunRow[]=[];
      const governmentTotals=governmentLoanTotals(governmentLoans);
      // Government loans have their own fields so they never mix with employee loan installments.
      input.govSssLoan=governmentTotals.sssLoan;input.govPagibigLoan=governmentTotals.pagibigLoan;
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
+     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
      built.push(row);
     }
     if(active){setRows(built);setLoading(false)}

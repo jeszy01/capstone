@@ -29,6 +29,11 @@ describe('HMO cutoff deductions',()=>{
   expect(lines([enrollment({status:'Submitted',approvalStatus:'Pending'})])).toEqual([]);
   expect(lines([enrollment({status:'Terminated'})])).toEqual([]);
  });
+ it('reports the company premium cost per cutoff without deducting it',()=>{
+  // Employee premium ₱1,500 (company-paid) plus a sponsored dependent ₱900, over two cutoffs.
+  const [line]=lines([enrollment()],[dependent({companySponsored:true,employeeShare:0,companyShare:900})]);
+  expect(line).toMatchObject({cutoffDeduction:0,companyCutoffShare:1200});
+ });
  it('leaves out company-sponsored and not-yet-effective dependents',()=>{
   expect(lines([enrollment()],[dependent({companySponsored:true,employeeShare:0})])[0].cutoffDeduction).toBe(0);
   expect(lines([enrollment()],[dependent({effectiveDate:'2026-11-01'})])[0].monthlyShare).toBe(0);

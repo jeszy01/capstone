@@ -1,7 +1,8 @@
 import type {HmoDependent,HmoEnrollment,HmoPlan} from './hmoTypes';
-import {calculateEmployeeHmoShare,wasCovered} from './hmoContribution';
+import {calculateCompanyHmoShare,calculateEmployeeHmoShare,wasCovered} from './hmoContribution';
 
-export type HmoCutoffLine={employeeId:string;enrollmentId:string;planName:string;monthlyShare:number;cutoffDeduction:number;status:string};
+/** companyCutoffShare is the company's premium cost for the cutoff, reported to Finance; it is not deducted. */
+export type HmoCutoffLine={employeeId:string;enrollmentId:string;planName:string;monthlyShare:number;cutoffDeduction:number;companyCutoffShare:number;status:string};
 const round=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
 const inRange=(start:string|null,end:string|null,from:string,to:string)=>Boolean(start)&&String(start)<=to&&(!end||end>=from);
 const localDay=(timestamp?:string|null)=>{if(!timestamp)return null;const d=new Date(timestamp);return Number.isNaN(d.getTime())?null:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
@@ -28,7 +29,8 @@ export function hmoCutoffLines({plans,enrollments,dependents,from,to,payPeriodsP
   const covered=dependents.filter(dependent=>dependent.enrollmentId===item.id&&wasCovered(dependent)&&(dependent.status!=='Terminated'||Boolean(dependent.terminatedAt))
    &&inRange(latest(dependent.effectiveDate??item.effectiveDate,start),earliest(dependent.expirationDate,end,dependent.status==='Terminated'?localDay(dependent.terminatedAt):null),from,to));
   const monthlyShare=calculateEmployeeHmoShare(plan,covered);
-  return [{employeeId:item.employeeId,enrollmentId:item.id,planName:plan.name,monthlyShare,cutoffDeduction:round(monthlyShare/periods),status:item.status}];
+  return [{employeeId:item.employeeId,enrollmentId:item.id,planName:plan.name,monthlyShare,cutoffDeduction:round(monthlyShare/periods),companyCutoffShare:round(calculateCompanyHmoShare(plan,covered)/periods),status:item.status}];
  });
 }
 export const hmoCutoffDeduction=(lines:HmoCutoffLine[],employeeId:string)=>round(lines.filter(line=>line.employeeId===employeeId).reduce((sum,line)=>sum+line.cutoffDeduction,0));
+export const hmoCompanyCutoffShare=(lines:HmoCutoffLine[],employeeId:string)=>round(lines.filter(line=>line.employeeId===employeeId).reduce((sum,line)=>sum+line.companyCutoffShare,0));

@@ -1284,9 +1284,11 @@ app.post('/compensation', auth, async (req, res) => {
 });
 
 // ---- /hmo/:resource[/:id] ----
-const HMO_RESOURCES = new Set(['providers', 'plans', 'enrollments', 'dependents', 'utilizations', 'history', 'payroll-deductions']);
-const hmoTable = r => r === 'history' ? 'hmo_history' : r === 'payroll-deductions' ? 'hmo_payroll_deductions' : `hmo_${r}`;
-const hmoHistoryType = r => r === 'providers' ? 'provider' : r === 'plans' ? 'plan' : r === 'payroll-deductions' ? 'payroll_deduction' : r === 'utilizations' ? 'utilization' : r;
+// The hmo_utilizations and hmo_payroll_deductions tables are kept but no longer served: payroll computes the HMO
+// deduction from enrollments (see src/features/hmo/hmoPayroll.ts) and Maxicare tracks benefit utilization.
+const HMO_RESOURCES = new Set(['providers', 'plans', 'enrollments', 'dependents', 'history']);
+const hmoTable = r => `hmo_${r}`;
+const hmoHistoryType = r => r === 'providers' ? 'provider' : r === 'plans' ? 'plan' : r;
 const text = v => typeof v === 'string' ? v.trim() : '';
 const hmoDate = (value, name) => {
   const day = text(value).slice(0, 10);
@@ -1295,7 +1297,6 @@ const hmoDate = (value, name) => {
   if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== day) throw new HttpError(400, 'INVALID_HMO_DATE', `${name} must be a valid ISO date.`);
   return day;
 };
-const hmoNumber = (value, name) => { const n = Number(value); if (!Number.isFinite(n) || n < 0) throw new HttpError(400, 'INVALID_HMO_AMOUNT', `${name} must be a non-negative number.`); return Math.round(n * 100) / 100; };
 const snapshot = row => row ? JSON.parse(JSON.stringify(row)) : {};
 const addCalendarMonths = (day, months) => {
   const [year, month, date] = day.split('-').map(Number);
@@ -1347,21 +1348,12 @@ const enrollmentSnapshot = (e, hireDate, eligibilityDate) => ({ id: e.id, employ
 // workflow actions, so a request body cannot mark a record approved, active or verified directly.
 const HMO_PLAN_FIELDS = ['provider_id', 'name', 'coverage_start', 'coverage_end', 'annual_benefit_limit', 'inpatient', 'outpatient', 'emergency', 'preventive_care', 'dental', 'employee_company_share', 'employee_member_share', 'dependent_company_share', 'dependent_member_share', 'employee_monthly_premium', 'dependent_monthly_premium', 'collect_employee_share_via_payroll', 'status'];
 const HMO_PROVIDER_FIELDS = ['name', 'contact_person', 'contact_number', 'status'];
-const HMO_UTILIZATION_FIELDS = ['service_date', 'service_type', 'amount_used', 'status', 'remarks'];
 const HMO_PLAN_STATUSES = ['Draft', 'Active', 'Expiring', 'Expired', 'Archived'];
 const ensureDependentSplit = (company, member) => {
   if (!validDependentSplit(Number(company), Number(member))) throw new HttpError(400, 'INVALID_DEPENDENT_CONTRIBUTION_POLICY', 'The dependent premium company and employee shares must add up to 100%.');
 };
 const pickFields = (b, fields) => Object.fromEntries(Object.entries(b).filter(([key]) => fields.includes(key)));
 const hmoPlanStatus = (value, fallback) => { const status = text(value) || fallback; if (!HMO_PLAN_STATUSES.includes(status)) throw new HttpError(400, 'INVALID_HMO_PLAN_STATUS', `Plan status must be one of ${HMO_PLAN_STATUSES.join(', ')}.`); return status; };
-const hmoUtilizationValues = (b, partial) => {
-  const values = pickFields(b, HMO_UTILIZATION_FIELDS);
-  if (!partial || values.service_date !== undefined) values.service_date = hmoDate(values.service_date, 'service_date');
-  if (!partial || values.service_type !== undefined) values.service_type = required(values.service_type, 'service_type');
-  if (!partial || values.amount_used !== undefined) values.amount_used = hmoNumber(values.amount_used, 'amount_used');
-  if (values.status !== undefined && !['Recorded', 'Voided'].includes(String(values.status))) throw new HttpError(400, 'INVALID_HMO_UTILIZATION_STATUS', 'Utilization status must be Recorded or Voided.');
-  return values;
-};
 
 // Plans, enrollments and dependents expire by date. The check runs when HMO records are read, at most once a minute,
 // and each change is written to the HMO history as a System action.
@@ -1400,11 +1392,18 @@ async function hmoHandler(req, res) {
     if (resource === 'history') {
       const q = req.query;
       const page = Math.max(1, Number(q.page ?? 1) || 1), pageSize = Math.min(100, Math.max(1, Number(q.page_size ?? 25) || 25));
-      const entityType = text(q.entity_type), entityId = text(q.entity_id), search = text(q.search).toLowerCase();
-      const rows = (await listRows(table)).filter(r => (!entityType || r.entity_type === entityType) && (!entityId || r.entity_id === entityId) && (!search || JSON.stringify(r).toLowerCase().includes(search)))
-        .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
-      const actorNames = new Map((await listRows('users')).map(a => [String(a.id), text(a.name) || [a.first_name, a.last_name].map(text).filter(Boolean).join(' ') || text(a.email) || String(a.id)]));
-      return ok(res, { items: rows.slice((page - 1) * pageSize, page * pageSize).map(r => ({ ...r, actor_name: r.actor_id ? actorNames.get(String(r.actor_id)) ?? String(r.actor_id) : 'System' })), page, page_size: pageSize, total: rows.length });
+      const entityType = text(q.entity_type), entityId = text(q.entity_id), search = text(q.search);
+      // Filtered, sorted and paged in the database, so the history can grow without loading every row.
+      const conditions = [], values = [];
+      const add = (sql, value) => { values.push(value); conditions.push(sql.replace('?', `$${values.length}`)); };
+      if (entityType) add('h.entity_type = ?', entityType);
+      if (entityId) add('h.entity_id = ?', entityId);
+      if (search) add('h::text ilike ?', `%${search.replace(/[\\%_]/g, c => `\\${c}`)}%`);
+      const whereSql = conditions.length ? ` where ${conditions.join(' and ')}` : '';
+      const total = (await run(`select count(*)::int as total from hmo_history h${whereSql}`, values)).rows[0].total;
+      const rows = (await run(`select h.*, coalesce(nullif(trim(u.name), ''), u.email) as actor_name from hmo_history h left join users u on u.id = h.actor_id${whereSql}
+        order by h.created_at desc limit ${pageSize} offset ${(page - 1) * pageSize}`, values)).rows;
+      return ok(res, { items: rows.map(r => ({ ...r, actor_name: r.actor_id ? r.actor_name ?? String(r.actor_id) : 'System' })), page, page_size: pageSize, total });
     }
     if (resource === 'enrollments') {
       const [rows, employees] = await Promise.all([listRows(table), listRows('employees')]);
@@ -1530,11 +1529,6 @@ async function hmoHandler(req, res) {
       return saveTransition('terminated', targetId, previous, { status: 'Terminated', terminated_at: now, updated_at: now });
     }
 
-    if (resource === 'payroll-deductions' && action === 'verify') {
-      if (previous.verification_status !== 'Pending') throw new HttpError(409, 'HMO_DEDUCTION_ALREADY_REVIEWED', 'This deduction has already been reviewed.');
-      // hmo_payroll_deductions has no updated_at column; verified_at records when it was reviewed.
-      return saveTransition('verified', targetId, previous, { verification_status: 'Verified', verified_by: ctx.userId ?? null, verified_at: now });
-    }
     throw new HttpError(400, 'HMO_ACTION_NOT_SUPPORTED', `Action '${action}' is not supported for ${resource}.`);
   };
 
@@ -1643,43 +1637,9 @@ async function hmoHandler(req, res) {
       await hmoHistory('dependent', row.id, 'submitted', ctx.userId, undefined, row);
       return created(res, row);
     }
-    if (resource === 'payroll-deductions') {
-      const employeeId = required(b.employee_id, 'employee_id'), enrollmentId = required(b.enrollment_id, 'enrollment_id');
-      const periodStart = hmoDate(b.period_start, 'period_start'), periodEnd = hmoDate(b.period_end, 'period_end');
-      if (periodEnd < periodStart) throw new HttpError(400, 'INVALID_HMO_DATES', 'period_end must be on or after period_start.');
-      const enrollment = await first('hmo_enrollments', { id: enrollmentId });
-      if (!enrollment || enrollment.employee_id !== employeeId || enrollment.status !== 'Active' || enrollment.approval_status !== 'Approved' || enrollment.maxicare_status !== 'Active')
-        throw new HttpError(409, 'HMO_NOT_PAYROLL_ELIGIBLE', 'Only approved, Maxicare-active enrollments may create payroll deductions.');
-      if (periodEnd < String(enrollment.effective_date) || Boolean(enrollment.expiration_date && periodStart > String(enrollment.expiration_date)))
-        throw new HttpError(409, 'HMO_PERIOD_OUTSIDE_COVERAGE', 'Payroll period does not overlap the enrollment effective dates.');
-      const plan = await ensurePlan(String(enrollment.plan_id));
-      if (periodEnd < String(plan.coverage_start) || periodStart > String(plan.coverage_end))
-        throw new HttpError(409, 'HMO_PERIOD_OUTSIDE_PLAN', 'Payroll period does not overlap the selected HMO plan coverage dates.');
-      if (await first('hmo_payroll_deductions', { employee_id: employeeId, enrollment_id: enrollmentId, period_start: periodStart, period_end: periodEnd }))
-        throw new HttpError(409, 'HMO_DEDUCTION_EXISTS', 'A deduction already exists for this employee and payroll period.');
-      const dependents = await listRows('hmo_dependents', { enrollment_id: enrollmentId });
-      const principal = Number(plan.employee_monthly_premium ?? 0) * Number(plan.employee_member_share ?? 0) / 100;
-      const dependentTotal = dependents.filter(d => d.status === 'Active' && d.approval_status === 'Approved' && d.maxicare_status === 'Active'
-        && (!d.effective_date || String(d.effective_date) <= periodEnd) && (!d.expiration_date || String(d.expiration_date) >= periodStart))
-        .reduce((sum, d) => sum + Number(d.employee_share ?? 0), 0);
-      const row = await insertRow('hmo_payroll_deductions', { employee_id: employeeId, enrollment_id: enrollmentId, period_start: periodStart, period_end: periodEnd,
-        amount: Math.round((principal + dependentTotal) * 100) / 100, verification_status: 'Pending', created_at: now });
-      await hmoHistory('payroll_deduction', row.id, 'created', ctx.userId, undefined, row);
-      return created(res, row);
-    }
     if (resource === 'providers') {
       const row = await insertRow(table, { ...pickFields(b, HMO_PROVIDER_FIELDS), created_at: now, updated_at: now });
       await hmoHistory('provider', row.id, 'created', ctx.userId, undefined, row);
-      return created(res, row);
-    }
-    if (resource === 'utilizations') {
-      const enrollmentId = required(b.enrollment_id, 'enrollment_id');
-      if (!await first('hmo_enrollments', { id: enrollmentId })) throw new HttpError(404, 'HMO_ENROLLMENT_NOT_FOUND', 'HMO enrollment was not found.');
-      const dependentId = text(b.dependent_id) || null;
-      if (dependentId) { const dependent = await first('hmo_dependents', { id: dependentId }); if (!dependent || String(dependent.enrollment_id) !== enrollmentId) throw new HttpError(409, 'HMO_DEPENDENT_MISMATCH', 'The dependent does not belong to this enrollment.'); }
-      // hmo_utilizations has no updated_at column.
-      const row = await insertRow(table, { ...hmoUtilizationValues(b, false), enrollment_id: enrollmentId, dependent_id: dependentId, status: text(b.status) || 'Recorded', created_at: now });
-      await hmoHistory('utilization', row.id, 'created', ctx.userId, undefined, row);
       return created(res, row);
     }
     return fail(res, 405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
@@ -1691,27 +1651,18 @@ async function hmoHandler(req, res) {
   if (method === 'PATCH' || method === 'PUT') {
     const b = input(req), action = text(b.action);
     if (action) return handleAction(action, text(b.id) || pathId, b);
-    if (['enrollments', 'dependents', 'payroll-deductions'].includes(resource)) throw new HttpError(409, 'HMO_ACTION_REQUIRED', 'Change this record with its workflow actions (approve, reject, activate, terminate or verify).');
+    if (['enrollments', 'dependents'].includes(resource)) throw new HttpError(409, 'HMO_ACTION_REQUIRED', 'Change this record with its workflow actions (approve, reject, activate or terminate).');
     if (resource === 'plans') throw new HttpError(400, 'HMO_ACTION_REQUIRED', 'Update a plan with the "update" action.');
-    let values;
-    if (resource === 'providers') {
-      values = pickFields(b, HMO_PROVIDER_FIELDS);
-      if (values.name !== undefined && text(values.name).toLowerCase() !== 'maxicare') throw new HttpError(400, 'MAXICARE_REQUIRED', 'Only Maxicare is supported by the PBMS HMO module.');
-      values.updated_at = new Date().toISOString();
-    } else values = hmoUtilizationValues(b, true);
+    const values = pickFields(b, HMO_PROVIDER_FIELDS);
+    if (values.name !== undefined && text(values.name).toLowerCase() !== 'maxicare') throw new HttpError(400, 'MAXICARE_REQUIRED', 'Only Maxicare is supported by the PBMS HMO module.');
+    values.updated_at = new Date().toISOString();
     if (!Object.keys(values).some(key => key !== 'updated_at')) throw new HttpError(400, 'VALIDATION_ERROR', 'No updatable fields provided.');
     await updateRows(table, { id: pathId }, values);
     const updated = await first(table, { id: pathId }) ?? { ...previous, ...values };
     await hmoHistory(hmoHistoryType(resource), pathId, 'updated', ctx.userId, previous, updated);
     return ok(res, updated);
   }
-  if (method === 'DELETE') {
-    if (['enrollments', 'dependents', 'plans', 'providers'].includes(resource)) throw new HttpError(409, 'HMO_DELETE_NOT_ALLOWED', 'HMO workflow records are retained; terminate or archive them instead.');
-    if (resource === 'payroll-deductions' && previous.verification_status !== 'Pending') throw new HttpError(409, 'HMO_DEDUCTION_LOCKED', 'A reviewed payroll deduction is part of payroll records and cannot be deleted.');
-    await deleteRows(table, { id: pathId });
-    await hmoHistory(hmoHistoryType(resource), pathId, 'deleted', ctx.userId, previous, {});
-    return res.status(204).end();
-  }
+  if (method === 'DELETE') throw new HttpError(409, 'HMO_DELETE_NOT_ALLOWED', 'HMO workflow records are retained; terminate or archive them instead.');
   fail(res, 405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
 }
 // Reads need hmo.view; the handler checks hmo.manage or hmo.approve for each change.

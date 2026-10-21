@@ -68,7 +68,9 @@ export function PayrollSummaryModal({run,employees,onClose}:{run:PayrollRun;empl
       const g=sum(group,r=>r.result.gross),d=sum(group,r=>r.result.deductions);
       return {name,count:group.length,gross:g,deductions:d,employer:employerTotal(group),net:g-d};
     });
-    return {earn,attendance,att,stat,remit,company,gross,deductions,net,departments,employer:employerTotal(rows),statTotal:stat.reduce((t,r)=>t+r[1],0),companyTotal:company.reduce((t,r)=>t+r[1],0)};
+    // HMO premiums payable to Maxicare: the employee-paid share deducted above plus the company's share.
+    const hmo={employee:sum(rows,r=>r.hmo),company:sum(rows,r=>r.hmoCompany??0),recorded:rows.some(r=>r.hmoCompany!==undefined)};
+    return {hmo,earn,attendance,att,stat,remit,company,gross,deductions,net,departments,employer:employerTotal(rows),statTotal:stat.reduce((t,r)=>t+r[1],0),companyTotal:company.reduce((t,r)=>t+r[1],0)};
   },[rows,employees,run.settings]);
 
   const segments=[
@@ -120,6 +122,10 @@ export function PayrollSummaryModal({run,employees,onClose}:{run:PayrollRun;empl
         <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[13px]"><thead><tr className="border-b border-slate-200">{['Agency','Employee Share','Employer Share','Total Remittance'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
           {data.remit.map(([label,employee,employerShare])=><tr key={label} className="border-b border-slate-100"><td className={td}>{label}</td><td className={td}>{peso(employee)}</td><td className={td}>{employerShare===null?'—':peso(employerShare)}</td><td className={td}>{peso(employee+(employerShare??0))}</td></tr>)}
           <tr className="border-t-2 border-slate-800 font-bold"><td className={td}>Total</td><td className={td}>{peso(data.statTotal)}</td><td className={td}>{peso(data.employer)}</td><td className={td}>{peso(data.statTotal+data.employer)}</td></tr></tbody></table></div></div>
+
+      {(data.hmo.employee>0||data.hmo.company>0||data.hmo.recorded)&&<div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">HMO premiums (Maxicare)</h3><p className="mb-2 mt-0.5 text-[11px] text-slate-500">{data.hmo.recorded?'Employee share deducted this cutoff and the company share the company pays.':'The company share was not recorded for this run; it was saved before company HMO costs were tracked.'}</p>
+        <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[13px]"><thead><tr className="border-b border-slate-200">{['Provider','Employee Share','Company Share','Total Premium'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
+          <tr className="border-t-2 border-slate-800 font-bold"><td className={td}>Maxicare</td><td className={td}>{peso(data.hmo.employee)}</td><td className={td}>{data.hmo.recorded?peso(data.hmo.company):'—'}</td><td className={td}>{data.hmo.recorded?peso(data.hmo.employee+data.hmo.company):'—'}</td></tr></tbody></table></div></div>}
 
       <div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">By department</h3><p className="mb-2 mt-0.5 text-[11px] text-slate-500">For cost-center allocation.</p>
         <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-[13px]"><thead><tr className="border-b border-slate-200">{['Department','Headcount','Gross','Deductions','Employer Contributions','Net Pay'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>

@@ -1,13 +1,12 @@
 import {apiClient} from '../../services/api/apiClient';
 import {hmoCutoffLines} from './hmoPayroll';
-import type {HmoApprovalStatus,HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPlan,HmoProvider,HmoUtilization,MaxicareStatus} from './hmoTypes';
+import type {HmoApprovalStatus,HmoDependent,HmoEnrollment,HmoHistoryRow,HmoPlan,HmoProvider,MaxicareStatus} from './hmoTypes';
 
 type Envelope<T>={data:T};
 type ServerProvider={id:string;name:string;contact_person?:string|null;contact_number?:string|null;status:HmoProvider['status']};
 type ServerPlan={id:string;provider_id:string;name:string;coverage_start:string;coverage_end:string;annual_benefit_limit:number|null;inpatient:boolean;outpatient:boolean;emergency:boolean;preventive_care:boolean;dental:boolean;employee_company_share:number;employee_member_share:number;dependent_company_share:number;dependent_member_share:number;employee_monthly_premium:number|null;dependent_monthly_premium:number|null;collect_employee_share_via_payroll:boolean;status:HmoPlan['status']};
 type ServerEnrollment={id:string;plan_id:string;employee_id:string;eligibility_date:string|null;employee_eligibility_date?:string|null;employee_eligible_for_effective_date?:boolean;effective_date:string;expiration_date:string|null;status:HmoEnrollment['status'];approval_status?:HmoApprovalStatus;approved_by?:string|null;approved_at?:string|null;rejection_reason?:string|null;maxicare_status?:MaxicareStatus;maxicare_reference?:string|null;maxicare_activated_at?:string|null;activated_at?:string|null;terminated_at?:string|null};
 type ServerDependent={id:string;enrollment_id:string;name:string;relationship:string;date_of_birth:string|null;eligibility_status:HmoDependent['eligibilityStatus'];effective_date:string|null;expiration_date:string|null;status:HmoDependent['status'];approval_status?:HmoApprovalStatus;approved_by?:string|null;approved_at?:string|null;rejection_reason?:string|null;maxicare_status?:MaxicareStatus;maxicare_reference?:string|null;company_sponsored?:boolean;employee_share?:number;company_share?:number;terminated_at?:string|null};
-type ServerUtilization={id:string;enrollment_id:string;dependent_id:string|null;service_date:string;service_type:string;amount_used:number;status:HmoUtilization['status'];remarks:string|null};
 type ServerHistory={id:string;entity_type:string;entity_id:string;action:string;actor_id:string|null;actor_name?:string|null;previous_values:Record<string,unknown>;new_values:Record<string,unknown>;created_at:string};
 
 const get=<T>(resource:string)=>apiClient.get<Envelope<T[]>>(`/hmo/${resource}`).then(r=>r.data);
@@ -62,7 +61,6 @@ const enrollment=(x:ServerEnrollment):HmoEnrollment=>({id:x.id,planId:x.plan_id,
 
 const dependent=(x:ServerDependent):HmoDependent=>({id:x.id,enrollmentId:x.enrollment_id,name:x.name,relationship:x.relationship,dateOfBirth:x.date_of_birth,eligibilityStatus:x.eligibility_status,effectiveDate:x.effective_date,expirationDate:x.expiration_date,status:x.status,approvalStatus:x.approval_status??'Pending',approvedBy:x.approved_by??null,approvedAt:x.approved_at??null,rejectionReason:x.rejection_reason??null,maxicareStatus:x.maxicare_status??'Not Submitted',maxicareReference:x.maxicare_reference??null,companySponsored:Boolean(x.company_sponsored),employeeShare:Number(x.employee_share??0),companyShare:Number(x.company_share??0),terminatedAt:x.terminated_at??null});
 
-const utilization=(x:ServerUtilization):HmoUtilization=>({id:x.id,enrollmentId:x.enrollment_id,dependentId:x.dependent_id,serviceDate:x.service_date,serviceType:x.service_type,amountUsed:Number(x.amount_used),status:x.status,remarks:x.remarks});
 
 
 const history=(x:ServerHistory):HmoHistoryRow=>({id:x.id,entityType:x.entity_type,entityId:x.entity_id,action:x.action,actorId:x.actor_id,actorName:x.actor_name??null,previousValues:x.previous_values,newValues:x.new_values,createdAt:x.created_at});
@@ -72,7 +70,6 @@ export const hmoService={
  plans:async()=>get<ServerPlan>('plans').then(x=>x.map(plan)),
  enrollments:async()=>get<ServerEnrollment>('enrollments').then(x=>x.map(enrollment)),
  dependents:async()=>get<ServerDependent>('dependents').then(x=>x.map(dependent)),
- utilizations:async()=>get<ServerUtilization>('utilizations').then(x=>x.map(utilization)),
 
  history:async(params:Record<string,string|number>={})=>apiClient.get<Envelope<{items:ServerHistory[];page:number;page_size:number;total:number}>>(`/hmo/history?${new URLSearchParams(Object.entries(params).map(([k,v])=>[k,String(v)]))}`).then(r=>({...r.data,items:r.data.items.map(history)})),
 
@@ -120,7 +117,6 @@ export const hmoService={
 
  createDependent:async(v:Partial<HmoDependent>)=>dependent(await post('dependents',{enrollment_id:v.enrollmentId,name:v.name,relationship:v.relationship,date_of_birth:v.dateOfBirth,effective_date:v.effectiveDate})),
 
- createUtilization:async(v:Partial<HmoUtilization>)=>utilization(await post('utilizations',{enrollment_id:v.enrollmentId,dependent_id:v.dependentId,service_date:v.serviceDate,service_type:v.serviceType,amount_used:v.amountUsed,status:v.status,remarks:v.remarks})),
 
  approveEnrollment:(id:string)=>patch('enrollments',id,{action:'approve'}),
  rejectEnrollment:(id:string,rejection_reason:string)=>patch('enrollments',id,{action:'reject',rejection_reason}),
