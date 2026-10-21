@@ -32,3 +32,16 @@ describe('a submitted payroll run is approved as it was submitted',()=>{
   expect(await save(hr,[approved],[{...approved,paidAt:'2026-10-18T00:00:00.000Z',paidBy:'HR',paymentMethod:'Bank Transfer'}])).toHaveLength(1);
  });
 });
+
+import {runNextStep,runStage} from '../features/payroll/payrollRuns';
+describe('payroll run stages shown in Payroll Runs',()=>{
+ it('follows the process from submission to Finance',()=>{
+  expect(runStage({status:'Pending Approval'})).toBe('Pending Approval');
+  expect(runStage({status:'Rejected'})).toBe('Rejected');
+  expect(runStage({status:'Approved'})).toBe('Approved');
+  expect(runStage({status:'Approved',payslipsGeneratedAt:'x'})).toBe('Payslips Generated');
+  expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'}})).toBe('Released to ESS');
+  expect(runStage({status:'Approved',payslipsGeneratedAt:'x',released:{Finance:'x'},releasedAt:'x'})).toBe('Released to Finance');
+  expect(runNextStep({status:'Approved'})).toMatch('generates the payslips');
+ });
+});
