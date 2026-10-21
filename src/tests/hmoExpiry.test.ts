@@ -7,7 +7,7 @@ const today='2026-10-21';
 const plan=(patch:Record<string,unknown>={})=>({id:'p1',status:'Active',coverage_start:'2026-01-01',coverage_end:'2026-12-31',...patch});
 const enrollment=(patch:Record<string,unknown>={})=>({id:'e1',plan_id:'p1',status:'Active',expiration_date:null,terminated_at:null,...patch});
 const dependent=(patch:Record<string,unknown>={})=>({id:'d1',enrollment_id:'e1',status:'Active',expiration_date:null,...patch});
-const changes=(input:{plans?:unknown[];enrollments?:unknown[];dependents?:unknown[]})=>hmoExpiryChanges({plans:[plan()],enrollments:[],dependents:[],today,now:'2026-10-21T02:00:00.000Z',...input})
+const changes=(input:{plans?:Record<string,unknown>[];enrollments?:Record<string,unknown>[];dependents?:Record<string,unknown>[]})=>hmoExpiryChanges({plans:[plan()],enrollments:[],dependents:[],today,now:'2026-10-21T02:00:00.000Z',...input})
  .map(({table,id,action,values})=>({table,id,action,status:values.status}));
 
 describe('HMO plan status by date',()=>{

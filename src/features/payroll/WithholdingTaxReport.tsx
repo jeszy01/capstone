@@ -59,7 +59,7 @@ export function withTaxOnly(original:PayrollResult,calculated:PayrollResult):Pay
 
 export function WithholdingTaxReport({from,to,query}:{from:string;to:string;query:string}){
  const[selection,setSelection]=useState<Entry|null>(null);
- const[runs,setRuns]=useState<PayrollRun[]>(()=>read<PayrollRun[]>(RUNS_KEY,[]));
+ const[runs]=useState<PayrollRun[]>(()=>read<PayrollRun[]>(RUNS_KEY,[]));
  const[employees,setEmployees]=useState<Employee[]>(()=>read<Employee[]>('employees:records',[]));
  const[employeeError,setEmployeeError]=useState('');const[employeeLoading,setEmployeeLoading]=useState(true);
  const[periodId,setPeriodId]=useState('');const[department,setDepartment]=useState('');const[runStatus,setRunStatus]=useState('');
