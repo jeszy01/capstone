@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState} from 'react';
-import {CalendarCheck,Clock,Download,Search,UserCheck,Users,XCircle} from 'lucide-react';
+import {CalendarCheck,Clock,Download,Search} from 'lucide-react';
 import {Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
 import {formatDate} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
@@ -23,6 +23,7 @@ function workedHours(record:AttendanceRecord){
  return record.status==='Present'&&record.workedHours!=null&&Number.isFinite(Number(record.workedHours))?Number(record.workedHours).toFixed(2):'—';
 }
 const figures=(record:AttendanceRecord)=>({late:record.lateMin??0,under:record.undertimeMin??0,ot:record.otMin??0});
+const weekday=(date:string)=>new Date(`${date}T00:00:00`).toLocaleDateString('en-US',{weekday:'short'});
 const syncedText=(iso:string|null)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'—';
 function useAttendance(from:string,to:string){
  const[records,setRecords]=useState<AttendanceRecord[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
@@ -59,14 +60,10 @@ function DailyAttendance({employees}:{employees:Employee[]}){
  const{records,loading,error,reload}=useAttendance(running?.from??'',running?.to??'');
  const employeeFor=(reference:string)=>findAttendanceEmployee(employees,reference);
  const shown=records.filter(record=>{const employee=employeeFor(record.empId);return(!q||`${employee?.name??record.name} ${employee?.employeeNo??record.empId}`.toLowerCase().includes(q.toLowerCase()))&&(!status||attendanceStatus(record)===status)}).sort((a,b)=>a.date.localeCompare(b.date)||(employeeFor(a.empId)?.name||a.name).localeCompare(employeeFor(b.empId)?.name||b.name));
- const summary=[
-  {label:'Present',value:records.filter(record=>attendanceStatus(record)==='Present').length,icon:UserCheck,color:'bg-emerald-50 text-emerald-600'},
-  {label:'Late',value:records.filter(record=>attendanceStatus(record)==='Late').length,icon:Clock,color:'bg-amber-50 text-amber-500'},
-  {label:'Absent',value:records.filter(record=>record.status==='Absent').length,icon:XCircle,color:'bg-red-50 text-red-500'},
-  {label:'Overtime',value:records.filter(record=>(record.otMin??0)>0).length,icon:Clock,color:'bg-blue-50 text-blue-600'},
-  {label:'Total Employees',value:employees.length,icon:Users,color:'bg-slate-50 text-slate-600'},
- ];
  const headers=['Employee','Date','Time In','Time Out','Worked Hours','Late (min)','Undertime (min)','OT (min)','Leave','Status'];
+ // The table groups records by date (a header row per date), so its rows have no Date column; the CSV keeps it.
+ const tableHeaders=headers.filter(h=>h!=='Date');
+ const byDate=[...new Set(shown.map(r=>r.date))].map(date=>({date,rows:shown.filter(r=>r.date===date)}));
  // Leave in days, matching the Timesheet's Leave total.
  const leaveDays=(record:AttendanceRecord)=>record.status==='On Leave'?1:0;
  const exportRows=async()=>{if(!await confirmWithPasskey('export',`Attendance records (${shortRange(cutoff.from,cutoff.to)}) CSV`))return;exportCsv(`attendance-${cutoff.from}-${cutoff.to}.csv`,headers,shown.map(record=>{const c=figures(record);return [employeeFor(record.empId)?.name||record.name,record.date,record.timeIn||'—',record.timeOut||'—',workedHours(record),c.late,c.under,c.ot,leaveDays(record),attendanceStatus(record)]}))};
@@ -79,9 +76,8 @@ function DailyAttendance({employees}:{employees:Employee[]}){
    <span className="text-[12px] text-slate-500">Last synced: {syncedText(lastHr2Sync())}</span>
    <button className={ghost} onClick={exportRows}><Download size={15}/>Export</button>
   </div>
-  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">{summary.map(({label,value,icon:Icon,color})=><Card key={label} className="relative overflow-hidden border-slate-200/70 transition-shadow hover:shadow-md"><div className="flex items-center justify-between gap-3"><div><div className="text-[11px] font-medium text-slate-500">{label}</div><div className="mt-2 text-[25px] font-semibold tracking-tight text-[#17345b]">{value}</div></div><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${color}`}><Icon size={21}/></span></div></Card>)}</div>
   {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
-  <Card className="mt-4 overflow-hidden border-slate-200/80 p-0 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">Attendance Records</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[13px]"><thead><tr className={head}>{headers.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={headers.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={headers.length}><Empty>No attendance records for this cutoff.</Empty></td></tr>:shown.map(r=>{const c=figures(r);return <tr key={`${r.empId}-${r.date}`} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{employeeFor(r.empId)?.name||r.name}</div><div className="text-[11px] text-[#6b7794]">{employeeFor(r.empId)?.employeeNo||r.empId}</div></td><td className="whitespace-nowrap px-4 py-3">{formatDate(r.date)}</td><td className="px-4 py-3 tabular-nums">{r.timeIn||'—'}</td><td className="px-4 py-3 tabular-nums">{r.timeOut||'—'}</td><td className="px-4 py-3 tabular-nums">{workedHours(r)}</td><td className="px-4 py-3 tabular-nums">{c.late}</td><td className="px-4 py-3 tabular-nums">{c.under}</td><td className="px-4 py-3 tabular-nums">{c.ot}</td><td className="px-4 py-3 tabular-nums">{leaveDays(r)}</td><td className="px-4 py-3"><span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{attendanceStatus(r)}</span></td></tr>})}</tbody></table></div></Card>
+  <Card className="mt-4 overflow-hidden border-slate-200/80 p-0 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">Attendance Records</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[13px]"><thead><tr className={head}>{tableHeaders.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={tableHeaders.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={tableHeaders.length}><Empty>No attendance records for this cutoff.</Empty></td></tr>:byDate.flatMap(({date,rows})=>[<tr key={date} className="border-b border-[#e3e7ef] bg-slate-50"><td colSpan={tableHeaders.length} className="px-4 py-2.5 text-[12px] font-semibold text-[#17345b]">{weekday(date)}, {formatDate(date)}<span className="ml-2 font-normal text-[#6b7794]">{rows.length} {rows.length===1?'record':'records'}</span></td></tr>,...rows.map(r=>{const c=figures(r);return <tr key={`${r.empId}-${r.date}`} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{employeeFor(r.empId)?.name||r.name}</div><div className="text-[11px] text-[#6b7794]">{employeeFor(r.empId)?.employeeNo||r.empId}</div></td><td className="px-4 py-3 tabular-nums">{r.timeIn||'—'}</td><td className="px-4 py-3 tabular-nums">{r.timeOut||'—'}</td><td className="px-4 py-3 tabular-nums">{workedHours(r)}</td><td className="px-4 py-3 tabular-nums">{c.late}</td><td className="px-4 py-3 tabular-nums">{c.under}</td><td className="px-4 py-3 tabular-nums">{c.ot}</td><td className="px-4 py-3 tabular-nums">{leaveDays(r)}</td><td className="px-4 py-3"><span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{attendanceStatus(r)}</span></td></tr>})])}</tbody></table></div></Card>
  </div>;
 }
 
