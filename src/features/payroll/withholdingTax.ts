@@ -67,7 +67,7 @@ export function detectPayrollPeriod(from:string,to:string,configuredPayPeriods=2
  const days=Math.floor((Date.parse(`${to}T00:00:00Z`)-Date.parse(`${from}T00:00:00Z`))/86400000)+1;
  if(days<=2)return 'daily'; if(days<=8)return 'weekly'; if(days<=17)return 'semi-monthly'; return 'monthly';
 }
-export interface AnnualTaxHistory{regular:number;supplementary:number;benefitPayments:number;taxExemptBenefits:number;mandatoryContributions:number;withheld:number;payrollPeriods:number;cumulativeAverage?:boolean}
+export interface AnnualTaxHistory{regular:number;supplementary:number;benefitPayments:number;taxExemptBenefits:number;mandatoryContributions:number;withheld:number;payrollPeriods:number;cumulativeAverage?:boolean;/** Monetized leave already exempted this year. */monetizedLeaveExempt?:number}
 export interface WithholdingTaxInput{
  regularCompensation:number;supplementaryCompensation:number;thirteenthMonthAndOtherBenefits?:number;taxExemptBenefits?:number;mandatoryContributions?:number;
  period:PayrollPeriod;periodStart:string;periodEnd:string;priorYear?:AnnualTaxHistory;finalPeriod?:boolean;rules?:WithholdingTaxRuleSet[];
@@ -76,6 +76,8 @@ export interface WithholdingTaxBreakdown{
  status:'Calculated'|'Cumulative average'|'Year-end adjusted';ruleId:string;ruleSource:string;period:PayrollPeriod;
  grossCompensation:number;regularCompensation:number;supplementaryCompensation:number;benefitPayments:number;benefitExemptionApplied:number;taxExemptBenefits:number;mandatoryContributions:number;taxableRegular:number;taxableSupplementary:number;taxableCompensation:number;taxBeforeAdjustment:number;yearToDateTaxableCompensation?:number;
  /** Minimum wage earner: the exempt statutory minimum wage, holiday pay, overtime, night differential and paid leave. */
+ /** De minimis amounts exempted in this cutoff: allowances within their ceiling and monetized leave within the day limit. */
+ deMinimisExempt?:number;monetizedLeaveExempt?:number;
  minimumWageEarner?:boolean;mweExempt?:{basic:number;holidayPay:number;overtime:number;nightDifferential:number;leavePay:number};annualTaxLiability?:number;priorTaxWithheld?:number;withholdingTax:number;explanation:string;
 }
 export function calculateWithholdingTax(input:WithholdingTaxInput):WithholdingTaxBreakdown{

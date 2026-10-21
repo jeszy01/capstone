@@ -142,3 +142,35 @@ describe('5. Minimum wage earners',()=>{
   expect(cutoff({dailyRate:695,daysWorked:11,otHours:20,holidayPay:1390}).taxBreakdown!.minimumWageEarner).toBeUndefined();
  });
 });
+
+import {allowancePay} from '../features/compensation/allowanceRules';
+import type {BonusIncentive} from '../features/compensation/compensationState';
+const allowance=(allowanceType:string,amount:number,frequency:'Monthly'|'Per Cutoff'='Monthly',taxable=false):BonusIncentive=>({id:allowanceType,employeeId:'e1',type:'Allowance',amount,effectiveDate:'2026-01-01',notes:'',status:'Active',createdAt:'',allowanceType,frequency,taxable,cutoffStart:'',cutoffEnd:''});
+
+describe('6. De minimis ceilings (RR 29-2025 from January 6, 2026) and monetized leave',()=>{
+ it('exempts a rice subsidy up to ₱2,500 a month; the excess is other benefits',()=>{
+  expect(allowancePay([allowance('Rice Subsidy',3000)],2,'2026-10-15')).toEqual({taxable:0,exempt:1250,otherBenefits:250});
+ });
+ it('uses the RR 11-2018 ceiling (₱2,000) before January 6, 2026',()=>{
+  expect(allowancePay([allowance('Rice Subsidy',3000)],2,'2025-12-15')).toEqual({taxable:0,exempt:1000,otherBenefits:500});
+ });
+ it('spreads annual ceilings over the cutoffs: uniform ₱8,000 a year, actual medical assistance ₱12,000 a year',()=>{
+  expect(allowancePay([allowance('Clothing',1000)],2,'2026-10-15')).toEqual({taxable:0,exempt:333.33,otherBenefits:166.67});
+  expect(allowancePay([allowance('Medical',1000)],2,'2026-10-15')).toEqual({taxable:0,exempt:500,otherBenefits:0});
+  expect(allowancePay([allowance('Laundry',500)],2,'2026-10-15')).toEqual({taxable:0,exempt:200,otherBenefits:50});
+ });
+ it('taxes a fixed allowance that is not a de minimis benefit even when marked non-taxable',()=>{
+  expect(allowancePay([allowance('Transportation',2000,'Per Cutoff')],2,'2026-10-15')).toEqual({taxable:2000,exempt:0,otherBenefits:0});
+ });
+ it('counts de minimis excess toward the ₱90,000 exemption, not taxable pay',()=>{
+  const c=cutoff({dailyRate:2000,daysWorked:11,allowancesExempt:1250,allowancesOtherBenefits:250});
+  expect(c.taxBreakdown).toMatchObject({benefitPayments:250,benefitExemptionApplied:250,deMinimisExempt:1250,taxableCompensation:20475});
+  expect(c.allowances).toBe(1500);
+ });
+ it('exempts monetized unused leave up to 12 days a year at the daily rate; the rest is other benefits',()=>{
+  const first=cutoff({dailyRate:1000,daysWorked:11,slConversion:15000});
+  expect(first.taxBreakdown).toMatchObject({monetizedLeaveExempt:12000,benefitPayments:3000});
+  const later=cutoff({dailyRate:1000,daysWorked:11,slConversion:5000},{priorYear:{regular:0,supplementary:0,benefitPayments:3000,taxExemptBenefits:12000,mandatoryContributions:0,withheld:0,payrollPeriods:1,monetizedLeaveExempt:12000}});
+  expect(later.taxBreakdown).toMatchObject({monetizedLeaveExempt:0,benefitPayments:5000});
+ });
+});

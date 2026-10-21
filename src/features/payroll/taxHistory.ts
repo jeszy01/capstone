@@ -40,7 +40,7 @@ export function finalCutoffBlocked(runs:PayrollRun[],year:string,currentRunId?:s
 export function yearToDateHistory(runs:PayrollRun[],row:Pick<RunRow,'input'>,scope:TaxHistoryScope,rates:PayrollRates,rules:WithholdingTaxRuleSet[]):AnnualTaxHistory{
  const history=taxHistoryRuns(runs,scope).flatMap(run=>run.rows.filter(item=>item.input.empId===row.input.empId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,{run,item})=>{
   const b=item.result.taxBreakdown??calculatePayroll(item.input,rates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,rates.payPeriodsPerMonth),rules}).taxBreakdown!;
-  total.regular+=b.regularCompensation;total.supplementary+=b.supplementaryCompensation;total.benefitPayments+=b.benefitPayments;total.taxExemptBenefits+=b.taxExemptBenefits;total.mandatoryContributions+=b.mandatoryContributions;total.withheld+=item.result.tax;total.payrollPeriods+=1;
+  total.regular+=b.regularCompensation;total.supplementary+=b.supplementaryCompensation;total.benefitPayments+=b.benefitPayments;total.taxExemptBenefits+=b.taxExemptBenefits;total.mandatoryContributions+=b.mandatoryContributions;total.withheld+=item.result.tax;total.payrollPeriods+=1;total.monetizedLeaveExempt=(total.monetizedLeaveExempt??0)+(b.monetizedLeaveExempt??0);
   if(b.status==='Cumulative average')total.cumulativeAverage=true;
   return total;
  },{regular:0,supplementary:0,benefitPayments:0,taxExemptBenefits:0,mandatoryContributions:0,withheld:0,payrollPeriods:0});

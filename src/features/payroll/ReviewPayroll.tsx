@@ -103,7 +103,7 @@ const built:RunRow[]=[];
      const approvedBonuses=rewards.filter(entry=>isBonusReward(entry)&&entry.status==='Approved'&&employeeIds.includes(entry.employeeId)&&entry.cutoffEnd>=from&&entry.cutoffEnd<=to);
      const taxableBonus=approvedBonuses.filter(entry=>entry.taxable).reduce((total,entry)=>total+entry.amount,0);
      const nonTaxableBonus=approvedBonuses.filter(entry=>!entry.taxable).reduce((total,entry)=>total+entry.amount,0);
-     const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),rates.payPeriodsPerMonth);
+     const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),rates.payPeriodsPerMonth,to);
      // The same HMO cutoff deduction shown under Deductions → HMO.
      const hmo=hmoCutoffDeduction(hmoLines,employee.id),hmoCompany=hmoCompanyCutoffShare(hmoLines,employee.id);
      const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
@@ -111,7 +111,7 @@ const built:RunRow[]=[];
      // A graded assignment carries the grade's whole-peso daily rate; a manual salary keeps salary ÷ working days.
      const graded=activeAssignments.find(assignment=>employeeIds.includes(assignment.employeeId)&&gradeCodes.has(assignment.salaryCode.trim().toLowerCase()));
      const dailyRate=graded?graded.dailyRate:(item.salary as number)/rates.daysPerMonth;
-     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave!==false).length,lwopDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave===false).length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,otherDeductions:otherDeductionsForCutoff(loadOtherDeductions(),employee.id,from,to),allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,...loanAmounts};
+     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave!==false).length,lwopDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave===false).length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,otherDeductions:otherDeductionsForCutoff(loadOtherDeductions(),employee.id,from,to),allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,allowancesOtherBenefits:allowance.otherBenefits,...loanAmounts};
      // Government loans are deducted from the net pay left after every other deduction.
      // Other authorized deductions (Deductions → Other Authorized Deductions) plus the HMO cutoff deduction.
      const compute=(payrollInput:PayrollInput)=>calculatePayroll({...payrollInput,otherDeductions:numberValue(payrollInput.otherDeductions)+hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()});

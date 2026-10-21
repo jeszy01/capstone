@@ -3,6 +3,7 @@ import {numberValue} from '../../utils/storage';
 import {calculateWithholdingTax,detectPayrollPeriod} from './withholdingTax';
 import type {AnnualTaxHistory,PayrollPeriod,WithholdingTaxRuleSet} from './withholdingTax';
 import {pagibigEmployeeRate} from '../contributions/contributionCalculator';
+import {deMinimisRuleFor} from './deMinimis';
 const round=(v:number)=>Math.round((v+Number.EPSILON)*100)/100;
 const clamp=(v:number,lo:number,hi:number)=>Math.min(hi,Math.max(lo,v));
 
@@ -36,7 +37,8 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  // Allowances from Compensation Planning: taxable allowances are regular pay; non-taxable allowances are exempt.
  const taxableAllowances=round(numberValue(r.transportation)+numberValue(r.riceSubsidy)+numberValue(r.allowancesTaxable));
  const exemptAllowances=round(numberValue(r.allowancesExempt));
- const allowances=round(taxableAllowances+exemptAllowances);
+ const otherBenefitAllowances=round(numberValue(r.allowancesOtherBenefits));
+ const allowances=round(taxableAllowances+exemptAllowances+otherBenefitAllowances);
  // Non-taxable bonuses count toward the combined 13th-month and other-benefits exemption.
  const nonTaxableBonuses=round(numberValue(r.bonusesNonTaxable));
  const thirteenth=round(numberValue(r.thirteenthMonthAndOtherBenefits)+nonTaxableBonuses);
@@ -58,9 +60,15 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const minimumWage=numberValue(R.statutoryMinimumWage),mwe=minimumWage>0&&rate>0&&rate<=minimumWage;
  const earnedBasicPay=Math.max(0,basic-absences-late-undertime);
  const regular=mwe?taxableAllowances:earnedBasicPay+taxableAllowances;
- const supplementary=mwe?numberValue(r.slConversion)+numberValue(r.otherEarnings):overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.slConversion)+numberValue(r.otherEarnings);
- const computedTax=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:thirteenth,taxExemptBenefits:taxExempt,mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules});
- const taxBreakdown=mwe?{...computedTax,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:computedTax;
+ const supplementary=mwe?numberValue(r.otherEarnings):overtime+nightDifferential+leavePay+numberValue(r.holidayPay)+numberValue(r.otherEarnings);
+ // Monetized unused leave is de minimis up to the yearly day limit at the daily rate (12 days under RR 29-2025);
+ // the rest, and de minimis allowances above their ceiling, are other benefits under the ₱90,000 exemption.
+ const monetizedLeave=round(numberValue(r.slConversion));
+ const monetizedLeaveExempt=round(Math.min(monetizedLeave,Math.max(0,deMinimisRuleFor(periodEnd).monetizedLeaveDays*rate-(taxContext.priorYear?.monetizedLeaveExempt??0))));
+ const otherBenefits=round(otherBenefitAllowances+monetizedLeave-monetizedLeaveExempt);
+ const computedTax=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:round(thirteenth+otherBenefits),taxExemptBenefits:round(taxExempt+monetizedLeaveExempt),mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules});
+ const withDeMinimis={...computedTax,deMinimisExempt:round(exemptAllowances+monetizedLeaveExempt),monetizedLeaveExempt};
+ const taxBreakdown=mwe?{...withDeMinimis,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:withDeMinimis;
  const tax=taxBreakdown.withholdingTax;
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance)+numberValue(r.govSssLoan)+numberValue(r.govPagibigLoan));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));
