@@ -80,7 +80,6 @@ function AttendanceDates({month,cutoff,employees,onFilter,onOpen}:{month:string;
  const{records,loading,error,reload}=useAttendance(first.from,twoCutoffs?second.to:first.to);
  const[page,setPage]=useState(1);
  useEffect(()=>setPage(1),[month,cutoff]);
- const through=hr2SyncedThrough();
  const cutoffOf=(value:string):'1'|'2'=>twoCutoffs&&value>first.to?'2':'1';
  const cutoffLabel=(value:'1'|'2')=>!twoCutoffs?'Monthly':value==='1'?'1st Cutoff':'2nd Cutoff';
  // Each date with its number of employees (one record per employee per date), newest first.
@@ -92,7 +91,7 @@ function AttendanceDates({month,cutoff,employees,onFilter,onOpen}:{month:string;
   <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-[220px_220px_1fr] lg:items-end">
    <Field label="Month"><TextInput type="month" value={month} onChange={event=>event.target.value&&onFilter(event.target.value,cutoff)}/></Field>
    <Field label="Payroll Cutoff"><select className={input} value={twoCutoffs?cutoff:'all'} disabled={!twoCutoffs} onChange={event=>onFilter(month,event.target.value as CutoffFilter)}><option value="all">All</option>{twoCutoffs&&<><option value="1">1st Cutoff ({shortRange(first.from,first.to)})</option><option value="2">2nd Cutoff ({shortRange(second.from,second.to)})</option></>}</select></Field>
-   <span className="text-[12px] text-slate-500 sm:col-span-2 lg:col-span-1 lg:pb-2.5 lg:text-right">HR2 data through {through?shortDate(through):'—'} · last received {syncedText(lastHr2Sync())}</span>
+   <span className="text-[12px] text-slate-500 sm:col-span-2 lg:col-span-1 lg:pb-2.5 lg:text-right">Last received {syncedText(lastHr2Sync())}</span>
   </div>
   {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
   <Card className="mt-4 min-w-0 overflow-hidden border-slate-200/80 !p-0 shadow-sm">
