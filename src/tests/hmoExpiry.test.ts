@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {hmoExpiryChanges,manilaToday,planStatusFor} from '../../backend-render/hmoRules.js';
+import {hmoExpiryChanges,manilaToday,nextSponsoredDependent,planStatusFor} from '../../backend-render/hmoRules.js';
 import {hmoCutoffLines} from '../features/hmo/hmoPayroll';
 import type {HmoDependent,HmoEnrollment,HmoPlan} from '../features/hmo/hmoTypes';
 
@@ -42,6 +42,17 @@ describe('HMO expiry check',()=>{
   expect(changes({enrollments:[enrollment({status:'Terminated',terminated_at:'2026-10-10T01:00:00.000Z'})],dependents:[dependent(),dependent({id:'d2',status:'Rejected'})]}))
    .toEqual([{table:'hmo_dependents',id:'d1',action:'terminated',status:'Terminated'}]);
   expect(changes({enrollments:[enrollment()],dependents:[dependent({expiration_date:'2026-10-15'})]})).toEqual([{table:'hmo_dependents',id:'d1',action:'expired',status:'Expired'}]);
+ });
+});
+
+describe('company-sponsored dependent slot',()=>{
+ const dep=(id:string,patch:Record<string,unknown>={})=>({id,status:'Active',approval_status:'Approved',company_sponsored:false,created_at:`2026-0${id}-01T00:00:00Z`,...patch});
+ it('goes to the earliest open employee-paid dependent once the sponsored one closes',()=>{
+  expect(nextSponsoredDependent([dep('1',{company_sponsored:true,status:'Terminated'}),dep('3'),dep('2',{status:'Submitted',approval_status:'Pending'})])?.id).toBe('2');
+ });
+ it('stays put while the sponsored dependent is open, and skips closed or rejected dependents',()=>{
+  expect(nextSponsoredDependent([dep('1',{company_sponsored:true}),dep('2')])).toBeNull();
+  expect(nextSponsoredDependent([dep('1',{status:'Rejected',approval_status:'Rejected'}),dep('2',{status:'Expired'})])).toBeNull();
  });
 });
 

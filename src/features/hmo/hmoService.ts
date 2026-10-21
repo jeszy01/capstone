@@ -122,12 +122,15 @@ export const hmoService={
 
  approveEnrollment:(id:string)=>patch('enrollments',id,{action:'approve'}),
  rejectEnrollment:(id:string,rejection_reason:string)=>patch('enrollments',id,{action:'reject',rejection_reason}),
+ submitEnrollmentToMaxicare:(id:string)=>patch('enrollments',id,{action:'submit_to_maxicare'}),
+ recordEnrollmentMaxicareRejection:(id:string,rejection_reason:string)=>patch('enrollments',id,{action:'maxicare_reject',rejection_reason}),
  activateEnrollment:(id:string,maxicare_reference:string)=>patch('enrollments',id,{action:'activate',maxicare_reference}),
  terminateEnrollment:(id:string)=>patch('enrollments',id,{action:'terminate'}),
 
  approveDependent:(id:string)=>patch('dependents',id,{action:'approve'}),
  rejectDependent:(id:string,rejection_reason:string)=>patch('dependents',id,{action:'reject',rejection_reason}),
  submitDependentToMaxicare:(id:string)=>patch('dependents',id,{action:'submit_to_maxicare'}),
+ recordDependentMaxicareRejection:(id:string,rejection_reason:string)=>patch('dependents',id,{action:'maxicare_reject',rejection_reason}),
  activateDependent:(id:string,maxicare_reference:string)=>patch('dependents',id,{action:'activate',maxicare_reference}),
  terminateDependent:(id:string)=>patch('dependents',id,{action:'terminate'}),
 

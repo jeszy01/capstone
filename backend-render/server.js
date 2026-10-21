@@ -4,7 +4,7 @@ import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
-import { hmoExpiryChanges, manilaToday } from './hmoRules.js';
+import { hmoExpiryChanges, manilaToday, nextSponsoredDependent } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -1365,10 +1365,21 @@ const hmoUtilizationValues = (b, partial) => {
 let hmoExpiry = { at: 0, running: null };
 async function expireHmoRecords() {
   const [plans, enrollments, dependents] = await Promise.all([listRows('hmo_plans'), listRows('hmo_enrollments'), listRows('hmo_dependents')]);
+  const closedDependentsOf = new Set();
   for (const change of hmoExpiryChanges({ plans, enrollments, dependents, today: manilaToday() })) {
     await updateRows(change.table, { id: change.id }, change.values);
     await hmoHistory(change.entityType, change.id, change.action, null, change.previous, { ...change.previous, ...change.values });
+    if (change.table === 'hmo_dependents') closedDependentsOf.add(String(change.previous.enrollment_id));
   }
+  for (const enrollmentId of closedDependentsOf) await reassignSponsoredDependent(enrollmentId, null);
+}
+// When the company-sponsored dependent closes, the next open dependent of the same employee becomes sponsored.
+async function reassignSponsoredDependent(enrollmentId, actorId) {
+  const next = nextSponsoredDependent(await listRows('hmo_dependents', { enrollment_id: enrollmentId }));
+  if (!next) return;
+  const values = { company_sponsored: true, employee_share: 0, company_share: Math.round((Number(next.employee_share ?? 0) + Number(next.company_share ?? 0)) * 100) / 100, updated_at: new Date().toISOString() };
+  await updateRows('hmo_dependents', { id: next.id }, values);
+  await hmoHistory('dependent', next.id, 'sponsorship_reassigned', actorId, next, { ...next, ...values });
 }
 const checkHmoExpiry = () => {
   if (!hmoExpiry.running && Date.now() - hmoExpiry.at > 60_000)
@@ -1415,7 +1426,14 @@ async function hmoHandler(req, res) {
     await updateRows(table, { id: targetId }, values);
     const updated = await first(table, { id: targetId }) ?? { ...previous, ...values, id: targetId };
     await hmoHistory(hmoHistoryType(resource), targetId, action, ctx.userId, previous, updated);
+    if (resource === 'dependents' && previous.company_sponsored === true && ['Rejected', 'Terminated', 'Expired'].includes(String(updated.status)))
+      await reassignSponsoredDependent(String(previous.enrollment_id), ctx.userId);
     return ok(res, updated);
+  };
+  // Maxicare's answer to a submission: a rejection keeps the request open so HR can correct it and submit again.
+  const recordMaxicareRejection = (previous, targetId, b, now) => {
+    if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Only a request submitted to Maxicare can be marked as rejected by Maxicare.');
+    return saveTransition('maxicare_rejected', targetId, previous, { maxicare_status: 'Rejected', rejection_reason: required(b.rejection_reason, 'rejection_reason'), updated_at: now });
   };
 
   const handleAction = async (action, targetId, b) => {
@@ -1425,7 +1443,7 @@ async function hmoHandler(req, res) {
     if (['approve', 'reject'].includes(action) && previous.submitted_by && String(previous.submitted_by) === String(ctx.userId))
       throw new HttpError(409, 'HMO_SELF_APPROVAL', 'A request must be approved or rejected by someone other than the person who submitted it.');
 
-    if (resource === 'enrollments' && ['approve', 'reject', 'activate', 'terminate'].includes(action)) {
+    if (resource === 'enrollments' && ['approve', 'reject', 'submit_to_maxicare', 'maxicare_reject', 'activate', 'terminate'].includes(action)) {
       const status = String(previous.status ?? ''), approval = String(previous.approval_status ?? 'Pending');
       if (action === 'approve') {
         if (!['Pending', 'Submitted'].includes(status) || approval !== 'Pending') throw new HttpError(409, 'HMO_ENROLLMENT_NOT_PENDING', 'Only a pending enrollment can be approved.');
@@ -1443,9 +1461,16 @@ async function hmoHandler(req, res) {
         const reason = required(b.rejection_reason, 'rejection_reason');
         return saveTransition('rejected', targetId, previous, { approval_status: 'Rejected', status: 'Rejected', rejection_reason: reason, updated_at: now });
       }
+      if (action === 'submit_to_maxicare') {
+        if (approval !== 'Approved' || !['Pending', 'Submitted'].includes(status)) throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The enrollment must be approved before submission to Maxicare.');
+        if (!['Not Submitted', 'Rejected'].includes(String(previous.maxicare_status ?? 'Not Submitted'))) throw new HttpError(409, 'HMO_ALREADY_SUBMITTED', 'This enrollment has already been submitted to Maxicare.');
+        return saveTransition('submitted_to_maxicare', targetId, previous, { maxicare_status: 'Pending', updated_at: now });
+      }
+      if (action === 'maxicare_reject') return recordMaxicareRejection(previous, targetId, b, now);
       if (action === 'activate') {
         if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'Enrollment must be approved before Maxicare activation.');
         if (status === 'Active' || previous.maxicare_status === 'Active') throw new HttpError(409, 'HMO_ENROLLMENT_ALREADY_ACTIVE', 'This enrollment is already active.');
+        if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Submit the approved enrollment to Maxicare before recording activation.');
         const reference = text(b.maxicare_reference);
         if (!reference) throw new HttpError(400, 'MAXICARE_REFERENCE_REQUIRED', 'maxicare_reference is required to confirm provider activation.');
         const effective = hmoDate(previous.effective_date, 'effective_date');
@@ -1468,7 +1493,7 @@ async function hmoHandler(req, res) {
       return saveTransition('terminated', targetId, previous, { status: 'Terminated', terminated_at: now, updated_at: now });
     }
 
-    if (resource === 'dependents' && ['approve', 'reject', 'submit_to_maxicare', 'activate', 'terminate'].includes(action)) {
+    if (resource === 'dependents' && ['approve', 'reject', 'submit_to_maxicare', 'maxicare_reject', 'activate', 'terminate'].includes(action)) {
       const approval = String(previous.approval_status ?? 'Pending'), status = String(previous.status ?? '');
       const enrollment = await first('hmo_enrollments', { id: String(previous.enrollment_id) });
       if (!enrollment) throw new HttpError(404, 'HMO_ENROLLMENT_NOT_FOUND', 'The dependent’s employee enrollment was not found.');
@@ -1489,6 +1514,7 @@ async function hmoHandler(req, res) {
         if (previous.maxicare_status === 'Active') throw new HttpError(409, 'HMO_DEPENDENT_ALREADY_ACTIVE', 'This dependent is already active with Maxicare.');
         return saveTransition('submitted_to_maxicare', targetId, previous, { maxicare_status: 'Pending', updated_at: now });
       }
+      if (action === 'maxicare_reject') return recordMaxicareRejection(previous, targetId, b, now);
       if (action === 'activate') {
         if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The dependent must be approved before Maxicare activation.');
         if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Submit the approved dependent to Maxicare before recording activation.');

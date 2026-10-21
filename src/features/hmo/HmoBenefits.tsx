@@ -706,8 +706,18 @@ function EnrollmentSection({
   onChanged: () => void;
 }) {
   const [selectedEnrollment, setSelectedEnrollment] = useState<HmoEnrollment | null>(null);
+  // Inactive or resigned employees whose coverage is still open: Maxicare keeps billing until HR terminates it.
+  const leavers = enrollments.filter((e) => {
+    const employee = employeeMap.get(e.employeeId);
+    return ["Pending", "Submitted", "Active"].includes(e.status) && Boolean(employee && (employee.status === "Inactive" || employee.employmentStatus === "Resigned"));
+  });
   return (
     <>
+      {leavers.length > 0 && (
+        <p role="alert" className="mb-0 mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">
+          {leavers.length === 1 ? "1 employee who is" : `${leavers.length} employees who are`} no longer active still {leavers.length === 1 ? "has" : "have"} open HMO coverage: {leavers.map((e) => employeeMap.get(e.employeeId)?.name).join(", ")}. Open each enrollment and terminate it so Maxicare coverage and billing stop.
+        </p>
+      )}
       <Card className="mt-4 overflow-x-auto">
       <table className="w-full min-w-[1120px] text-left text-[13px]">
         <thead>
@@ -802,6 +812,7 @@ function enrollmentDisplayStatus(enrollment: HmoEnrollment) {
   if (enrollment.status === "Rejected" || enrollment.approvalStatus === "Rejected") return "Rejected";
   if (enrollment.status === "Active" && enrollment.maxicareStatus === "Active") return "Active";
   if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
+  if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Rejected") return "Rejected by Maxicare";
   if (enrollment.approvalStatus === "Approved") return "Ready for Submission";
   return "Pending Admin Approval";
 }
@@ -826,8 +837,12 @@ function EnrollmentViewModal({
       { key: "approve", label: "Approve Enrollment", permission: "hmo.approve" as const, run: () => hmoService.approveEnrollment(enrollment.id), audit: `Approved the HMO enrollment of ${name}.` },
       { key: "reject", label: "Reject", danger: true, permission: "hmo.approve" as const, needs: "reason" as const, run: (reason: string) => hmoService.rejectEnrollment(enrollment.id, reason), audit: `Rejected the HMO enrollment of ${name}.` },
     ] : []),
-    ...(enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus !== "Active" && !["Terminated", "Rejected", "Expired"].includes(enrollment.status) ? [
+    ...(enrollment.approvalStatus === "Approved" && ["Not Submitted", "Rejected"].includes(enrollment.maxicareStatus) && ["Pending", "Submitted"].includes(enrollment.status) ? [
+      { key: "submit", label: enrollment.maxicareStatus === "Rejected" ? "Submit to Maxicare Again" : "Submit to Maxicare", run: () => hmoService.submitEnrollmentToMaxicare(enrollment.id), audit: `Submitted the HMO enrollment of ${name} to Maxicare.` },
+    ] : []),
+    ...(enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Pending" && ["Pending", "Submitted"].includes(enrollment.status) ? [
       { key: "activate", label: "Record Maxicare Approval", needs: "reference" as const, run: (reference: string) => hmoService.activateEnrollment(enrollment.id, reference), audit: `Recorded Maxicare approval for ${name}.` },
+      { key: "maxicare-reject", label: "Record Maxicare Rejection", danger: true, needs: "reason" as const, run: (reason: string) => hmoService.recordEnrollmentMaxicareRejection(enrollment.id, reason), audit: `Recorded Maxicare rejection for ${name}.` },
     ] : []),
     // A pending enrollment is rejected rather than terminated.
     ...(!pending && enrollment.approvalStatus === "Approved" && ["Pending", "Submitted", "Active"].includes(enrollment.status) ? [
@@ -971,6 +986,7 @@ function dependentDisplayStatus(dependent: HmoDependent) {
   if (dependent.status === "Rejected" || dependent.approvalStatus === "Rejected") return "Rejected";
   if (dependent.status === "Active" && dependent.maxicareStatus === "Active") return "Active";
   if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
+  if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Rejected") return "Rejected by Maxicare";
   if (dependent.approvalStatus === "Approved") return "Ready for Submission";
   return "Pending Admin Approval";
 }
@@ -999,10 +1015,11 @@ function DependentViewModal({
       { key: "reject", label: "Reject", danger: true, permission: "hmo.approve" as const, needs: "reason" as const, run: (reason: string) => hmoService.rejectDependent(dependent.id, reason), audit: `Rejected HMO dependent ${name}.` },
     ] : []),
     ...(open && dependent.approvalStatus === "Approved" && ["Not Submitted", "Rejected"].includes(dependent.maxicareStatus ?? "Not Submitted") ? [
-      { key: "submit", label: "Submit to Maxicare", run: () => hmoService.submitDependentToMaxicare(dependent.id), audit: `Submitted HMO dependent ${name} to Maxicare.` },
+      { key: "submit", label: dependent.maxicareStatus === "Rejected" ? "Submit to Maxicare Again" : "Submit to Maxicare", run: () => hmoService.submitDependentToMaxicare(dependent.id), audit: `Submitted HMO dependent ${name} to Maxicare.` },
     ] : []),
     ...(open && dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Pending" && dependent.status !== "Active" ? [
       { key: "activate", label: "Record Maxicare Approval", needs: "reference" as const, run: (reference: string) => hmoService.activateDependent(dependent.id, reference), audit: `Recorded Maxicare approval for HMO dependent ${name}.` },
+      { key: "maxicare-reject", label: "Record Maxicare Rejection", danger: true, needs: "reason" as const, run: (reason: string) => hmoService.recordDependentMaxicareRejection(dependent.id, reason), audit: `Recorded Maxicare rejection for HMO dependent ${name}.` },
     ] : []),
     // A pending dependent is rejected rather than terminated.
     ...(!pending && dependent.approvalStatus === "Approved" && ["Active", "Submitted"].includes(dependent.status) ? [

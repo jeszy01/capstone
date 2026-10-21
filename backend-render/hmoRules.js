@@ -62,3 +62,14 @@ export function hmoExpiryChanges({ plans, enrollments, dependents, today, now = 
   }
   return changes;
 }
+
+/**
+ * Each employee may have one company-sponsored dependent. When that dependent closes (rejected, terminated or
+ * expired), the earliest open employee-paid dependent under the same enrollment takes the slot. Returns that
+ * dependent, or null when a sponsored dependent is still open or none is waiting.
+ */
+export function nextSponsoredDependent(dependents) {
+  const open = dependents.filter(d => OPEN.includes(String(d.status ?? '')) && d.approval_status !== 'Rejected');
+  if (open.some(d => d.company_sponsored === true)) return null;
+  return open.sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))[0] ?? null;
+}
