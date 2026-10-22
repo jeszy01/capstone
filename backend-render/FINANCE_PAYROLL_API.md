@@ -9,7 +9,7 @@ only reads. PBMS never calls Finance, so no Finance URL is needed.
 1. HR creates and computes a run, then submits it → **pending**.
 2. The PBMS Admin approves it → **approved**, returns it to HR with a comment → **returned**, or rejects it with a
    comment → **rejected** (closed). HR can never approve their own run.
-3. The Admin confirms the payroll account is funded, with the transfer reference → **funded**.
+3. The Admin confirms the payroll account is funded by uploading the bank transfer receipt → **funded**.
 4. HR exports the bank, e-wallet and cash payout files → **exported**, then marks each employee Paid or Failed.
    Failed payouts are corrected and exported again.
 5. When every employee is Paid → **paid**. HR generates payslips and releases them to every department → **closed**.
@@ -40,7 +40,8 @@ it with the Finance team privately and keep it on the Finance server only. Serve
   "totals": { "gross": 1250000.00, "deductions": 210500.50, "net": 1039499.50, "withholding_tax": 85210.25 },
   "prepared_by": "HR User", "submitted_at": "2026-10-13T02:10:00.000Z",
   "decided_by": "Admin User", "decided_at": "2026-10-13T05:00:00.000Z", "decision_comment": null,
-  "funding_reference": "BDO-TRF-88412", "funded_at": "2026-10-14T01:00:00.000Z",
+  "funded_at": "2026-10-14T01:00:00.000Z", "funding_amount": 1039499.50,
+  "funding_receipt": { "file_name": "bdo-transfer.pdf", "mime_type": "application/pdf", "size_bytes": 182340, "uploaded_by": "Admin User", "uploaded_at": "2026-10-14T01:00:00.000Z" },
   "payouts": { "pending": 0, "exported": 40, "paid": 1, "failed": 1 },
   "paid_at": null, "closed_at": null
 } ] }
@@ -55,6 +56,13 @@ it with the Finance team privately and keep it on the Finance server only. Serve
 The same fields plus `rows`: `employee_no`, `name`, `gross`, `deductions`, `net`, `withholding_tax`, `sss`,
 `philhealth`, `pagibig`, `employer_sss`, `employer_philhealth`, `employer_pagibig`, `payout_method` (`Bank`,
 `E-wallet` or `Cash`), `payout_status` (`Pending`, `Exported`, `Paid` or `Failed`) and `payout_failure_reason`.
+
+### Funding receipt
+
+`GET https://<pbms-render-host>/integrations/finance/payroll-runs/{id}/funding-receipt`
+
+The bank transfer receipt the Admin uploaded (JPG, PNG or PDF), shown inline; add `?download=1` to download it.
+Returns `404 RECEIPT_NOT_FOUND` when the run has none.
 
 ### Decisions (removed)
 

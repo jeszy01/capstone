@@ -91,7 +91,7 @@ export function PayrollSummaryModal({run,employees,onClose}:{run:PayrollRun;empl
     <div className="summary-print space-y-5 text-slate-800">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
         <div><div className="text-[17px] font-bold">Payroll Summary</div><div className="text-[12px] text-slate-500">Archon Nell Incorporated · {period}</div></div>
-        <div className="text-right text-[12px] text-slate-500"><div className="font-semibold text-slate-800">PR-{run.id.slice(0,8).toUpperCase()}</div><div>Cutoff: {period}</div><div>Pay date: {formatDate(run.payDate??run.paidAt)}</div>{run.funding&&<div>Funding reference: {run.funding.reference}</div>}<div>Status: {runStatusLabel(run)}</div>{run.releasedAt&&<><div>Released by: {run.releasedBy??'—'}</div><div>Released: {new Date(run.releasedAt).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div></>}</div>
+        <div className="text-right text-[12px] text-slate-500"><div className="font-semibold text-slate-800">PR-{run.id.slice(0,8).toUpperCase()}</div><div>Cutoff: {period}</div><div>Pay date: {formatDate(run.payDate??run.paidAt)}</div>{run.funding&&<div>Funding receipt: {run.funding.fileName}</div>}<div>Status: {runStatusLabel(run)}</div>{run.releasedAt&&<><div>Released by: {run.releasedBy??'—'}</div><div>Released: {new Date(run.releasedAt).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div></>}</div>
       </div>
 
       <div className="rounded-xl border border-slate-200 p-5">

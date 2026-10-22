@@ -45,7 +45,6 @@ const RUN_IDENTITY_FIELDS = ['id', 'runType', 'from', 'to', 'payDate', 'createdA
 // Submitting also takes the current Payout Details, so payout lines may be refreshed (still all Pending).
 const RUN_SUBMIT_FIELDS = ['status', 'submittedAt', 'submittedBy', 'payouts'];
 const RUN_DECISION_FIELDS = ['status', 'decidedBy', 'decidedById', 'decidedAt', 'decisionComment'];
-const RUN_FUNDING_FIELDS = ['status', 'funding'];
 const RUN_PAYOUT_FIELDS = ['status', 'payouts', 'exports', 'paidAt', 'paidBy'];
 const only = (row, keys) => Object.fromEntries(keys.map(k => [k, row[k]]));
 export const runPeriod = run => run.runType === 'thirteenth-month' ? `13th month pay (${run.to})` : `${run.from} to ${run.to}`;
@@ -88,6 +87,7 @@ function payoutEvents(old, row, status, log) {
   if (stable(newExports.slice(0, oldExports.length)) !== stable(oldExports)) throw forbid('Exported payout files cannot be changed.');
   const added = newExports.slice(oldExports.length), exportOf = new Map();
   if (added.length && !['Funded', 'Exported'].includes(status)) throw forbid('Payouts can be exported only after the payroll account is funded.');
+  if (added.length && !old.funding?.receiptId) throw forbid('Attach the funding receipt before exporting payouts.');
   for (const entry of added) {
     if (!entry || typeof entry.id !== 'string' || !PAYOUT_METHODS.includes(entry.method) || !Array.isArray(entry.employees) || !entry.employees.length) throw forbid('An export needs its method and employees.');
     for (const empId of entry.employees) exportOf.set(String(empId), entry);
@@ -136,6 +136,8 @@ async function payrollRunEvents(user, before, after) {
     if (stable(old) === stable(row)) continue;
     if (stable(only(old, RUN_SERVER_FIELDS)) !== stable(only(row, RUN_SERVER_FIELDS))) throw forbid('Payslips are generated and released only with your passkey.');
     if (stable(only(old, RUN_IDENTITY_FIELDS)) !== stable(only(row, RUN_IDENTITY_FIELDS))) throw forbid("A payroll run's cutoff, pay date and preparer cannot be changed.");
+    // Funding is set only by POST /payroll/runs/:id/funding and PUT …/funding/receipt, with the transfer receipt.
+    if (stable(old.funding ?? null) !== stable(row.funding ?? null)) throw forbid('Funding is confirmed only by uploading the transfer receipt.');
     const was = runStatus(old), now = row.status;
     if (['Rejected', 'Closed', 'Paid'].includes(was)) throw forbid(was === 'Paid' ? 'A paid payroll run is locked; release its payslips to close it.' : `A ${was.toLowerCase()} payroll run is locked.`);
     // Payout details may be corrected while the run waits for funding or export.
@@ -166,11 +168,7 @@ async function payrollRunEvents(user, before, after) {
       if (now !== 'Approved' && comment.length < 3) throw forbid(`A comment is required to ${now === 'Returned' ? 'return' : 'reject'} payroll.`);
       log(`payroll.${now.toLowerCase()}`, `${now} payroll for ${runPeriod(row)}${comment ? `: ${comment}` : ''}.`);
     } else if (now === 'Funded') {
-      need(user, 'payroll.fund', 'Only an Admin can confirm that the payroll account is funded.');
-      const reference = typeof row.funding?.reference === 'string' ? row.funding.reference.trim() : '';
-      if (!sameExcept(old, row, RUN_FUNDING_FIELDS) || reference.length < 3 || !row.funding?.confirmedAt || String(row.funding?.confirmedById ?? '') !== String(user.id))
-        throw forbid('Confirm funding with the transfer reference number.');
-      log('payroll.funded', `Confirmed the payroll account is funded for ${runPeriod(row)} (${pesoText(runNet(row))}, reference ${reference}).`);
+      throw forbid('Funding is confirmed only by uploading the transfer receipt.');
     } else if (now === 'Exported') {
       need(user, 'payroll.release', 'Only HR Staff can export and track payouts.');
       if (!sameExcept(old, row, ['status', 'payouts', 'exports'])) throw forbid('Exporting payouts cannot change the payroll.');

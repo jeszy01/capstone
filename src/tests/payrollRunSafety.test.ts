@@ -13,7 +13,7 @@ const pendingLine=(method='Bank')=>({method,bankName:'BDO',accountNumber:'123',s
 const computed=(patch:Record<string,unknown>={})=>draft({status:'Computed',rows:[row('EMP-1',1000),row('EMP-2',2000)],totals:{gross:3200,deductions:200,net:3000},payouts:{'EMP-1':pendingLine(),'EMP-2':{method:'Cash',status:'Pending'}},...patch});
 const pending=()=>computed({status:'Pending Approval',submittedAt:'x',submittedBy:'HR'});
 const approved=()=>({...pending(),status:'Approved',decidedBy:'Admin',decidedById:'u-admin',decidedAt:'x'});
-const funded=()=>({...approved(),status:'Funded',funding:{reference:'BDO-123',confirmedAt:'x',confirmedBy:'Admin',confirmedById:'u-admin'}});
+const funded=()=>({...approved(),status:'Funded',funding:{receiptId:'rc-1',fileName:'bdo-transfer.pdf',mimeType:'application/pdf',size:1000,amount:3000,uploadedAt:'x',uploadedBy:'Admin',uploadedById:'u-admin',confirmedAt:'x',confirmedBy:'Admin',confirmedById:'u-admin'}});
 const exportEntry={id:'x1',method:'Bank',employees:['EMP-1'],total:1000,at:'x',by:'HR'};
 const exported=()=>({...funded(),status:'Exported',exports:[exportEntry],payouts:{'EMP-1':{...pendingLine(),status:'Exported',exportId:'x1'},'EMP-2':{method:'Cash',status:'Pending'}}});
 
@@ -59,10 +59,12 @@ describe('payroll run transitions are enforced by the server',()=>{
   const rejected={...approved(),status:'Rejected',decisionComment:'Wrong cutoff'};
   await expect(save(hr,[rejected],[{...rejected,status:'Computed'}])).rejects.toThrow('rejected payroll run is locked');
  });
- it('the Admin confirms funding with a reference, and export is blocked until then',async()=>{
-  await expect(save(hr,[approved()],[funded()])).rejects.toThrow('Only an Admin');
-  await expect(save(admin,[approved()],[{...funded(),funding:{...funded().funding,reference:''}}])).rejects.toThrow('reference number');
-  expect((await save(admin,[approved()],[funded()]))[0]).toEqual(['payroll.funded','Payroll','r1',expect.stringContaining('BDO-123')]);
+ it('funding is confirmed only through the receipt upload, and export is blocked until a receipt is attached',async()=>{
+  await expect(save(admin,[approved()],[funded()])).rejects.toThrow('uploading the transfer receipt');
+  await expect(save(hr,[approved()],[funded()])).rejects.toThrow('uploading the transfer receipt');
+  await expect(save(admin,[funded()],[{...funded(),funding:{...funded().funding,fileName:'other.pdf'}}])).rejects.toThrow('uploading the transfer receipt');
+  const noReceipt={...funded(),funding:{...funded().funding,receiptId:undefined}};
+  await expect(save(hr,[noReceipt],[{...exported(),funding:noReceipt.funding}])).rejects.toThrow('Attach the funding receipt');
   await expect(save(hr,[approved()],[{...exported(),funding:undefined,status:'Exported'}])).rejects.toThrow();
   await expect(save(hr,[approved()],[{...approved(),exports:[exportEntry],payouts:exported().payouts}])).rejects.toThrow('only after the payroll account is funded');
  });
@@ -126,7 +128,7 @@ describe('Finance API (read-only)',()=>{
   expect(financeStatus(computed())).toBeNull();
   expect(financeStatus(pending())).toBe('pending');
   expect(financeStatus({...draft({status:'Approved',paidAt:'x',releasedAt:'y'})})).toBe('closed');
-  expect(runSummary(exported())).toMatchObject({status:'exported',employees:2,funding_reference:'BDO-123',payouts:{pending:1,exported:1,paid:0,failed:0},totals:{net:3000}});
+  expect(runSummary(exported())).toMatchObject({status:'exported',employees:2,funding_receipt:{file_name:'bdo-transfer.pdf'},funding_amount:3000,payouts:{pending:1,exported:1,paid:0,failed:0},totals:{net:3000}});
   expect(runDetail(exported()).rows[0]).toMatchObject({employee_no:'EMP-1',net:1000,payout_method:'Bank',payout_status:'Exported'});
  });
 });

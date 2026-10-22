@@ -5,7 +5,7 @@ import {Button,Card,Empty,Field,Modal,TextInput,button,ghost,input,success} from
 import type {Employee,PayrollInput} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {getCurrentUser} from '../auth/authService';
-import {notifyPayrollDecided,notifyPayrollFunded,notifyPayrollPending} from '../notifications/notificationService';
+import {notifyPayrollDecided,notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
 import {recordAudit} from '../audit/auditService';
 import {StatusBadge} from '../../components/common/StatusBadge';
@@ -23,6 +23,7 @@ import {PayoutDetailsModal} from './PayoutDetails';
 import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 import {RunStepper} from './RunProgress';
 import {PayrollRegister} from './PayrollRegister';
+import {RECEIPT_ACCEPT,confirmFunding,openReceipt,receiptProblem,replaceReceipt} from './fundingReceipt';
 
 // Amounts HR may type in while a run is Computed; each change needs a reason.
 type EditKey='otherDeductions'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
@@ -38,7 +39,7 @@ const reasonKey=(empId:string,field:string)=>`${empId}|${field}`;
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
 const METHOD_FILES:Record<PayoutMethod,string>={'Bank':'Export bank CSV','E-wallet':'Export e-wallet list','Cash':'Export cash list'};
-type Dialog='submit'|'Approved'|'Returned'|'Rejected'|'fund'|'payslips';
+type Dialog='submit'|'Approved'|'Returned'|'Rejected'|'fund'|'replace'|'payslips';
 
 /** One payroll run, from Draft to Closed: its figures, checks, approval, funding and payouts. */
 export default function ReviewPayroll(){
@@ -60,7 +61,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  useEffect(()=>setRows(run.rows),[run]);
  const[reasons,setReasons]=useState<Record<string,string>>(()=>Object.fromEntries(run.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>[reasonKey(row.input.empId,change.field),change.reason]))));
  const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[settleError,setSettleError]=useState('');
- const[expanded,setExpanded]=useState<string[]>([]),[dialog,setDialog]=useState<Dialog|null>(null),[comment,setComment]=useState(''),[reference,setReference]=useState('');
+ const[expanded,setExpanded]=useState<string[]>([]),[dialog,setDialog]=useState<Dialog|null>(null),[comment,setComment]=useState(''),[receipt,setReceipt]=useState<File|null>(null);
  const[failing,setFailing]=useState<{empId:string;name:string;reason:string}|null>(null),[fixing,setFixing]=useState<string|null>(null);
  const deptOf=(empId:string)=>employees.find(employee=>employee.employeeNo===empId)?.department||'Unassigned';
  const staff=async()=>employees.length?employees:employeeService.getAllFromServer();
@@ -142,12 +143,14 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   if(next==='Approved'){const stamp=Date.now();write('payroll:records',run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
   notifyPayrollDecided(run.id,title,next,text);setDialog(null);setComment('');
  });
+ // The server checks and stores the receipt, marks the run Funded and notifies HR.
  const fund=()=>act('fund',async()=>{
-  const text=reference.trim();
-  if(text.length<3)throw new Error('Enter the transfer reference number.');
-  await updateRun(run.id,item=>{expectStatus(item,'Approved');return {...item,status:'Funded',funding:{reference:text,confirmedAt:new Date().toISOString(),confirmedBy:user?.name??'Admin',confirmedById:user?.id??''}}});
-  notifyPayrollFunded(run.id,title);setDialog(null);setReference('');
+  const problem=receiptProblem(receipt);
+  if(problem)throw new Error(problem);
+  await (dialog==='replace'?replaceReceipt(run.id,receipt!):confirmFunding(run.id,receipt!));
+  setDialog(null);setReceipt(null);
  });
+ const showReceipt=(download:boolean)=>{setError('');openReceipt(run,download).catch(cause=>setError(message(cause,'The receipt could not be opened.')))};
  const exportMethod=(method:PayoutMethod)=>act(`export-${method}`,async()=>{
   const {run:saved,exportId}=await exportPayouts(run.id,method,by);
   const file=payoutFile(saved,exportId,deptOf);downloadCsv(file.name,file.csv);
@@ -172,7 +175,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   {editable&&dirty&&<button className={success} disabled={Boolean(busy)} onClick={()=>void saveEdits()}>{busy==='save'?'Saving…':'Save changes'}</button>}
   {canGenerate&&status==='Computed'&&primary('submit','Submit for approval',()=>{setError('');setDialog('submit')},dirty)}
   {canApprove&&status==='Pending Approval'&&<><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Rejected')}}>Reject</button><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Returned')}}>Return</button>{primary('decide','Approve',()=>setDialog('Approved'),ownRun)}</>}
-  {canFund&&status==='Approved'&&primary('fund','Confirm funding',()=>{setReference('');setDialog('fund')})}
+  {canFund&&status==='Approved'&&primary('fund','Confirm funding',()=>{setReceipt(null);setError('');setDialog('fund')})}
   {canRelease&&status==='Paid'&&!generated&&primary('payslips','Generate payslips',()=>setDialog('payslips'))}
   {canRelease&&status==='Paid'&&generated&&<Link className={button} to="/payroll?tab=payslip">Release payslips</Link>}
  </>;
@@ -196,7 +199,11 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    {status==='Pending Approval'&&!canApprove&&<p className="m-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">Submitted {run.submittedAt?`on ${formatDate(run.submittedAt)} `:''}by {run.submittedBy??run.preparedBy}. View only while the Admin reviews it.</p>}
    {status==='Pending Approval'&&canApprove&&ownRun&&<p className="m-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">You prepared this payroll, so another Admin must approve it.</p>}
    {status==='Approved'&&!canFund&&<p className="m-0 rounded-lg border border-blue-100 bg-blue-50 p-3 text-[12px] text-[#17345b]">Approved by {run.decidedBy}. Waiting for the Admin to confirm the payroll account is funded; payouts cannot be exported until then.</p>}
-   {run.funding&&<p className="m-0 text-[12px] text-slate-600">Funded · reference <b>{run.funding.reference}</b> · confirmed by {run.funding.confirmedBy} on {formatDate(run.funding.confirmedAt)}</p>}
+   {run.funding&&<div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-600"><span>Funded{run.funding.amount!==undefined?<> · <b>{peso(run.funding.amount)}</b></>:null} · confirmed by {run.funding.confirmedBy} on {formatDate(run.funding.confirmedAt)}</span>
+    {/* The receipt is shown to the Admin (and Finance through its API) only. */}
+    {canFund&&run.funding.receiptId&&<><span>· Receipt <b>{run.funding.fileName}</b>, uploaded by {run.funding.uploadedBy} on {formatDate(run.funding.uploadedAt)}</span><button type="button" className="font-semibold text-blue-700 underline" onClick={()=>showReceipt(false)}>Preview</button><button type="button" className="font-semibold text-blue-700 underline" onClick={()=>showReceipt(true)}>Download</button></>}
+    {canFund&&status==='Funded'&&<button type="button" className={`${ghost} !py-1 text-[12px]`} disabled={Boolean(busy)} onClick={()=>{setReceipt(null);setError('');setDialog('replace')}}>Replace receipt</button>}
+   </div>}
 
    {rows.length>0&&<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
     {[['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value],index)=><div key={labelText} className={`rounded-xl border p-4 shadow-sm ${index===3?'border-blue-100 bg-gradient-to-br from-blue-50 to-white':'border-slate-200 bg-white'}`}><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelText}</div><div className={`mt-1 text-[20px] font-semibold ${index===3?'text-blue-800':'text-[#17345b]'}`}>{value}</div>{index===3&&approved&&run.payouts&&<div className="mt-1 text-[11px] text-slate-500">{paidCount} of {run.rows.length} paid</div>}</div>)}
@@ -247,7 +254,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
      <div><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Payouts</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{['Funded','Exported'].includes(status)?'Export each method’s file, then mark each employee Paid or Failed. Fix a failed payout and export it again.':status==='Approved'?'Export is blocked until the Admin confirms the payroll account is funded.':`${paidCount} of ${run.rows.length} employees paid.`}</p></div>
      {canRelease&&run.payouts&&['Approved','Funded','Exported'].includes(status)&&<div className="flex flex-wrap gap-2">
-      {PAYOUT_METHODS.map(method=>{const count=pendingOf(method);return <button key={method} type="button" className={ghost} disabled={Boolean(busy)||status==='Approved'||!count} title={status==='Approved'?'Blocked until funding is confirmed':undefined} onClick={()=>void exportMethod(method)}><Download size={14}/>{busy===`export-${method}`?'Exporting…':`${METHOD_FILES[method]} (${count})`}</button>})}
+      {PAYOUT_METHODS.map(method=>{const count=pendingOf(method);return <button key={method} type="button" className={ghost} disabled={Boolean(busy)||status==='Approved'||!run.funding?.receiptId||!count} title={!run.funding?.receiptId?'Blocked until the funding receipt is attached':undefined} onClick={()=>void exportMethod(method)}><Download size={14}/>{busy===`export-${method}`?'Exporting…':`${METHOD_FILES[method]} (${count})`}</button>})}
       {status==='Exported'&&exported.length>0&&<button type="button" className={success} disabled={Boolean(busy)} onClick={()=>void mark(exported.map(({row})=>({empId:row.input.empId,status:'Paid' as const})))}>Mark all exported Paid ({exported.length})</button>}
      </div>}
     </div>
@@ -284,11 +291,12 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('decide',dialog==='Approved'?'Approve':dialog==='Returned'?'Return':'Reject',()=>void decide(dialog),dialog!=='Approved'&&comment.trim().length<3)}</div>
   </Modal>}
-  {dialog==='fund'&&<Modal title="Confirm payroll account funded" onClose={()=>{if(!busy)setDialog(null)}}>
-   <p className="mt-0 text-[13px] text-slate-600">Confirm that {peso(totals.net)} for {title} is in the payroll account. Payouts can be exported after this.</p>
-   <Field label="Transfer reference number"><TextInput autoFocus maxLength={80} value={reference} onChange={event=>setReference(event.target.value)}/></Field>
+  {(dialog==='fund'||dialog==='replace')&&<Modal title={dialog==='fund'?'Confirm payroll account funded':'Replace funding receipt'} onClose={()=>{if(!busy)setDialog(null)}}>
+   <p className="mt-0 text-[13px] text-slate-600">{dialog==='fund'?<>Attach the bank transfer receipt showing {peso(totals.net)} for {title} was moved to the payroll account. Payouts can be exported after this.</>:<>The new receipt replaces {run.funding?.fileName??'the current one'}, which is deleted.</>}</p>
+   <Field label="Bank transfer receipt (JPG, PNG or PDF, max 5 MB)"><input className={input} type="file" accept={RECEIPT_ACCEPT} onChange={event=>{setError('');setReceipt(event.target.files?.[0]??null)}}/></Field>
+   {receipt&&<p className={`mb-0 mt-2 text-[12px] ${receiptProblem(receipt)?'text-red-700':'text-slate-600'}`}>{receipt.name} · {(receipt.size/1024/1024).toFixed(2)} MB{receiptProblem(receipt)?` — ${receiptProblem(receipt)}`:''}</p>}
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
-   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('fund','Confirm funded',()=>void fund(),reference.trim().length<3)}</div>
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('fund',dialog==='fund'?'Confirm funded':'Replace receipt',()=>void fund(),Boolean(receiptProblem(receipt)))}</div>
   </Modal>}
   {dialog==='payslips'&&<PayslipPasskeyModal title="Generate payslips" verify={passkey=>generatePayslips(run.id,passkey)} onClose={()=>setDialog(null)} onVerified={()=>{setDialog(null);setNotice('Payslips generated. Release them to ESS by department.');onChanged()}}/>}
   {failing&&<Modal title={`Payout failed · ${failing.name}`} onClose={()=>{if(!busy)setFailing(null)}}>

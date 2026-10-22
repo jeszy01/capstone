@@ -8,6 +8,7 @@ import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from '.
 import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
 import { runStatus } from './payrollFlow.js';
 import { buildRegister } from './payrollRegister.js';
+import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
@@ -485,7 +486,7 @@ const ACTION_LABELS = {
   'payroll.created': 'Created payroll', 'payroll.computed': 'Computed payroll', 'payroll.recomputed': 'Recomputed payroll',
   'payroll.submitted': 'Submitted payroll', 'payroll.returned': 'Returned payroll', 'payroll.funded': 'Confirmed payroll funding',
   'payroll.exported': 'Exported payouts', 'payroll.payouts_paid': 'Marked payouts Paid', 'payroll.payout_failed': 'Marked payout Failed',
-  'payroll.payouts_updated': 'Updated payout details', 'payroll.paid': 'Payroll paid', 'payroll.closed': 'Closed payroll',
+  'payroll.payouts_updated': 'Updated payout details', 'payroll.funding_receipt_replaced': 'Replaced funding receipt', 'payroll.paid': 'Payroll paid', 'payroll.closed': 'Closed payroll',
   'payroll.timesheet_locked': 'Locked timesheet',
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
@@ -675,8 +676,7 @@ async function checkPayslipPasskey(req, passkey, payrollRun, detail = `Generate 
   return { ...check, wrong: !check.verified && check.reason !== 'not_set' && !wasLocked };
 }
 // Runs inside a transaction holding the same lock as /app-data writes, so a sync cannot overwrite the change.
-// Payslips exist only for a Paid run (every employee paid); runs paid before payout tracking read as Paid too.
-async function withPaidRun(runId, work) {
+async function withLockedRun(runId, work) {
   const client = await pool.connect();
   try {
     await client.query('begin');
@@ -685,7 +685,6 @@ async function withPaidRun(runId, work) {
     const runs = data && !data.deleted ? appValue(data.value) : [];
     const payrollRun = Array.isArray(runs) ? runs.find(r => r && String(r.id) === runId) : undefined;
     if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run is not synchronized to the database.');
-    if (runStatus(payrollRun) !== 'Paid') throw new HttpError(409, 'PAYROLL_NOT_PAID', runStatus(payrollRun) === 'Closed' ? 'This payroll run is closed.' : 'Payslips are available only after every employee in the run is Paid.');
     const result = await work(client, runs, payrollRun);
     await client.query('commit');
     return { result, payrollRun };
@@ -694,9 +693,88 @@ async function withPaidRun(runId, work) {
     throw e;
   } finally { client.release(); }
 }
+// Payslips exist only for a Paid run (every employee paid); runs paid before payout tracking read as Paid too.
+const withPaidRun = (runId, work) => withLockedRun(runId, (client, runs, payrollRun) => {
+  if (runStatus(payrollRun) !== 'Paid') throw new HttpError(409, 'PAYROLL_NOT_PAID', runStatus(payrollRun) === 'Closed' ? 'This payroll run is closed.' : 'Payslips are available only after every employee in the run is Paid.');
+  return work(client, runs, payrollRun);
+});
 const logWrongPayslipPasskey = (req, runId, payrollRun, check, action = 'payroll.payslips_generate_failed', doing = 'generating payslips for') => audit(action, req.user.id, 'Payroll', runId,
   { description: `Wrong passkey when ${doing} ${runPeriod(payrollRun)}.${check.reason === 'locked' ? ' Passkey locked for 15 minutes.' : ''}` }, ipDevice(req));
 const passkeyFailure = check => ({ reason: check.reason, ...(check.locked_until ? { locked_until: check.locked_until } : {}) });
+
+// ---- Payroll funding: the Admin confirms the payroll account is funded by uploading the bank transfer receipt ----
+// Receipts (JPG, PNG or PDF, at most 5 MB) are kept in the database under a random id, never at a public URL. Only the
+// Admin (payroll.fund) and Finance's API can read them. The file is sent as the raw request body with its name in the
+// X-File-Name header (URI-encoded).
+await pool.query(`
+  create table if not exists payroll_funding_receipts(
+    id uuid primary key default gen_random_uuid(), run_id text not null, file_name text not null, mime_type text not null,
+    size_bytes integer not null, data bytea not null, uploaded_by uuid, uploaded_at timestamptz not null default now());
+  create index if not exists idx_payroll_funding_receipts_run on payroll_funding_receipts(run_id);`);
+const receiptBody = express.raw({ type: () => true, limit: RECEIPT_MAX_BYTES });
+const runNetTotal = run => Math.round((Array.isArray(run.rows) ? run.rows : []).reduce((total, r) => total + (Number(r?.result?.net) || 0), 0) * 100) / 100;
+const sizeText = bytes => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+// Checks the uploaded file and stores it; returns the run's funding fields for it.
+async function storeReceipt(client, req, payrollRun) {
+  const bytes = Buffer.isBuffer(req.body) ? req.body : null;
+  const check = checkReceipt(bytes, req.headers['content-type']);
+  if (check.error) throw new HttpError(check.error.status, check.error.code, check.error.message);
+  let name = '';
+  try { name = decodeURIComponent(String(req.headers['x-file-name'] ?? '')); } catch { name = String(req.headers['x-file-name'] ?? ''); }
+  const fileName = receiptFileName(name), by = req.user.display_name || req.user.name || req.user.email || 'Admin';
+  const { rows: [receipt] } = await client.query(
+    'insert into payroll_funding_receipts(run_id,file_name,mime_type,size_bytes,data,uploaded_by) values($1,$2,$3,$4,$5,$6) returning id, uploaded_at',
+    [String(payrollRun.id), fileName, check.type, bytes.length, bytes, req.user.id]);
+  return { receiptId: receipt.id, fileName, mimeType: check.type, size: bytes.length, uploadedAt: new Date(receipt.uploaded_at).toISOString(), uploadedBy: by, uploadedById: req.user.id };
+}
+const saveRuns = (client, req, runs) => client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(runs), req.user.id]);
+
+// Confirm funding: an Approved run becomes Funded once its receipt is stored.
+app.post('/payroll/runs/:id/funding', auth, allow('payroll.fund'), receiptBody, async (req, res) => {
+  const { result, payrollRun } = await withLockedRun(req.params.id, async (client, runs, payrollRun) => {
+    if (runStatus(payrollRun) !== 'Approved') throw new HttpError(409, 'PAYROLL_NOT_APPROVED', 'Funding can be confirmed only for an approved payroll run.');
+    const receipt = await storeReceipt(client, req, payrollRun);
+    const funding = { ...receipt, amount: runNetTotal(payrollRun), confirmedAt: receipt.uploadedAt, confirmedBy: receipt.uploadedBy, confirmedById: req.user.id };
+    const next = runs.map(r => r === payrollRun ? { ...r, status: 'Funded', funding } : r);
+    await saveRuns(client, req, next);
+    return { runs: next, funding };
+  });
+  const { funding } = result;
+  await audit('payroll.funded', req.user.id, 'Payroll', req.params.id, { description: `Confirmed the payroll account is funded with ${pesoText(funding.amount)} for ${runPeriod(payrollRun)}; uploaded receipt ${funding.fileName} (${sizeText(funding.size)}).` }, ipDevice(req));
+  await notifyRoles(['hr'], 'payroll_funded', 'Payroll funded', `${runPeriod(payrollRun)} · Ready to export payouts`, `/payroll/review?run=${req.params.id}`).catch(() => undefined);
+  ok(res, { runs: result.runs });
+});
+
+// Replace the receipt while the run is Funded (before any payout is exported); the old file is deleted.
+app.put('/payroll/runs/:id/funding/receipt', auth, allow('payroll.fund'), receiptBody, async (req, res) => {
+  const { result, payrollRun } = await withLockedRun(req.params.id, async (client, runs, payrollRun) => {
+    if (runStatus(payrollRun) !== 'Funded') throw new HttpError(409, 'RECEIPT_LOCKED', 'The receipt can be replaced only until payouts are exported.');
+    const receipt = await storeReceipt(client, req, payrollRun);
+    if (payrollRun.funding?.receiptId) await client.query('delete from payroll_funding_receipts where id=$1 and run_id=$2', [payrollRun.funding.receiptId, String(payrollRun.id)]);
+    const funding = { ...payrollRun.funding, ...receipt, amount: payrollRun.funding?.amount ?? runNetTotal(payrollRun), replacedFrom: payrollRun.funding?.fileName ?? null };
+    const next = runs.map(r => r === payrollRun ? { ...r, funding } : r);
+    await saveRuns(client, req, next);
+    return { runs: next, funding };
+  });
+  const { funding } = result;
+  await audit('payroll.funding_receipt_replaced', req.user.id, 'Payroll', req.params.id, { description: `Replaced the funding receipt of ${runPeriod(payrollRun)} (${pesoText(funding.amount)}): ${funding.replacedFrom ?? 'none'} → ${funding.fileName} (${sizeText(funding.size)}).` }, ipDevice(req));
+  ok(res, { runs: result.runs });
+});
+
+// Sends a run's receipt: inline to preview, or as a download with ?download=1. Never cached.
+async function sendReceipt(req, res, payrollRun) {
+  const receiptId = payrollRun?.funding?.receiptId;
+  const { rows: [receipt] } = receiptId ? await pool.query('select file_name, mime_type, data from payroll_funding_receipts where id=$1 and run_id=$2', [receiptId, String(payrollRun.id)]) : { rows: [] };
+  if (!receipt) return fail(res, 404, 'RECEIPT_NOT_FOUND', 'This payroll run has no funding receipt.');
+  res.set({ 'Content-Type': receipt.mime_type, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+    'Content-Disposition': `${req.query.download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(receipt.file_name)}` });
+  res.send(receipt.data);
+}
+app.get('/payroll/runs/:id/funding/receipt', auth, allow('payroll.fund'), async (req, res) => {
+  const { rows: [data] } = await pool.query(`select value, deleted from app_data where key='payroll:runs'`);
+  const runs = data && !data.deleted ? appValue(data.value) : [];
+  await sendReceipt(req, res, Array.isArray(runs) ? runs.find(r => r && String(r.id) === req.params.id) : undefined);
+});
 // Runs paid before payslip generation was recorded separately count as generated when they were paid.
 const payslipsGenerated = payrollRun => Boolean(payrollRun.payslipsGeneratedAt || (payrollRun.paidAt && payrollRun.status === 'Approved'));
 
@@ -2072,6 +2150,8 @@ app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) =
 const PG_CLIENT_ERRORS = { '22P02': 400, '22007': 400, '22008': 400, '23502': 400, '23514': 400, '42703': 400, '23505': 409, '23503': 409 };
 app.use(['/app-data', '/employees', '/audit-logs', '/account', '/payroll', '/users', '/compensation', '/hmo', '/loans', '/government-loans', '/integrations'], (err, _req, res, next) => {
   if (err instanceof HttpError || err instanceof AccessError) return fail(res, err.status, err.code, err.message);
+  // A request body over its limit (a funding receipt over 5 MB).
+  if (err?.type === 'entity.too.large') return fail(res, 413, 'RECEIPT_TOO_LARGE', 'The file is larger than 5 MB.');
   if (PG_CLIENT_ERRORS[err?.code]) return fail(res, PG_CLIENT_ERRORS[err.code], 'INVALID_REQUEST', err.message);
   next(err);
 });
@@ -2152,6 +2232,12 @@ app.get('/integrations/finance/payroll-runs', financeAuth, async (req, res) => {
   if (status && !FINANCE_STATUSES.includes(status)) return fail(res, 400, 'VALIDATION_ERROR', `status must be one of ${FINANCE_STATUSES.join(', ')}.`);
   const runs = (await storedRuns()).filter(run => financeStatus(run) && (!status || financeStatus(run) === status)).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
   ok(res, runs.map(runSummary));
+});
+// The run's funding receipt (bank transfer proof); add ?download=1 to download it.
+app.get('/integrations/finance/payroll-runs/:id/funding-receipt', financeAuth, async (req, res) => {
+  const run = (await storedRuns()).find(item => String(item.id) === req.params.id);
+  if (!run || !financeStatus(run)) return fail(res, 404, 'PAYROLL_RUN_NOT_FOUND', 'Payroll run not found.');
+  await sendReceipt(req, res, run);
 });
 app.get('/integrations/finance/payroll-runs/:id', financeAuth, async (req, res) => {
   const run = (await storedRuns()).find(item => String(item.id) === req.params.id);

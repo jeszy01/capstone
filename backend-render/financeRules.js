@@ -21,7 +21,9 @@ export function runSummary(run) {
     totals: { gross: sum(rows, r => r.result?.gross), deductions: sum(rows, r => r.result?.deductions), net: sum(rows, r => r.result?.net), withholding_tax: sum(rows, r => r.result?.tax) },
     prepared_by: run.preparedBy ?? null, submitted_at: run.submittedAt ?? run.createdAt ?? null,
     decided_by: run.decidedBy ?? null, decided_at: run.decidedAt ?? null, decision_comment: run.decisionComment ?? run.rejectionReason ?? null,
-    funding_reference: run.funding?.reference ?? null, funded_at: run.funding?.confirmedAt ?? null,
+    funded_at: run.funding?.confirmedAt ?? null, funding_amount: run.funding?.amount ?? null,
+    // The receipt itself: GET …/payroll-runs/{id}/funding-receipt.
+    funding_receipt: run.funding?.receiptId ? { file_name: run.funding.fileName, mime_type: run.funding.mimeType, size_bytes: run.funding.size, uploaded_by: run.funding.uploadedBy, uploaded_at: run.funding.uploadedAt } : null,
     payouts: { pending: count('Pending'), exported: count('Exported'), paid: count('Paid'), failed: count('Failed') },
     paid_at: run.paidAt ?? null, closed_at: run.closedAt ?? run.releasedAt ?? null,
   };

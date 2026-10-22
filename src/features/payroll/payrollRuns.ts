@@ -32,7 +32,8 @@ export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;
  preparedBy:string;preparedById?:string;createdAt:string;payDate?:string;settings?:PayrollSettingsSnapshot;
  /** What Create Payroll warned about (Strict Mode off), shown on the run. */warnings?:string[];
  submittedAt?:string;submittedBy?:string;decidedBy?:string;decidedById?:string;decidedAt?:string;/** The Admin's comment; required to return or reject. */decisionComment?:string;
- funding?:{reference:string;confirmedAt:string;confirmedBy:string;confirmedById:string};
+ /** Set by the server when the Admin uploads the bank transfer receipt; the file itself is stored privately. */
+ funding?:{receiptId:string;fileName:string;mimeType:string;size:number;amount:number;uploadedAt:string;uploadedBy:string;uploadedById:string;confirmedAt:string;confirmedBy:string;confirmedById:string;replacedFrom?:string|null};
  payouts?:Record<string,PayoutLine>;exports?:PayoutExport[];paidAt?:string;paidBy?:string;
  payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;released?:Record<string,string>;closedAt?:string;
  paymentMethod?:string;releasedAt?:string;releasedBy?:string;rejectionReason?:string};

@@ -57,7 +57,6 @@ const runLink=(runId:string)=>`/payroll/review?run=${runId}`;
 export const notifyClaimSubmitted=(claimNumber:string,amount:string)=>notify('claim_submitted','New claim submitted',`${claimNumber} · ${amount}`,CLAIMS_LINK,['admin','hr']);
 export const notifyClaimDecided=(claimNumber:string,status:'Approved'|'Rejected')=>notify(status==='Approved'?'claim_approved':'claim_rejected',`Claim ${status.toLowerCase()}`,claimNumber,CLAIMS_LINK,['hr']);
 export const notifyOvertimePending=(employeeName:string,date:string)=>notify('ot_pending','OT pending approval',`${employeeName} · ${date}`,'/time-attendance',['admin','hr']);
-// The Admin approves, returns or rejects a submitted run and confirms funding; HR hears about each.
+// The Admin approves, returns or rejects a submitted run; HR hears about each. Funding notifies HR from the server.
 export const notifyPayrollPending=(runId:string,label:string)=>notify('payroll_pending','Payroll submitted for approval',label,runLink(runId),['admin']);
 export const notifyPayrollDecided=(runId:string,label:string,status:'Approved'|'Returned'|'Rejected',comment?:string)=>notify(status==='Approved'?'payroll_approved':status==='Returned'?'payroll_returned':'payroll_rejected',`Payroll ${status.toLowerCase()}`,status==='Approved'?`${label} · Waiting for funding`:`${label} · ${comment??''}`,runLink(runId),['hr']);
-export const notifyPayrollFunded=(runId:string,label:string)=>notify('payroll_funded','Payroll funded',`${label} · Ready to export payouts`,runLink(runId),['hr']);
