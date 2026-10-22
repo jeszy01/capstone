@@ -114,6 +114,19 @@ app.get('/app-data', auth, async (req, res) => {
   res.json({ data: rows.filter(({ key }) => readableKey(req.user, key)).map(({ key, value, deleted }) => ({ key, value: appValue(value), deleted })) });
 });
 
+// HR2's last synced date: syncedThrough, or the latest record date for stores saved before it was kept.
+const hr2Through = store => store?.syncedThrough ?? (Array.isArray(store?.records) ? store.records.map(r => r?.date).filter(Boolean).sort().pop() : null) ?? null;
+// A timesheet can be locked only once HR2 attendance reaches its cutoff's last day.
+async function checkLocksSynced(client, before, after) {
+  const known = new Set((Array.isArray(before) ? before : []).map(lock => lock?.id));
+  const added = (Array.isArray(after) ? after : []).filter(lock => lock && !known.has(lock.id));
+  if (!added.length) return;
+  const { rows: [row] } = await client.query(`select value, deleted from app_data where key='attendance:hr2'`);
+  const through = hr2Through(row && !row.deleted ? appValue(row.value) : null);
+  const early = added.find(lock => !through || String(lock.to) > through);
+  if (early) throw new AccessError(`HR2 attendance is synced only up to ${through ?? 'no date yet'}. The timesheet for ${early.from} to ${early.to} can be locked once it reaches ${early.to}.`);
+}
+
 // Every write is checked against the role rules in appDataEvents before it is stored; allowed state changes are logged.
 async function saveAppData(req, key, isDel, value) {
   let next = isDel ? null : value ?? null;
@@ -124,6 +137,7 @@ async function saveAppData(req, key, isDel, value) {
     await client.query('select pg_advisory_xact_lock(hashtext($1))', [`app_data:${key}`]);
     const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [key]);
     const existed = Boolean(row && !row.deleted);
+    if (key === 'payroll:timesheet-locks' && !isDel) await checkLocksSynced(client, existed ? appValue(row.value) : null, next);
     if (key === 'payroll:runs' || key === 'claims:records') {
       if (isDel) throw new AccessError(key === 'payroll:runs' ? 'Payroll runs cannot be deleted.' : 'Claims cannot be deleted.');
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
@@ -488,7 +502,7 @@ const ACTION_LABELS = {
   'payroll.submitted': 'Submitted payroll', 'payroll.returned': 'Returned payroll', 'payroll.funded': 'Confirmed payroll funding',
   'payroll.exported': 'Exported payouts', 'payroll.payouts_paid': 'Marked payouts Paid', 'payroll.payout_failed': 'Marked payout Failed',
   'payroll.payouts_updated': 'Updated payout details', 'payroll.funding_receipt_replaced': 'Replaced funding receipt', 'payroll.paid': 'Payroll paid', 'payroll.closed': 'Closed payroll',
-  'payroll.timesheet_locked': 'Locked timesheet',
+  'payroll.timesheet_locked': 'Locked timesheet', 'attendance.hr2_synced': 'Synced HR2 attendance',
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
   'payroll.payslips_generated': 'Generated payslips', 'payroll.payslips_generate_failed': 'Failed passkey attempt',
@@ -2160,6 +2174,15 @@ app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) =
     await audit('government_loan.rejected', ctx.userId, 'government_loans', id, { referenceNo: previous.reference_no, remarks });
   } else throw new HttpError(400, 'LOAN_ACTION_NOT_SUPPORTED', 'Action must be update, verify or reject.');
   ok(res, await govLoanWithEmployee(await first('government_loans', { id }) ?? { ...previous, id }));
+});
+
+// Sync now on Time & Attendance: reads the HR2 store this server holds (HR2 posts it weekly) and logs the sync.
+app.post('/attendance/hr2/sync', auth, allow('attendance.view'), async (req, res) => {
+  const { rows: [row] } = await pool.query(`select value, deleted from app_data where key='attendance:hr2'`);
+  const store = row && !row.deleted ? appValue(row.value) : null;
+  const records = Array.isArray(store?.records) ? store.records.length : 0, through = hr2Through(store);
+  await audit('attendance.hr2_synced', req.user.id, 'Attendance', null, { description: `Synced HR2 attendance: ${records} record${records === 1 ? '' : 's'}, synced up to ${through ?? 'no date yet'}.` }, ipDevice(req));
+  ok(res, { syncedThrough: through, receivedAt: store?.receivedAt ?? null, records });
 });
 
 // Known errors from the routes above keep their status and code; anything else falls through to the generic handler.

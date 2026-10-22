@@ -10,14 +10,14 @@ import {loadPayoutDetails,missingPayout,payoutDetailsFor} from './payouts';
 import type {PayoutDetails} from './payouts';
 import {formatDate} from '../../utils/date';
 
-// ---- Timesheet locks: HR locks a cutoff's timesheet in Create Payroll; a lock is never removed ----
+// ---- Timesheet locks: HR locks a cutoff's timesheet once HR2 covers the whole cutoff; a lock is never removed ----
 export const TIMESHEET_LOCKS_KEY='payroll:timesheet-locks';
 export type TimesheetLock={id:string;from:string;to:string;lockedAt:string;lockedBy:string};
 export const loadTimesheetLocks=()=>read<TimesheetLock[]>(TIMESHEET_LOCKS_KEY,[]);
 export const timesheetLocked=(cutoff:{from:string;to:string},locks=loadTimesheetLocks())=>locks.some(lock=>lock.from===cutoff.from&&lock.to===cutoff.to);
 export function lockTimesheet(cutoff:{from:string;to:string},by:string){
  const locks=loadTimesheetLocks();
- if(timesheetLocked(cutoff,locks))return;
+ if(timesheetLocked(cutoff,locks)||!cutoffSynced(cutoff))return;
  write(TIMESHEET_LOCKS_KEY,[...locks,{id:crypto.randomUUID(),...cutoff,lockedAt:new Date().toISOString(),lockedBy:by}]);
 }
 

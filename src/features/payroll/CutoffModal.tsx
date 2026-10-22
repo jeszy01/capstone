@@ -6,6 +6,7 @@ import type {PayrollRun,PayrollRunType} from './payrollRuns';
 import {loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {cutoffFor,cutoffNumberFor,loadHolidays,loadRates,loadRunOptions} from '../settings/payrollSettings';
 import {createWarnings,lockTimesheet,timesheetLocked} from './runChecks';
+import {cutoffSynced} from '../attendance/attendanceService';
 import {getCurrentUser} from '../auth/authService';
 import {formatDate} from '../../utils/date';
 
@@ -31,7 +32,7 @@ export function CutoffModal({onClose}:{onClose:()=>void}){
  const payDate=cutoff?(regular?cutoffPayDate(cutoff.to,loadHolidays()):cutoff.to):'';
  const warnings=cutoff?createWarnings(runType,cutoff):[];
  const invalid=!cutoff||(!regular&&releaseDate>deadline);
- const lockable=Boolean(regular&&cutoff&&!timesheetLocked(cutoff));
+ const lockable=Boolean(regular&&cutoff&&!timesheetLocked(cutoff)&&cutoffSynced(cutoff));
  const create=async()=>{
   if(!cutoff||invalid||(strict&&warnings.length))return;
   const user=getCurrentUser();

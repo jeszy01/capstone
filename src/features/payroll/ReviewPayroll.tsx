@@ -16,6 +16,7 @@ import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
 import {calcRow,computeRunRows,submitBlocked} from './computeRun';
 import {loadReviewChecks,lockTimesheet} from './runChecks';
+import {cutoffSynced} from '../attendance/attendanceService';
 import type {RunCheck} from './runChecks';
 import {addPayoutLines,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
 import {PayoutDetailsModal} from './PayoutDetails';
@@ -206,7 +207,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    {checking&&<Card className="min-w-0">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Checks before submit</h2><StatusBadge status={flagged?'Pending':'Active'} label={flagged?`${flagged} to review`:'No issues found'}/></div>
     <p className="mb-2 mt-1 text-[12px] text-slate-500">Warnings only: they do not stop the submission.</p>
-    {checks.length>0&&<ul className="m-0 list-none space-y-2 p-0">{checks.map(check=><li key={check.id} className="rounded-lg border border-slate-200 px-3 py-2 text-[12px]"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700">{check.title}</span><span className="font-semibold text-amber-700">{check.items.length}</span></div><ul className="mb-0 mt-1 list-disc pl-5 text-slate-600">{check.items.map(item=><li key={item}>{item}</li>)}</ul>{check.id==='timesheet'&&canGenerate&&status==='Computed'&&<button type="button" className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700" onClick={()=>{lockTimesheet({from:run.from,to:run.to},by);setChecksTick(t=>t+1)}}>Lock timesheet</button>}</li>)}</ul>}
+    {checks.length>0&&<ul className="m-0 list-none space-y-2 p-0">{checks.map(check=><li key={check.id} className="rounded-lg border border-slate-200 px-3 py-2 text-[12px]"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700">{check.title}</span><span className="font-semibold text-amber-700">{check.items.length}</span></div><ul className="mb-0 mt-1 list-disc pl-5 text-slate-600">{check.items.map(item=><li key={item}>{item}</li>)}</ul>{check.id==='timesheet'&&canGenerate&&status==='Computed'&&cutoffSynced(run)&&<button type="button" className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700" onClick={()=>{lockTimesheet({from:run.from,to:run.to},by);setChecksTick(t=>t+1)}}>Lock timesheet</button>}</li>)}</ul>}
    </Card>}
 
    {approved&&<Card className="min-w-0 !p-0">
