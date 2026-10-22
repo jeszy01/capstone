@@ -768,23 +768,25 @@ async function storeReceipt(client, req, payrollRun) {
 }
 const saveRuns = (client, req, runs) => client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(runs), req.user.id]);
 
-// Confirm funding: an Approved run becomes Funded once its receipt is stored.
+// Confirm funding: an Approved run becomes Funded. The receipt may come with it or be attached afterwards (PUT
+// …/funding/receipt); payouts cannot be exported until it is attached.
 app.post('/payroll/runs/:id/funding', auth, allow('payroll.fund'), receiptBody, async (req, res) => {
   const { result, payrollRun } = await withLockedRun(req.params.id, async (client, runs, payrollRun) => {
     if (runStatus(payrollRun) !== 'Approved') throw new HttpError(409, 'PAYROLL_NOT_APPROVED', 'Funding can be confirmed only for an approved payroll run.');
-    const receipt = await storeReceipt(client, req, payrollRun);
-    const funding = { ...receipt, amount: runNetTotal(payrollRun), confirmedAt: receipt.uploadedAt, confirmedBy: receipt.uploadedBy, confirmedById: req.user.id };
+    const receipt = Buffer.isBuffer(req.body) && req.body.length ? await storeReceipt(client, req, payrollRun) : null;
+    const by = req.user.display_name || req.user.name || req.user.email || 'Admin';
+    const funding = { ...receipt, amount: runNetTotal(payrollRun), confirmedAt: receipt?.uploadedAt ?? new Date().toISOString(), confirmedBy: receipt?.uploadedBy ?? by, confirmedById: req.user.id };
     const next = runs.map(r => r === payrollRun ? { ...r, status: 'Funded', funding } : r);
     await saveRuns(client, req, next);
     return { runs: next, funding };
   });
   const { funding } = result;
-  await audit('payroll.funded', req.user.id, 'Payroll', req.params.id, { description: `Confirmed the payroll account is funded with ${pesoText(funding.amount)} for ${runPeriod(payrollRun)}; uploaded receipt ${funding.fileName} (${sizeText(funding.size)}).` }, ipDevice(req));
+  await audit('payroll.funded', req.user.id, 'Payroll', req.params.id, { description: `Confirmed the payroll account is funded with ${pesoText(funding.amount)} for ${runPeriod(payrollRun)}${funding.fileName ? `; uploaded receipt ${funding.fileName} (${sizeText(funding.size)})` : '; the receipt is attached next'}.` }, ipDevice(req));
   await notifyRoles(['hr'], 'payroll_funded', 'Payroll funded', `${runPeriod(payrollRun)} · Ready to export payouts`, `/payroll/review?run=${req.params.id}`).catch(() => undefined);
   ok(res, { runs: result.runs });
 });
 
-// Replace the receipt while the run is Funded (before any payout is exported); the old file is deleted.
+// Attach or replace the receipt while the run is Funded (before any payout is exported); an old file is deleted.
 app.put('/payroll/runs/:id/funding/receipt', auth, allow('payroll.fund'), receiptBody, async (req, res) => {
   const { result, payrollRun } = await withLockedRun(req.params.id, async (client, runs, payrollRun) => {
     if (runStatus(payrollRun) !== 'Funded') throw new HttpError(409, 'RECEIPT_LOCKED', 'The receipt can be replaced only until payouts are exported.');
@@ -796,7 +798,9 @@ app.put('/payroll/runs/:id/funding/receipt', auth, allow('payroll.fund'), receip
     return { runs: next, funding };
   });
   const { funding } = result;
-  await audit('payroll.funding_receipt_replaced', req.user.id, 'Payroll', req.params.id, { description: `Replaced the funding receipt of ${runPeriod(payrollRun)} (${pesoText(funding.amount)}): ${funding.replacedFrom ?? 'none'} → ${funding.fileName} (${sizeText(funding.size)}).` }, ipDevice(req));
+  await audit('payroll.funding_receipt_replaced', req.user.id, 'Payroll', req.params.id, { description: funding.replacedFrom
+    ? `Replaced the funding receipt of ${runPeriod(payrollRun)} (${pesoText(funding.amount)}): ${funding.replacedFrom} → ${funding.fileName} (${sizeText(funding.size)}).`
+    : `Attached the funding receipt of ${runPeriod(payrollRun)} (${pesoText(funding.amount)}): ${funding.fileName} (${sizeText(funding.size)}).` }, ipDevice(req));
   ok(res, { runs: result.runs });
 });
 

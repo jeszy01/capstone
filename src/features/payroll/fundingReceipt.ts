@@ -32,9 +32,13 @@ async function upload(path:string,method:'POST'|'PUT',file:File){
  const {data}=await response.json() as {data:{runs?:PayrollRun[]}};
  if(data.runs)write(RUNS_KEY,data.runs);
 }
-/** Confirms an approved run's funding with its receipt; the run becomes Funded. */
-export const confirmFunding=(runId:string,file:File)=>upload(`/payroll/runs/${encodeURIComponent(runId)}/funding`,'POST',file);
-/** Replaces a Funded run's receipt (until payouts are exported). */
+/** Confirms an approved run's funding; the run becomes Funded and its receipt is attached next. */
+export async function confirmFunding(runId:string){
+ const response=await send(`/payroll/runs/${encodeURIComponent(runId)}/funding`,{method:'POST'});
+ const {data}=await response.json() as {data:{runs?:PayrollRun[]}};
+ if(data.runs)write(RUNS_KEY,data.runs);
+}
+/** Attaches or replaces a Funded run's receipt (until payouts are exported). */
 export const replaceReceipt=(runId:string,file:File)=>upload(`/payroll/runs/${encodeURIComponent(runId)}/funding/receipt`,'PUT',file);
 /** Opens the receipt in a new tab to preview it, or downloads it under its file name. */
 export async function openReceipt(run:PayrollRun,download=false){
