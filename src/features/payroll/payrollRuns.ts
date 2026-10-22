@@ -44,19 +44,6 @@ export const BLANK_PAYROLL_INPUT:PayrollInput={empId:'',name:'',dailyRate:0,days
 type StatusFields=Pick<PayrollRun,'status'|'paidAt'|'releasedAt'|'closedAt'|'funding'>;
 /** The status shown for a run (runs saved before payout tracking read as Paid or Closed). */
 export const runStatusLabel=(run:StatusFields)=>runStatus(run);
-const NEXT_STEP:Record<RunStatus,string>={
- 'Draft':'HR computes the payroll.',
- 'Computed':'HR reviews the checks and submits it.',
- 'Pending Approval':'Waiting for the Admin to approve it.',
- 'Returned':'Returned by the Admin. HR fixes and recomputes it.',
- 'Rejected':'Rejected. Create a new payroll for this cutoff.',
- 'Approved':'The Admin confirms the payroll account is funded.',
- 'Funded':'HR exports the bank, e-wallet and cash payout files.',
- 'Exported':'HR marks each employee Paid or Failed.',
- 'Paid':'HR generates payslips and releases them to ESS.',
- 'Closed':'Complete. The run is locked.',
-};
-export const runNextStep=(run:StatusFields)=>NEXT_STEP[runStatus(run)];
 
 const label=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 export const periodLabel=(from:string,to:string)=>`${label(from)} - ${label(to)}`;

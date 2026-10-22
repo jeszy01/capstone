@@ -2,7 +2,6 @@ import {describe,expect,it} from 'vitest';
 import {appDataEvents,keepMissingRuns} from '../../backend-render/accessRules.js';
 import {canMove,cutoffPayDate,runStatus} from '../../backend-render/payrollFlow.js';
 import {financeStatus,runDetail,runSummary} from '../../backend-render/financeRules.js';
-import {runNextStep} from '../features/payroll/payrollRuns';
 
 const hr={id:'u-hr',role:'hr_staff'},admin={id:'u-admin',role:'admin'};
 const save=(user:{id:string;role:string},before:unknown[],after:unknown[])=>appDataEvents(user,'payroll:runs',before,after,true);
@@ -110,15 +109,6 @@ describe('pay date',()=>{
   expect(cutoffPayDate('2026-12-31',[{date:'2026-12-31',type:'Special Non-Working Day'},{date:'2026-12-30',type:'Regular Holiday'}])).toBe('2026-12-29');
   expect(cutoffPayDate('2026-12-31',[{date:'2026-12-31',type:'Special Working Day'}])).toBe('2026-12-31');
   expect(cutoffPayDate('2026-10-10')).toBe('2026-10-15');
- });
-});
-
-describe('payroll run next steps',()=>{
- it('names the next step for each status',()=>{
-  expect(runNextStep({status:'Draft'})).toMatch('computes');
-  expect(runNextStep({status:'Approved'})).toMatch('funded');
-  expect(runNextStep({status:'Funded'})).toMatch('exports');
-  expect(runNextStep({status:'Approved',paidAt:'x'})).toMatch('payslips');
  });
 });
 

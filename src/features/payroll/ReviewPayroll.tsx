@@ -13,7 +13,7 @@ import {numberValue,peso,read,write} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {loadRates,loadRunOptions,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
-import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,isThirteenthMonthRun,markPayouts,runLabel,runNextStep,runStatus,settleRunLoans,updateRun} from './payrollRuns';
+import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,isThirteenthMonthRun,markPayouts,runLabel,runStatus,settleRunLoans,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
 import {calcRow,computeRunRows,submitBlocked} from './computeRun';
 import {loadReviewChecks,lockTimesheet} from './runChecks';
@@ -189,7 +189,6 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   </div>
   <div className="no-print space-y-4">
    <RunStepper run={run}/>
-   <p className="m-0 text-[12px] text-slate-600"><b>Next:</b> {runNextStep(run)}</p>
    {error&&<p role="alert" className="m-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
    {settleError&&<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><b>The run is Paid, but its loan deductions were not posted.</b> {settleError}{canRelease&&<button type="button" className="ml-2 rounded-lg border border-amber-300 bg-white px-3 py-1 font-semibold" disabled={Boolean(busy)} onClick={()=>void retrySettle()}>Retry</button>}</div>}
