@@ -500,18 +500,15 @@ const ACTION_LABELS = {
   'compensation.reward.rejected': 'Rejected incentive or bonus' };
 const AUDIT_MODULES = { compensation_proposals: 'Compensation Planning', compensation_rewards: 'Compensation Planning', users: 'User Accounts' };
 
-// ?entity_id= lists one record's history (a payroll run's activity log) instead of everything.
-app.get('/audit-logs', auth, allow('audit.view'), async (req, res) => {
-  const entityId = text(req.query.entity_id);
+app.get('/audit-logs', auth, allow('audit.view'), async (_req, res) => {
   const [{ rows }, users, legacy] = await Promise.all([
-    entityId ? run(`select * from audit_logs where metadata ? 'description' and entity_id=$1 order by created_at desc limit 500`, [entityId])
-      : run(`select * from audit_logs where metadata ? 'description' order by created_at desc limit 2000`),
-    listRows('users'), entityId ? null : first('app_data', { key: 'audit:events' })]);
+    run(`select * from audit_logs where metadata ? 'description' order by created_at desc limit 2000`),
+    listRows('users'), first('app_data', { key: 'audit:events' })]);
   const userById = new Map(users.map(u => [String(u.id), u]));
   const events = rows.map(r => {
     const u = userById.get(String(r.actor_id));
     return { id: String(r.id), timestamp: r.created_at, user: r.actor_name || u?.name || u?.email || 'System', role: ROLE_LABELS[r.actor_role ?? roleKey(u?.role)] ?? '—',
-      action: r.metadata?.label || ACTION_LABELS[r.action] || r.action, module: AUDIT_MODULES[r.entity] ?? r.entity ?? '—', description: r.metadata?.description || '—', ipDevice: r.ip_device || '—', entityId: r.entity_id ?? null };
+      action: r.metadata?.label || ACTION_LABELS[r.action] || r.action, module: AUDIT_MODULES[r.entity] ?? r.entity ?? '—', description: r.metadata?.description || '—', ipDevice: r.ip_device || '—' };
   });
   // Activity recorded in the browser before Logs & Audit moved to the server.
   const older = legacy && !legacy.deleted ? appValue(legacy.value) : [];

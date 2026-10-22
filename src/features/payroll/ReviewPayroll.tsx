@@ -22,7 +22,7 @@ import {reviewChecks} from './runChecks';
 import {addPayoutLines,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
 import {PayoutDetailsModal} from './PayoutDetails';
 import {PayslipPasskeyModal} from './PayslipPasskeyModal';
-import {RunActivityLog,RunStepper} from './RunProgress';
+import {RunStepper} from './RunProgress';
 
 // Amounts HR may type in while a run is Computed; each change needs a reason.
 type EditKey='otherDeductions'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
@@ -78,7 +78,7 @@ const COLUMNS:Column[]=[
 const METHOD_FILES:Record<PayoutMethod,string>={'Bank':'Export bank CSV','E-wallet':'Export e-wallet list','Cash':'Export cash list'};
 type Dialog='submit'|'Approved'|'Returned'|'Rejected'|'fund'|'payslips';
 
-/** One payroll run, from Draft to Closed: its figures, checks, approval, funding, payouts and activity. */
+/** One payroll run, from Draft to Closed: its figures, checks, approval, funding and payouts. */
 export default function ReviewPayroll(){
  const[params]=useSearchParams();const nav=useNavigate();
  const runId=params.get('run')??'';
@@ -99,7 +99,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const[reasons,setReasons]=useState<Record<string,string>>(()=>Object.fromEntries(run.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>[reasonKey(row.input.empId,change.field),change.reason]))));
  const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[settleError,setSettleError]=useState('');
  const[expanded,setExpanded]=useState<string[]>([]),[dialog,setDialog]=useState<Dialog|null>(null),[comment,setComment]=useState(''),[reference,setReference]=useState('');
- const[failing,setFailing]=useState<{empId:string;name:string;reason:string}|null>(null),[fixing,setFixing]=useState<string|null>(null),[logTick,setLogTick]=useState(0);
+ const[failing,setFailing]=useState<{empId:string;name:string;reason:string}|null>(null),[fixing,setFixing]=useState<string|null>(null);
  const deptOf=(empId:string)=>employees.find(employee=>employee.employeeNo===empId)?.department||'Unassigned';
  const staff=async()=>employees.length?employees:employeeService.getAllFromServer();
 
@@ -122,10 +122,10 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const paidCount=lines.filter(({line})=>line?.status==='Paid').length;
  const generated=Boolean(run.payslipsGeneratedAt||(run.status==='Approved'&&run.paidAt));
 
- // Runs one action against the server's current copy; the page re-reads the run and the activity log afterwards.
+ // Runs one action against the server's current copy; the page re-reads the run afterwards.
  const act=async(name:string,work:()=>Promise<void>)=>{
   setBusy(name);setError('');setNotice('');
-  try{await work();onChanged();setLogTick(t=>t+1)}
+  try{await work();onChanged()}
   catch(cause){setError(message(cause,'The change could not be saved.'))}
   finally{setBusy('')}
  };
@@ -295,8 +295,6 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
     </table></div>}
     {(run.exports??[]).length>0&&<div className="border-t border-slate-100 px-5 py-3 text-[12px] text-slate-600"><div className="mb-1 font-semibold text-slate-700">Exported files</div><ul className="m-0 list-none space-y-1 p-0">{run.exports!.map(entry=><li key={entry.id} className="flex flex-wrap items-center gap-2">{entry.method} · {entry.employees.length} {entry.employees.length===1?'employee':'employees'} · {peso(entry.total)} · {new Date(entry.at).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})} by {entry.by}<button type="button" className="text-blue-700 underline" onClick={()=>{const file=payoutFile(run,entry.id,deptOf);downloadCsv(file.name,file.csv)}}>Download again</button></li>)}</ul></div>}
    </Card>}
-
-   <RunActivityLog runId={run.id} refresh={logTick}/>
   </div>
 
   <div className="print-only paper">
@@ -333,7 +331,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('fund','Confirm funded',()=>void fund(),reference.trim().length<3)}</div>
   </Modal>}
-  {dialog==='payslips'&&<PayslipPasskeyModal title="Generate payslips" verify={passkey=>generatePayslips(run.id,passkey)} onClose={()=>setDialog(null)} onVerified={()=>{setDialog(null);setNotice('Payslips generated. Release them to ESS by department.');onChanged();setLogTick(t=>t+1)}}/>}
+  {dialog==='payslips'&&<PayslipPasskeyModal title="Generate payslips" verify={passkey=>generatePayslips(run.id,passkey)} onClose={()=>setDialog(null)} onVerified={()=>{setDialog(null);setNotice('Payslips generated. Release them to ESS by department.');onChanged()}}/>}
   {failing&&<Modal title={`Payout failed · ${failing.name}`} onClose={()=>{if(!busy)setFailing(null)}}>
    <Field label="Reason (required)"><TextInput autoFocus maxLength={200} placeholder="e.g. Account closed, wrong account number" value={failing.reason} onChange={event=>setFailing({...failing,reason:event.target.value})}/></Field>
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}

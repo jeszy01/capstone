@@ -1,8 +1,4 @@
-import {useEffect,useState} from 'react';
 import {Check} from 'lucide-react';
-import {Card} from '../../components/common/ui';
-import {apiClient} from '../../services/api/apiClient';
-import type {AuditEvent} from '../audit/auditService';
 import {PROCESS_STEPS,runStatus} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
 
@@ -25,27 +21,3 @@ export function RunStepper({run}:{run:PayrollRun}){
  </ol>;
 }
 
-const when=(iso:string)=>new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'});
-/** The run's history from Logs & Audit: every status change, export and payout update, newest first. */
-export function RunActivityLog({runId,refresh}:{runId:string;refresh:number}){
- const[events,setEvents]=useState<AuditEvent[]|null>(null),[failed,setFailed]=useState(false);
- useEffect(()=>{
-  let active=true;
-  apiClient.get<{data:AuditEvent[]}>(`/audit-logs?entity_id=${encodeURIComponent(runId)}`)
-   .then(response=>{if(active){setEvents(response.data);setFailed(false)}})
-   .catch(()=>{if(active)setFailed(true)});
-  return()=>{active=false};
- },[runId,refresh]);
- return <Card className="no-print min-w-0">
-  <h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Activity log</h2>
-  {failed?<p className="mb-0 mt-2 text-[12px] text-slate-500">The activity log could not be loaded.</p>
-   :!events?<p className="mb-0 mt-2 text-[12px] text-slate-500">Loading…</p>
-   :!events.length?<p className="mb-0 mt-2 text-[12px] text-slate-500">No activity recorded yet.</p>
-   :<ol className="mb-0 mt-3 list-none space-y-3 border-l border-slate-200 p-0 pl-4">{events.map(event=><li key={event.id} className="relative text-[12px]">
-    <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-blue-600"/>
-    <div className="font-semibold text-slate-800">{event.action}</div>
-    <div className="text-slate-600">{event.description}</div>
-    <div className="text-[11px] text-slate-400">{when(event.timestamp)} · {event.user}{event.role&&event.role!=='—'?` (${event.role})`:''}</div>
-   </li>)}</ol>}
- </Card>;
-}
