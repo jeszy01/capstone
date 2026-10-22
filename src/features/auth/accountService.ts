@@ -32,11 +32,7 @@ export const accountService={
  setPasskey:(currentPassword:string,newPasskey:string)=>post({action:'set_passkey',current_password:currentPassword,new_passkey:newPasskey}),
  changePasskey:(currentPasskey:string,newPasskey:string)=>post({action:'change_passkey',current_passkey:currentPasskey,new_passkey:newPasskey}),
  resetPasskey:(currentPassword:string,newPasskey:string)=>post({action:'reset_passkey',current_password:currentPassword,new_passkey:newPasskey}),
- verifyPasskey:(passkey:string,purpose:PasskeyPurpose,detail:string)=>verifyPasskey(passkey,purpose,detail).catch(cause=>{
-  // The eProvider account function only knows export and release; confirm settings changes there as release.
-  if(purpose==='settings'&&cause instanceof Error&&/purpose must be export or release/i.test(cause.message))return verifyPasskey(passkey,'release',detail);
-  throw cause;
- }),
+ verifyPasskey,
  revokeOtherSessions:(currentPassword:string)=>post({action:'revoke_other_sessions',current_password:currentPassword}),
  setDisplayName:(displayName:string)=>apiClient.post<Record<string,unknown>,{data:{display_name:string}}>('/account',{action:'set_display_name',display_name:displayName}).then(response=>response.data.display_name),
  // keepalive lets the request finish while the page navigates to sign-in.

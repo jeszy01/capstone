@@ -10,7 +10,7 @@ const fromServer=(user:ServerUser):ManagedUser=>({id:user.id,employeeId:user.emp
 const localUsers=()=>read<ManagedUser[]>(localKey,[]);
 const saveLocal=(users:ManagedUser[])=>{write(localKey,users);return users};
 // Accounts are company-issued, not employees: IDs are USR-0001, USR-0002, ... The Render backend assigns its own;
-// this candidate keeps the eProvider function (which requires employee_id) and local-only accounts working.
+// this candidate keeps local-only accounts working.
 const ACCOUNT_ID=/^USR-(\d+)$/i;
 export function nextAccountId(users:Pick<ManagedUser,'employeeId'>[]){
  const highest=users.reduce((max,user)=>{const match=ACCOUNT_ID.exec(user.employeeId??'');return match?Math.max(max,Number(match[1])):max},0);

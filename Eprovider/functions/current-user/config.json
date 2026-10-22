@@ -1,6 +1,0 @@
-{
-"required_role": "anon",
-"authentication": "PBMS JWT verified by verifiedEdge before returning the signed-in user",
-"authorization": "Returns only the signed-in user public fields (id, employee ID, name, email, role, status)",
-"entrypoint": "default export; do not call Deno.serve in the uploaded handler"
-}

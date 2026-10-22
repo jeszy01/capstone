@@ -2,8 +2,8 @@ import {apiClient} from '../../services/api/apiClient';
 import {read,write,remove} from '../../utils/storage';
 import type {Session} from '../../types/domain';
 
-import {EPROVIDER_FUNCTION_BASE} from '../../config/eprovider';
-const functionBase=EPROVIDER_FUNCTION_BASE;
+import {API_BASE} from '../../config/api';
+const functionBase=API_BASE;
 interface Envelope<T>{data:T;meta?:Record<string,unknown>}
 const connectionMessage='Unable to connect to the sign-in service. Check your internet connection and try again. If the problem continues, the authentication service may be unavailable.';
 async function edgePost<T>(slug:string,body:unknown):Promise<T>{

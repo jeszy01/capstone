@@ -1,8 +1,8 @@
 import type { ApiClient, ApiRequestOptions } from '../../types/api';
 import { read } from '../../utils/storage';
-import { EPROVIDER_FUNCTION_BASE } from '../../config/eprovider';
+import { API_BASE } from '../../config/api';
 
-const base = EPROVIDER_FUNCTION_BASE;
+const base = API_BASE;
 
 async function request<T>(
   path: string,

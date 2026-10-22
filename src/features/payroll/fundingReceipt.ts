@@ -1,5 +1,5 @@
 import {read,write} from '../../utils/storage';
-import {EPROVIDER_FUNCTION_BASE} from '../../config/eprovider';
+import {API_BASE} from '../../config/api';
 import {RECEIPT_MAX_BYTES,RECEIPT_TYPES} from '../../../backend-render/fundingReceipts.js';
 import {RUNS_KEY} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
@@ -17,7 +17,7 @@ export function receiptProblem(file:File|null){
 
 async function send(path:string,init:RequestInit){
  const token=read<string>('session:token','');
- const response=await fetch(`${EPROVIDER_FUNCTION_BASE}${path}`,{...init,headers:{...(init.headers??{}),Authorization:`Bearer ${token}`}});
+ const response=await fetch(`${API_BASE}${path}`,{...init,headers:{...(init.headers??{}),Authorization:`Bearer ${token}`}});
  if(!response.ok){
   let message=response.status===413?'The receipt is larger than 5 MB.':'The receipt could not be saved.';
   try{const body=await response.json() as {error?:{message?:string}};message=body.error?.message||message}catch{/* keep the fallback */}

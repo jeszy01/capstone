@@ -1,6 +1,0 @@
-{
-"required_role": "anon",
-"authentication": "PBMS JWT verified by verifiedEdge before every account security read and write",
-"authorization": "Each user reads and changes only their own password, two-factor setting and sessions",
-"entrypoint": "default export; do not call Deno.serve in the uploaded handler"
-}
