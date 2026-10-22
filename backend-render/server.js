@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, keepMissingRuns, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
 import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from './hr2Rules.js';
 import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
-import { runStatus } from './payrollFlow.js';
+import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
@@ -127,6 +127,29 @@ async function checkLocksSynced(client, before, after) {
   if (early) throw new AccessError(`HR2 attendance is synced only up to ${through ?? 'no date yet'}. The timesheet for ${early.from} to ${early.to} can be locked once it reaches ${early.to}.`);
 }
 
+// A new run's pay date must be the automatic one (Create Payroll shows it read-only). With Strict Mode on, the Create
+// Payroll warnings block here too: timesheet not locked, HR2 not synced to the cutoff end, a run for the cutoff exists.
+async function checkNewRuns(client, before, after) {
+  const existing = Array.isArray(before) ? before.filter(Boolean) : [], known = new Set(existing.map(r => r.id));
+  const added = (Array.isArray(after) ? after : []).filter(r => r && !known.has(r.id));
+  if (!added.length) return;
+  const stored = async key => { const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [key]); return row && !row.deleted ? appValue(row.value) : null; };
+  const holidays = await stored('payroll:holidays'), strict = Boolean((await stored('payroll:run-options'))?.strictMode);
+  const locks = strict ? await stored('payroll:timesheet-locks') : null, through = strict ? hr2Through(await stored('attendance:hr2')) : null;
+  for (const run of added) {
+    const regular = (run.runType ?? 'regular') === 'regular';
+    const payDate = regular ? cutoffPayDate(run.to, Array.isArray(holidays) ? holidays : []) : run.to;
+    if (run.payDate !== payDate) throw new AccessError(`The pay date for ${runPeriod(run)} is set automatically to ${payDate}.`);
+    if (!strict) continue;
+    const problems = [
+      existing.some(r => (r.runType ?? 'regular') === (run.runType ?? 'regular') && r.from === run.from && r.to === run.to && runStatus(r) !== 'Rejected') ? 'A payroll run for this cutoff already exists.' : '',
+      regular && !(Array.isArray(locks) && locks.some(l => l?.from === run.from && l?.to === run.to)) ? 'The timesheet for this cutoff is not locked.' : '',
+      regular && !(through && through >= run.to) ? `HR2 attendance is synced only up to ${through ?? 'no date yet'}, before the cutoff ends on ${run.to}.` : '',
+    ].filter(Boolean);
+    if (problems.length) throw new AccessError(`Strict Mode is on. ${problems.join(' ')}`, 409, 'STRICT_MODE');
+  }
+}
+
 // Every write is checked against the role rules in appDataEvents before it is stored; allowed state changes are logged.
 async function saveAppData(req, key, isDel, value) {
   let next = isDel ? null : value ?? null;
@@ -138,6 +161,7 @@ async function saveAppData(req, key, isDel, value) {
     const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [key]);
     const existed = Boolean(row && !row.deleted);
     if (key === 'payroll:timesheet-locks' && !isDel) await checkLocksSynced(client, existed ? appValue(row.value) : null, next);
+    if (key === 'payroll:runs' && !isDel) await checkNewRuns(client, existed ? appValue(row.value) : null, next);
     if (key === 'payroll:runs' || key === 'claims:records') {
       if (isDel) throw new AccessError(key === 'payroll:runs' ? 'Payroll runs cannot be deleted.' : 'Claims cannot be deleted.');
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
