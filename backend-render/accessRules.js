@@ -162,7 +162,7 @@ async function payrollRunEvents(user, before, after) {
       checkComputed(row);
       log('payroll.submitted', `Submitted payroll for ${runPeriod(row)} for approval (${plural(runEmployees(row).length, 'employee')}, net ${pesoText(runNet(row))}).`);
     } else if (['Approved', 'Returned', 'Rejected'].includes(now)) {
-      need(user, 'payroll.approve', 'Only an Admin can approve, return or reject payroll.');
+      need(user, 'payroll.approve', 'You do not have permission to approve, return or reject payroll.');
       if (old.preparedById && String(old.preparedById) === String(user.id)) throw forbid('You cannot approve or reject a payroll run you prepared.');
       if (!sameExcept(old, row, RUN_DECISION_FIELDS) || String(row.decidedById ?? '') !== String(user.id)) throw forbid('Approving, returning or rejecting payroll cannot change its contents.');
       const comment = typeof row.decisionComment === 'string' ? row.decisionComment.trim() : '';

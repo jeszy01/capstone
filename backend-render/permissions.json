@@ -40,6 +40,8 @@
     "attendance.encode",
     "payroll.generate",
     "payroll.release",
+    "payroll.approve",
+    "payroll.fund",
     "leave.encode",
     "leave.approve",
     "deductions.manage",

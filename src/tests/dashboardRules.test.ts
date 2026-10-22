@@ -21,11 +21,13 @@ describe('Pending approvals per role',()=>{
    hmo:[3,'View','/hmo-benefits/hmo/employee-enrollment?status=pending'],
   });
  });
- it('HR: claims to verify, their own proposals, runs awaiting export or payment, HMO to view; never payroll approval',()=>{
+ it('HR: claims to verify, their own proposals, payroll to approve and fund (Finance page), runs awaiting export or payment, HMO to view',()=>{
   const rows=pendingApprovals(hr,data);
   expect(byKey(rows)).toEqual({
    claims:[2,'Review','/claims-reimbursement/claims?status=pending'],
    salary:[1,'View','/compensation/adjustments?status=pending&mine=1'],
+   'payroll-approval':[1,'Review','/payroll?status=Pending%20Approval'],
+   'payroll-funding':[1,'Review','/payroll?status=Approved'],
    'payroll-payment':[2,'View','/payroll?status=Funded,Exported'],
    hmo:[3,'View','/hmo-benefits/hmo/employee-enrollment?status=pending'],
   });

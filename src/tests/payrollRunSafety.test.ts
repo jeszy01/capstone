@@ -47,8 +47,9 @@ describe('payroll run transitions are enforced by the server',()=>{
   await expect(save(hr,[draft()],[computed({rows:[{input:{empId:'EMP-1',name:'Ana'},result:{basic:1000,gross:1000,deductions:0,net:900}},row('EMP-2',2000)]})])).rejects.toThrow('do not add up');
   await expect(save(hr,[pending()],[{...pending(),rows:[row('EMP-1',1)]}])).rejects.toThrow('submitted payroll run cannot be changed');
  });
- it('only an Admin approves, never their own run, and returning or rejecting needs a comment',async()=>{
-  await expect(save(hr,[pending()],[{...approved(),decidedById:'u-hr'}])).rejects.toThrow('Only an Admin');
+ it('Admin or HR approves, never their own run, and returning or rejecting needs a comment',async()=>{
+  await expect(save(hr,[pending()],[{...approved(),decidedById:'u-hr'}])).rejects.toThrow('you prepared');
+  expect((await save({id:'u-hr2',role:'hr_staff'},[pending()],[{...approved(),decidedById:'u-hr2'}]))[0][0]).toBe('payroll.approved');
   await expect(save(admin,[{...pending(),preparedById:'u-admin'}],[{...approved(),preparedById:'u-admin'}])).rejects.toThrow('you prepared');
   expect((await save(admin,[pending()],[approved()]))[0][0]).toBe('payroll.approved');
   await expect(save(admin,[pending()],[{...approved(),status:'Returned'}])).rejects.toThrow('comment is required');

@@ -17,7 +17,7 @@ const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.mes
 const netOf=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
 
 /**
- * Finance (Admin menu): one page to approve submitted payroll and to confirm funding. A run is marked Funded only by
+ * Finance (account menu, Admin and HR Staff): one page to approve submitted payroll and to confirm funding. A run is marked Funded only by
  * attaching the bank transfer receipt; the server checks the file, stores it privately and logs it.
  */
 export default function Finance(){
