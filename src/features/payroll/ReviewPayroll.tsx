@@ -128,6 +128,8 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   const people=await staff();
   await updateRun(run.id,item=>{expectStatus(item,'Computed');return {...item,status:'Pending Approval',submittedAt:new Date().toISOString(),submittedBy:by,payouts:payoutLinesFor(item,people)}});
   notifyPayrollPending(run.id,title);setDialog(null);
+  // Back to Payroll Runs, where the run now shows Pending Approval.
+  nav('/payroll');
  });
  const decide=(next:'Approved'|'Returned'|'Rejected')=>act('decide',async()=>{
   const text=comment.trim();
