@@ -5,7 +5,7 @@ import {peso,read} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {can} from '../auth/permissions';
 import type {Employee} from '../../types/domain';
-import {cutoffNumberFor,loadRates,loadRunOptions} from '../settings/payrollSettings';
+import {cutoffNumberFor,loadRates} from '../settings/payrollSettings';
 import {APPROVED_STATUSES,RUNS_KEY,deleteRun,isThirteenthMonthRun,releaseToEss,runLabel,runStatus} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
 import {processRun} from './computeRun';
@@ -26,7 +26,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
  const statusFilter=(params.get('status')??'').split(',').map(item=>item.trim()).filter(Boolean);
  const clearFilter=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
  const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].filter(run=>!statusFilter.length||statusFilter.includes(runStatus(run))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- const rates=loadRates(),strict=loadRunOptions().strictMode,canPrepare=can('payroll.generate'),canDelete=canPrepare||can('payroll.approve'),canRelease=can('payroll.release');
+ const rates=loadRates(),canPrepare=can('payroll.generate'),canDelete=canPrepare||can('payroll.approve'),canRelease=can('payroll.release');
  // A run is processed once it has computed rows; until then Payslips and Total Net show "—".
  const processed=(run:PayrollRun)=>runStatus(run)!=='Draft'&&run.rows.length>0;
  const net=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
@@ -35,8 +35,8 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
  // Payslips published to ESS out of the run's employees (Release to ESS).
  const essCount=(run:PayrollRun)=>run.rows.filter(row=>run.essReleased?.[row.input.empId]).length;
  const payslips=(run:PayrollRun)=>{const sent=essCount(run);return sent?(sent===run.rows.length?'Released to ESS':`${sent} of ${run.rows.length} in ESS`):run.payslipsGeneratedAt?'Generated':'Not generated'};
- // Strict Mode off (testing): Release to ESS from Approved; on: only once the run is Paid.
- const releaseOpen=(run:PayrollRun)=>!strict||['Paid','Closed'].includes(runStatus(run));
+ // Release to ESS opens once every employee is Paid.
+ const releaseOpen=(run:PayrollRun)=>['Paid','Closed'].includes(runStatus(run));
  const act=async(name:string,work:()=>Promise<unknown>)=>{
   setBusy(name);setError('');setNotice('');
   try{await work();setTick(t=>t+1)}
@@ -50,7 +50,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
    return <>
     <Link className={ghost} to={`/payroll?tab=payslip&run=${run.id}`}>Payslips</Link>
     {total>0&&sent===total?<StatusBadge status="Released"/>
-     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Strict Mode is on: release to ESS after the run is Paid.'} onClick={()=>{setError('');setReleasing(run)}}>Release to ESS ({sent}/{total})</button>}
+     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Available once every employee is Paid.'} onClick={()=>{setError('');setReleasing(run)}}>Release to ESS ({sent}/{total})</button>}
     {details}
    </>;
   }

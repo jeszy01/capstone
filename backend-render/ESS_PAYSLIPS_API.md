@@ -12,8 +12,7 @@ shows them on the employee's Payslips page. PBMS never calls ESS.
 3. ESS reads the employee's payslips (`GET /integrations/ess/payslips?employee_no=…`) and notifications
    (`GET /integrations/ess/notifications?employee_no=…`).
 
-With Strict Mode off (testing), payslips can be released once the run is Approved; with Strict Mode on, only after the
-run is Paid. A payroll run that is deleted takes its released payslips and notifications with it.
+Payslips can be released only once the run is Paid (every employee paid). A payroll run that is deleted takes its released payslips and notifications with it.
 
 ## Authentication
 

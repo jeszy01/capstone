@@ -899,7 +899,7 @@ app.post('/payroll/payslips/release', auth, allow('payroll.release'), async (req
 
 // ---- Release to ESS (Payroll Runs list) ----
 // Publishes each employee's payslip (their Payroll Register line) to ESS and notifies them there. Only payslips not yet
-// released are sent, so releasing again sends nothing twice. Strict Mode off (testing): from Approved; on: once Paid.
+// released are sent, so releasing again sends nothing twice. Payslips are released only once every employee is Paid.
 // A Paid run closes when every employee's payslip is released.
 await pool.query(`
   create table if not exists ess_payslips(
@@ -909,15 +909,12 @@ await pool.query(`
     id uuid primary key default gen_random_uuid(), employee_no text not null, title text not null, message text not null,
     run_id text, created_at timestamptz not null default now(), read_at timestamptz);
   create index if not exists idx_ess_notifications_employee on ess_notifications(lower(employee_no));`);
-const ESS_RELEASE_STATUSES = ['Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
+const APPROVED_RUN_STATUSES = ['Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
 app.post('/payroll/runs/:id/ess-release', auth, allow('payroll.release'), async (req, res) => {
   const runId = req.params.id, at = new Date().toISOString();
   const { result, payrollRun } = await withLockedRun(runId, async (client, runs, payrollRun) => {
-    const { rows: [options] } = await client.query(`select value, deleted from app_data where key='payroll:run-options'`);
-    const strict = Boolean(options && !options.deleted && appValue(options.value)?.strictMode), status = runStatus(payrollRun);
-    if (!(strict ? ['Paid', 'Closed'] : ESS_RELEASE_STATUSES).includes(status)) throw new HttpError(409, 'RELEASE_NOT_ALLOWED', strict
-      ? `Strict Mode is on: payslips are released to ESS only after the run is Paid. This run is ${status}.`
-      : `Payslips are released to ESS once the run is Approved. This run is ${status}.`);
+    const status = runStatus(payrollRun);
+    if (!['Paid', 'Closed'].includes(status)) throw new HttpError(409, 'RELEASE_NOT_ALLOWED', `Payslips are released to ESS once every employee is Paid. This run is ${status}.`);
     const rows = (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).filter(r => r?.input?.empId);
     const done = payrollRun.essReleased && typeof payrollRun.essReleased === 'object' ? payrollRun.essReleased : {};
     const sent = [];
@@ -2257,7 +2254,7 @@ app.delete('/payroll/runs/:id', auth, async (req, res) => {
     const runs = data && !data.deleted && Array.isArray(appValue(data.value)) ? appValue(data.value) : [];
     removed = runs.find(r => r && String(r.id) === req.params.id);
     if (!removed) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found.');
-    if (ESS_RELEASE_STATUSES.includes(runStatus(removed))) throw new HttpError(409, 'PAYROLL_APPROVED', `An approved payroll run cannot be deleted. This run is ${runStatus(removed)}.`);
+    if (APPROVED_RUN_STATUSES.includes(runStatus(removed))) throw new HttpError(409, 'PAYROLL_APPROVED', `An approved payroll run cannot be deleted. This run is ${runStatus(removed)}.`);
     next = runs.filter(r => r !== removed);
     await client.query(`update app_data set value=$1, updated_at=now(), updated_by=$2 where key='payroll:runs'`, [JSON.stringify(next), req.user.id]);
     await client.query('delete from payroll_funding_receipts where run_id=$1', [String(removed.id)]);
