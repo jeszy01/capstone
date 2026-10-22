@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { changedClaimDetails } from './claimRules.js';
 import { PAYOUT_METHODS, PAYOUT_TRACKING_FIELDS, canMove, runStatus } from './payrollFlow.js';
+import { registerMismatch } from './payrollRegister.js';
 
 // Role-based access rules for the Render backend. permissions.json is the one role -> allowed actions map;
 // the frontend imports the same file for its route guards, sidebar and buttons.
@@ -69,6 +70,8 @@ function checkComputed(row) {
   if (Object.keys(payouts).length !== ids.length || ids.some(id => !PAYOUT_METHODS.includes(payouts[id]?.method) || payouts[id]?.status !== 'Pending'))
     throw forbid('Every employee in a computed run needs a pending payout line.');
   if (row.exports?.length || row.paidAt || row.funding) throw forbid('A computed run cannot carry funding or payment details.');
+  // Every row must follow the Payroll Register formulas (gross, deductions and net from their parts).
+  for (const item of row.rows) { const mismatch = registerMismatch(item); if (mismatch) throw forbid(`The payroll figures do not add up. ${mismatch} Recompute the run.`); }
 }
 
 /**

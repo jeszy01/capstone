@@ -227,16 +227,15 @@ function ThirteenthMonthSection({editing,canEdit,onEdit,onDone,onDirty,positions
 
 const RUN_OPTION_FIELDS:Array<[keyof RunOptions,string,string]>=[
  ['strictMode','Strict Mode','Create Payroll blocks instead of warning when the timesheet is not locked, HR2 attendance does not reach the cutoff end, or a run for the cutoff already exists.'],
- ['showNightDifferential','Night Differential column','Show Night Differential in the printed payroll register.'],
- ['showTax','Tax column','Show withholding tax in the printed payroll register.'],
- ['showPriorEmployer','Prior-employer columns','Show the prior-employer year-to-date inputs in Review Payroll and their columns in the printed register.'],
+ ['showTax','Tax column','Show withholding tax in the Payroll Register. Tax is withheld and counted in total deductions either way.'],
+ ['showPriorEmployer','Prior-employer inputs','Show the prior-employer year-to-date inputs for new hires in Review Payroll.'],
 ];
 function RunOptionsSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){
  const {draft,setDraft}=useDraft(loadRunOptions,editing,onDirty);
  const save=useSave(()=>[],()=>{saveRunOptions(draft);onDone('Payroll Run Options saved.')});
  return <SectionShell title="Payroll Run Options" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}><div className="grid gap-3">
   {RUN_OPTION_FIELDS.map(([key,label,help])=><label key={key} className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-3 text-[13px]"><input type="checkbox" className={`${checkbox} mt-0.5`} disabled={!editing} checked={draft[key]} onChange={event=>setDraft({...draft,[key]:event.target.checked})}/><span><span className="block font-semibold text-slate-700">{label}</span><span className="block text-[12px] text-slate-500">{help}</span></span></label>)}
-  <p className="m-0 text-[12px] text-slate-500">All are off by default. Night differential, tax and prior-employer amounts are computed either way; these options only show them.</p>
+  <p className="m-0 text-[12px] text-slate-500">All are off by default.</p>
  </div></SectionShell>;
 }
 

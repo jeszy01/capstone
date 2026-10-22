@@ -6,7 +6,8 @@ import {runNextStep} from '../features/payroll/payrollRuns';
 
 const hr={id:'u-hr',role:'hr_staff'},admin={id:'u-admin',role:'admin'};
 const save=(user:{id:string;role:string},before:unknown[],after:unknown[])=>appDataEvents(user,'payroll:runs',before,after,true);
-const row=(empId:string,net:number)=>({input:{empId,name:empId},result:{gross:net+100,deductions:100,net}});
+// Figures that follow the Payroll Register formulas: gross is basic pay, deductions are SSS.
+const row=(empId:string,net:number)=>({input:{empId,name:empId},result:{basic:net+100,gross:net+100,sss:100,deductions:100,net}});
 const draft=(patch:Record<string,unknown>={})=>({id:'r1',runType:'regular',status:'Draft',from:'2026-10-01',to:'2026-10-15',payDate:'2026-10-15',rows:[],totals:{gross:0,deductions:0,net:0},preparedBy:'HR',preparedById:'u-hr',createdAt:'2026-10-16T00:00:00.000Z',...patch});
 const pendingLine=(method='Bank')=>({method,bankName:'BDO',accountNumber:'123',status:'Pending'});
 const computed=(patch:Record<string,unknown>={})=>draft({status:'Computed',rows:[row('EMP-1',1000),row('EMP-2',2000)],totals:{gross:3200,deductions:200,net:3000},payouts:{'EMP-1':pendingLine(),'EMP-2':{method:'Cash',status:'Pending'}},...patch});
@@ -41,6 +42,7 @@ describe('payroll run transitions are enforced by the server',()=>{
   await expect(save(hr,[draft()],[pending()])).rejects.toThrow('cannot move from Draft to Pending Approval');
   await expect(save(hr,[computed()],[{...pending(),rows:[row('EMP-1',9999),row('EMP-2',2000)]}])).rejects.toThrow('cannot change its contents');
   await expect(save(hr,[draft()],[computed({payouts:{}})])).rejects.toThrow('pending payout line');
+  await expect(save(hr,[draft()],[computed({rows:[{input:{empId:'EMP-1',name:'Ana'},result:{basic:1000,gross:1000,deductions:0,net:900}},row('EMP-2',2000)]})])).rejects.toThrow('do not add up');
   await expect(save(hr,[pending()],[{...pending(),rows:[row('EMP-1',1)]}])).rejects.toThrow('submitted payroll run cannot be changed');
  });
  it('only an Admin approves, never their own run, and returning or rejecting needs a comment',async()=>{

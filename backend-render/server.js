@@ -7,6 +7,7 @@ import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appData
 import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from './hr2Rules.js';
 import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
 import { runStatus } from './payrollFlow.js';
+import { buildRegister } from './payrollRegister.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
@@ -698,6 +699,18 @@ const logWrongPayslipPasskey = (req, runId, payrollRun, check, action = 'payroll
 const passkeyFailure = check => ({ reason: check.reason, ...(check.locked_until ? { locked_until: check.locked_until } : {}) });
 // Runs paid before payslip generation was recorded separately count as generated when they were paid.
 const payslipsGenerated = payrollRun => Boolean(payrollRun.payslipsGeneratedAt || (payrollRun.paidAt && payrollRun.status === 'Approved'));
+
+// The Payroll Register of a run, built here from its saved figures; the app only displays it. Tax shows when the
+// Payroll Run Options turn it on.
+app.get('/payroll/runs/:id/register', auth, allow('payroll.view'), async (req, res) => {
+  const { rows: [data] } = await pool.query(`select value, deleted from app_data where key='payroll:runs'`);
+  const runs = data && !data.deleted ? appValue(data.value) : [];
+  const payrollRun = Array.isArray(runs) ? runs.find(r => r && String(r.id) === req.params.id) : undefined;
+  if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found.');
+  const { rows: [options] } = await pool.query(`select value, deleted from app_data where key='payroll:run-options'`);
+  const showTax = Boolean(options && !options.deleted && appValue(options.value)?.showTax);
+  ok(res, buildRegister(payrollRun, { showTax }));
+});
 
 // Generate payslips once the run is Paid, after the user's passkey is verified.
 app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (req, res) => {

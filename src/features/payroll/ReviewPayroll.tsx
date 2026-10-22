@@ -2,7 +2,7 @@ import {Fragment,useEffect,useMemo,useState} from 'react';
 import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {ChevronDown,ChevronRight,Download} from 'lucide-react';
 import {Button,Card,Empty,Field,Modal,TextInput,button,ghost,input,success} from '../../components/common/ui';
-import type {Employee,PayrollInput,PayrollResult} from '../../types/domain';
+import type {Employee,PayrollInput} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {getCurrentUser} from '../auth/authService';
 import {notifyPayrollDecided,notifyPayrollFunded,notifyPayrollPending} from '../notifications/notificationService';
@@ -12,8 +12,6 @@ import {StatusBadge} from '../../components/common/StatusBadge';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {loadRates,loadRunOptions,payrollSettingsSnapshot} from '../settings/payrollSettings';
-import type {RunOptions} from '../settings/payrollSettings';
-import {rowLoanAmounts} from '../governmentLoans/governmentLoanPayroll';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
 import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,isThirteenthMonthRun,markPayouts,runLabel,runNextStep,runStatus,settleRunLoans,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
@@ -24,6 +22,7 @@ import {addPayoutLines,downloadCsv,exportPayouts,missingPayout,payoutAccount,pay
 import {PayoutDetailsModal} from './PayoutDetails';
 import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 import {RunStepper} from './RunProgress';
+import {PayrollRegister} from './PayrollRegister';
 
 // Amounts HR may type in while a run is Computed; each change needs a reason.
 type EditKey='otherDeductions'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
@@ -35,46 +34,8 @@ const sameInput=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 // The amounts as computed, before any hand-typed change.
 const originalInput=(row:RunRow):PayrollInput=>({...row.input,...Object.fromEntries((row.manualAdjustments??[]).map(change=>[change.field,change.original]))});
 const totalsOf=(rows:RunRow[])=>({gross:rows.reduce((t,row)=>t+row.result.gross,0),deductions:rows.reduce((t,row)=>t+row.result.deductions,0),net:rows.reduce((t,row)=>t+row.result.net,0)});
-const governmentLoanSum=(row:RunRow)=>{const loans=rowLoanAmounts(row.input,row.governmentLoans);return loans.govSssLoan+loans.govPagibigLoan};
 const reasonKey=(empId:string,field:string)=>`${empId}|${field}`;
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
-
-// The full register, printed only. Night Differential, Tax and the prior-employer columns follow Payroll Run Options.
-type Column={label:string;group:'Attendance'|'Earnings'|'Deductions & benefits';value:(row:RunRow,c:PayrollResult)=>number;count?:boolean;option?:keyof Omit<RunOptions,'strictMode'>};
-const COLUMNS:Column[]=[
- {label:'Present',group:'Attendance',count:true,value:row=>numberValue(row.input.daysWorked)},
- {label:'Absent',group:'Attendance',count:true,value:row=>numberValue(row.input.absentDays)},
- {label:'Leave',group:'Attendance',count:true,value:row=>numberValue(row.input.vlDays)},
- {label:'Rest Day',group:'Attendance',count:true,value:row=>row.rest},
- {label:'Late (min)',group:'Attendance',count:true,value:row=>numberValue(row.input.lateMin)},
- {label:'Undertime (min)',group:'Attendance',count:true,value:row=>numberValue(row.input.undertimeMin)},
- {label:'OT (hrs)',group:'Attendance',count:true,value:row=>numberValue(row.input.otHours)},
- {label:'Basic Pay',group:'Earnings',value:(_,c)=>c.basic},
- {label:'Overtime',group:'Earnings',value:(_,c)=>c.overtime},
- {label:'Night Differential',group:'Earnings',option:'showNightDifferential',value:row=>numberValue(row.input.nightDifferential)},
- {label:'Holiday Pay',group:'Earnings',value:row=>numberValue(row.input.holidayPay)},
- {label:'Leave Pay',group:'Earnings',value:(_,c)=>c.leavePay},
- {label:'Allowances',group:'Earnings',value:(_,c)=>c.allowances??0},
- {label:'Incentives & Bonuses',group:'Earnings',value:row=>numberValue(row.input.otherEarnings)+numberValue(row.input.bonusesNonTaxable)},
- {label:'Gross Pay',group:'Earnings',value:(_,c)=>c.gross},
- {label:'Absences',group:'Deductions & benefits',value:(_,c)=>c.absences??0},
- {label:'Late / Undertime',group:'Deductions & benefits',value:(_,c)=>c.lateUt},
- {label:'SSS',group:'Deductions & benefits',value:(_,c)=>c.sss},
- {label:'PhilHealth',group:'Deductions & benefits',value:(_,c)=>c.phil},
- {label:'Pag-IBIG',group:'Deductions & benefits',value:(_,c)=>c.pagibig},
- {label:'HMO',group:'Deductions & benefits',value:row=>row.hmo},
- {label:'Tax',group:'Deductions & benefits',option:'showTax',value:(_,c)=>c.tax},
- {label:'Government Loans',group:'Deductions & benefits',value:row=>governmentLoanSum(row)},
- {label:'SSS Loan',group:'Deductions & benefits',value:row=>numberValue(row.input.sssLoan)},
- {label:'Pag-IBIG Loan',group:'Deductions & benefits',value:row=>numberValue(row.input.pagibigLoan)},
- {label:'Company Loan',group:'Deductions & benefits',value:row=>numberValue(row.input.companyLoan)},
- {label:'Cash Advance',group:'Deductions & benefits',value:row=>numberValue(row.input.cashAdvance)},
- {label:'Other Deductions',group:'Deductions & benefits',value:row=>numberValue(row.input.otherDeductions)},
- {label:'13th-month & other benefits',group:'Deductions & benefits',value:row=>numberValue(row.input.thirteenthMonthAndOtherBenefits)},
- {label:'Tax-exempt benefits',group:'Deductions & benefits',value:row=>numberValue(row.input.taxExemptBenefits)},
- ...PRIOR_KEYS.map((key):Column=>({label:EDIT_LABELS[key],group:'Deductions & benefits',option:'showPriorEmployer',value:row=>numberValue(row.input[key])})),
- {label:'Total',group:'Deductions & benefits',value:(_,c)=>c.deductions},
-];
 
 const METHOD_FILES:Record<PayoutMethod,string>={'Bank':'Export bank CSV','E-wallet':'Export e-wallet list','Cash':'Export cash list'};
 type Dialog='submit'|'Approved'|'Returned'|'Rejected'|'fund'|'payslips';
@@ -216,13 +177,9 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   {canRelease&&status==='Paid'&&generated&&<Link className={button} to="/payroll?tab=payslip">Release payslips</Link>}
  </>;
 
- const visibleColumns=COLUMNS.filter(column=>!column.option||options[column.option]);
- const groups=(['Attendance','Earnings','Deductions & benefits'] as const).map(group=>({group,span:visibleColumns.filter(column=>column.group===group).length}));
- const sums=visibleColumns.map(column=>rows.reduce((total,row)=>total+column.value(row,row.result),0));
  const editKeys=EDIT_KEYS.filter(key=>key==='otherDeductions'||key==='taxExemptBenefits'||options.showPriorEmployer);
 
  return <div className="space-y-4">
-  <style>{`.paper table{border-collapse:collapse;width:100%}.paper th,.paper td{border:1px solid #d7e0ed;padding:4px 5px;font-size:8px;color:#0f172a}.paper th{background:#f1f6fc;text-align:center;font-weight:600}.paper td.n{text-align:right;font-variant-numeric:tabular-nums}.print-only{display:none}@media print{@page{size:landscape;margin:8mm}aside,header,.no-print{display:none!important}.print-only{display:block!important}}`}</style>
   <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
    <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">PR-{run.id.slice(0,8).toUpperCase()} · {thirteenth?'13th month pay':'Regular payroll'}</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title}</div><div className="text-[11px] text-slate-500">Pay date {formatDate(run.payDate??run.to)} · Prepared by {run.preparedBy}</div></div><StatusBadge status={status}/></div>
    <div className="flex flex-wrap gap-2">{actions}</div>
@@ -252,7 +209,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    </Card>}
 
    {rows.length>0&&<Card className="min-w-0 !p-0">
-    <div className="border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Employees</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Open a row for the full breakdown{editable?' and to type in amounts':''}. The full register is in Print register.</p></div>
+    <div className="border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Employees</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Open a row for the full breakdown{editable?' and to type in amounts':''}. The full Payroll Register is below.</p></div>
     <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-[13px]">
      <thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]"><th className="w-8 px-3 py-3"/><th className="px-3 py-3">Employee</th><th className="px-3 py-3 text-right">Gross</th><th className="px-3 py-3 text-right">Deductions</th><th className="px-3 py-3 text-right">Net</th>{approved&&run.payouts&&<th className="px-3 py-3">Payout</th>}</tr></thead>
      <tbody>{rows.map(row=>{
@@ -279,7 +236,6 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
           {changed&&<input className={`${input} !py-1.5 text-[12px]`} maxLength={200} placeholder="Reason for this amount" value={reasons[reasonKey(row.input.empId,key)]??''} onChange={event=>setReasons(previous=>({...previous,[reasonKey(row.input.empId,key)]:event.target.value}))}/>}
          </div>})}
         </div>}
-        {editable&&options.showPriorEmployer&&<p className="mb-0 mt-2 text-[11px] leading-relaxed text-slate-500">For a new hire with another employer this year, enter that employer's taxable compensation, benefits paid, tax withheld and payroll periods. They are used only for annualized withholding, not added to gross pay.</p>}
        </td></tr>}
       </Fragment>;
      })}</tbody>
@@ -314,21 +270,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    </Card>}
   </div>
 
-  <div className="print-only paper">
-   <div className="mb-3 text-center"><div className="text-[14px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title} · Pay Date: {formatDate(run.payDate??run.to)} · Status: {status}</div></div>
-   {!rows.length?<p>No figures yet. Compute the payroll first.</p>:<table>
-    <thead><tr><th rowSpan={2}>Employee</th>{groups.map(({group,span})=>span>0&&<th key={group} colSpan={span}>{group}</th>)}<th rowSpan={2}>Net Pay</th></tr><tr>{visibleColumns.map(column=><th key={column.label}>{column.label}</th>)}</tr></thead>
-    <tbody>
-     {rows.map(row=><tr key={row.input.empId}><td><b>{row.input.name}</b><div>{row.input.empId} · {row.position}</div></td>{visibleColumns.map(column=>{const value=column.value(row,row.result);return <td key={column.label} className="n">{column.count?value:nf(value)}</td>})}<td className="n"><b>{nf(row.result.net)}</b></td></tr>)}
-     <tr><td><b>TOTAL</b></td>{visibleColumns.map((column,index)=><td key={column.label} className="n"><b>{column.count?'':nf(sums[index])}</b></td>)}<td className="n"><b>{nf(totals.net)}</b></td></tr>
-    </tbody>
-   </table>}
-   <div className="mt-8 grid grid-cols-3 gap-10 text-center text-[11px]">
-    <div><div className="h-5">{run.preparedBy}</div><div className="border-t border-slate-500 pt-1">Prepared by</div></div>
-    <div><div className="h-5">{approved?run.decidedBy:''}</div><div className="border-t border-slate-500 pt-1">Approved by</div></div>
-    <div><div className="h-5">{run.funding?.confirmedBy??''}</div><div className="border-t border-slate-500 pt-1">Funding confirmed by</div></div>
-   </div>
-  </div>
+  <PayrollRegister runId={run.id} refresh={checksTick}/>
 
   {dialog==='submit'&&<Modal title="Submit for approval" onClose={()=>{if(!busy)setDialog(null)}}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Pay date',formatDate(run.payDate??run.to)],['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value])=><div key={labelText} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{labelText}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
