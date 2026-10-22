@@ -58,7 +58,9 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  useEffect(()=>setRows(run.rows),[run]);
  const[reasons,setReasons]=useState<Record<string,string>>(()=>Object.fromEntries(run.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>[reasonKey(row.input.empId,change.field),change.reason]))));
  const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[settleError,setSettleError]=useState('');
- const[dialog,setDialog]=useState<Dialog|null>(null),[comment,setComment]=useState(''),[receipt,setReceipt]=useState<File|null>(null);
+ // Submit to Finance on Payroll Runs opens this page with ?submit=1: the submit dialog opens for a Computed run.
+ const[params]=useSearchParams();
+ const[dialog,setDialog]=useState<Dialog|null>(()=>params.get('submit')==='1'&&status==='Computed'&&can('payroll.generate')?'submit':null),[comment,setComment]=useState(''),[receipt,setReceipt]=useState<File|null>(null);
  const[failing,setFailing]=useState<{empId:string;name:string;reason:string}|null>(null),[fixing,setFixing]=useState<string|null>(null);
  const deptOf=(empId:string)=>employees.find(employee=>employee.employeeNo===empId)?.department||'Unassigned';
  const staff=async()=>employees.length?employees:employeeService.getAllFromServer();
@@ -106,7 +108,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const compute=()=>act('compute',async()=>{
   const saved=await processRun(run,employees);
   setReasons({});
-  setNotice(`Processed ${saved.rows.length} ${saved.rows.length===1?'employee':'employees'}. Review the checks, then submit for approval.`);
+  setNotice(`Computed ${saved.rows.length} ${saved.rows.length===1?'employee':'employees'}. Review the checks, then submit for approval.`);
  });
  const saveEdits=()=>act('save',async()=>{
   if(missingReason)throw new Error('Give a reason (at least 3 characters) for every amount typed in by hand.');
@@ -163,7 +165,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const primary=(name:string,labelText:string,onClick:()=>void,disabled=false)=><Button disabled={Boolean(busy)||disabled} onClick={onClick}>{busy===name?'Working…':labelText}</Button>;
  const actions=<>
   {status!=='Draft'&&<button className={ghost} onClick={()=>window.print()}>Print register</button>}
-  {canGenerate&&['Draft','Computed','Returned'].includes(status)&&(status==='Draft'?primary('compute','Process',()=>void compute()):<button className={ghost} disabled={Boolean(busy)} onClick={()=>void compute()}>{busy==='compute'?'Processing…':'Re-process'}</button>)}
+  {canGenerate&&['Draft','Computed','Returned'].includes(status)&&(status==='Draft'?primary('compute','Review',()=>void compute()):<button className={ghost} disabled={Boolean(busy)} onClick={()=>void compute()}>{busy==='compute'?'Recomputing…':'Recompute'}</button>)}
   {editable&&dirty&&<button className={success} disabled={Boolean(busy)} onClick={()=>void saveEdits()}>{busy==='save'?'Saving…':'Save changes'}</button>}
   {canGenerate&&status==='Computed'&&primary('submit','Submit for approval',()=>{setError('');setDialog('submit')},dirty)}
   {canApprove&&status==='Pending Approval'&&<><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Rejected')}}>Reject</button><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Returned')}}>Return</button>{primary('decide','Approve',()=>setDialog('Approved'),ownRun)}</>}
@@ -182,7 +184,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    {error&&<p role="alert" className="m-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
    {settleError&&<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><b>The run is Paid, but its loan deductions were not posted.</b> {settleError}{canRelease&&<button type="button" className="ml-2 rounded-lg border border-amber-300 bg-white px-3 py-1 font-semibold" disabled={Boolean(busy)} onClick={()=>void retrySettle()}>Retry</button>}</div>}
-   {status==='Draft'&&<Card><Empty>Not processed yet. Click Process to compute payroll.</Empty></Card>}
+   {status==='Draft'&&<Card><Empty>Not reviewed yet. Click Review to compute payroll.</Empty></Card>}
    {['Draft','Computed','Returned'].includes(status)&&run.warnings?.length?<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Warnings when this payroll was created</div><ul className="mb-0 mt-1 list-disc pl-5">{run.warnings.map(item=><li key={item}>{item}</li>)}</ul></div>:null}
    {run.decisionComment&&['Returned','Rejected','Computed'].includes(status)&&<p role="alert" className={`m-0 rounded-lg border p-3 text-[12px] ${status==='Rejected'?'border-red-200 bg-red-50 text-red-800':'border-amber-200 bg-amber-50 text-amber-900'}`}><b>{status==='Computed'?'Returned earlier':status} by {run.decidedBy??'Admin'}{run.decidedAt?` on ${formatDate(run.decidedAt)}`:''}:</b> {run.decisionComment}{status==='Rejected'?' Create a new payroll for this cutoff.':''}</p>}
    {status==='Pending Approval'&&!canApprove&&<p className="m-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">Submitted {run.submittedAt?`on ${formatDate(run.submittedAt)} `:''}by {run.submittedBy??run.preparedBy}. View only while the Admin reviews it.</p>}

@@ -1,5 +1,4 @@
 import {useState} from 'react';
-import {useNavigate} from 'react-router-dom';
 import {Button,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import {cutoffPayDate,runLabel,updateRuns} from './payrollRuns';
 import type {PayrollRun,PayrollRunType} from './payrollRuns';
@@ -11,11 +10,11 @@ import {getCurrentUser} from '../auth/authService';
 import {formatDate} from '../../utils/date';
 
 /**
- * Create Payroll: the run type and cutoff, with the pay date set automatically. It creates a Draft run, then opens it.
+ * Create Payroll: the run type and cutoff, with the pay date set automatically. It creates a Draft run and stays on
+ * the Payroll Runs list (onCreated shows the toast).
  * With Strict Mode off (Payroll Settings) the checks below are warnings; with it on they block.
  */
-export function CutoffModal({onClose}:{onClose:()=>void}){
- const nav=useNavigate();
+export function CutoffModal({onClose,onCreated}:{onClose:()=>void;onCreated:(run:PayrollRun)=>void}){
  const now=new Date();
  const pad=(n:number)=>String(n).padStart(2,'0');
  const[runType,setRunType]=useState<PayrollRunType>('regular');
@@ -38,7 +37,7 @@ export function CutoffModal({onClose}:{onClose:()=>void}){
   const user=getCurrentUser();
   setBusy(true);setError('');
   const run:PayrollRun={id:crypto.randomUUID(),runType,...cutoff,payDate,status:'Draft',rows:[],totals:{gross:0,deductions:0,net:0},preparedBy:user?.name??'HR Staff',preparedById:user?.id,createdAt:new Date().toISOString(),...(warnings.length?{warnings}:{})};
-  try{await updateRuns(runs=>[...runs,run]);nav(`/payroll/review?run=${run.id}`)}
+  try{await updateRuns(runs=>[...runs,run]);onCreated(run)}
   catch(cause){setError(cause instanceof Error&&cause.message?cause.message:'The payroll could not be created.');setBusy(false)}
  };
  return <Modal title="Create Payroll" onClose={()=>{if(!busy)onClose()}}>

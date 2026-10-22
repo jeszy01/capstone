@@ -1,6 +1,6 @@
 import {useState} from 'react';
 import {Card,Empty,Modal,button,ghost,maskValue} from '../../components/common/ui';
-import {Link,useSearchParams} from 'react-router-dom';
+import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {peso,read} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {can} from '../auth/permissions';
@@ -16,12 +16,12 @@ const HEADINGS=['Period','Schedule','Approval','Payslips','Total Net','Actions']
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
 /**
- * Payroll Runs: every run with its period, schedule and approval status. A Draft is processed here; a run not yet
+ * Payroll Runs: every run with its period, schedule and approval status. Review computes a Draft and opens it; a run not yet
  * approved can be deleted; an approved run opens its payslips and releases them to ESS. Details opens the run.
  */
 export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAmounts:boolean}){
  // ?status=Pending Approval (or a comma list) shows only runs in those statuses, as the Dashboard links do.
- const[params,setParams]=useSearchParams();
+ const[params,setParams]=useSearchParams();const nav=useNavigate();
  const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleting,setDeleting]=useState<PayrollRun|null>(null),[releasing,setReleasing]=useState<PayrollRun|null>(null),[,setTick]=useState(0);
  const statusFilter=(params.get('status')??'').split(',').map(item=>item.trim()).filter(Boolean);
  const clearFilter=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
@@ -55,7 +55,10 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
    </>;
   }
   return <>
-   {runStatus(run)==='Draft'&&canPrepare&&<button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act(`process-${run.id}`,()=>processRun(run,employees))}>{busy===`process-${run.id}`?'Processing…':'Process'}</button>}
+   {/* Review: a Draft is computed (saved as Computed), then Review Payroll opens; a Returned run opens without recomputing. */}
+   {runStatus(run)==='Draft'&&canPrepare&&<button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act(`review-${run.id}`,async()=>{await processRun(run,employees);nav(`/payroll/review?run=${run.id}`)})}>{busy===`review-${run.id}`?'Reviewing…':'Review'}</button>}
+   {runStatus(run)==='Returned'&&canPrepare&&<Link className={button} to={`/payroll/review?run=${run.id}`}>Review</Link>}
+   {runStatus(run)==='Computed'&&canPrepare&&<Link className={button} to={`/payroll/review?run=${run.id}&submit=1`}>Submit to Finance</Link>}
    {details}
    {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}
   </>;
