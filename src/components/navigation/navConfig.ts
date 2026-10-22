@@ -27,6 +27,7 @@ export const titles={
  '/settings-privacy':'Settings & Privacy',
  '/notifications':'Notifications',
  '/logs-audits':'Logs & Audits',
+ '/finance':'Finance',
  '/payroll-settings':'Payroll Settings',
  '/hmo-benefits/dependents':'Dependents',
  '/hmo-benefits':'HMO & Benefits',
