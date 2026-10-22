@@ -56,3 +56,23 @@ describe('Employees by department',()=>{
   expect(departmentBreakdown([...people('A',2,'Inactive')])).toEqual({total:0,slices:[]});
  });
 });
+
+import {employeeOverview} from '../../backend-render/dashboardRules.js';
+describe('Employee overview',()=>{
+ const staff=[
+  {status:'Active',employment_status:'Regular'},{status:'Active',employment_status:'Probationary'},
+  {status:'Inactive',employment_status:'Contractual'},{status:'On Leave',employment_status:'Part-Time'},
+  {status:'Inactive',employment_status:'Resigned'},{status:'Active',employment_status:'On Leave'},{status:'Active',employment_status:null},
+ ];
+ it('puts every employee in one record status and one employment type, so both sections add up to the total',()=>{
+  const overview=employeeOverview(staff);
+  const counts=(list:{name:string;count:number}[])=>Object.fromEntries(list.map(item=>[item.name,item.count]));
+  expect(overview.total).toBe(7);
+  expect(counts(overview.recordStatus)).toEqual({Active:3,Inactive:1,'On Leave':2,Resigned:1});
+  expect(counts(overview.employmentType)).toEqual({Regular:1,Probationary:1,'Part-Time':1,Contractual:1,'Project-Based':0,Temporary:0,'Not recorded':3});
+  for(const section of [overview.recordStatus,overview.employmentType])expect(section.reduce((total,item)=>total+item.count,0)).toBe(7);
+ });
+ it('lists only the six employment types (plus Not recorded), never On Leave or Resigned',()=>{
+  expect(employeeOverview([]).employmentType.map(item=>item.name)).toEqual(['Regular','Probationary','Part-Time','Contractual','Project-Based','Temporary','Not recorded']);
+ });
+});

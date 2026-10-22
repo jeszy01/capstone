@@ -8,7 +8,7 @@ import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from '.
 import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
 import { runStatus } from './payrollFlow.js';
 import { buildRegister } from './payrollRegister.js';
-import { departmentBreakdown, pendingApprovals } from './dashboardRules.js';
+import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
@@ -789,9 +789,9 @@ app.get('/dashboard', auth, allow('dashboard.view'), async (req, res) => {
     can(role, 'compensation.approve') || can(role, 'compensation.manage') ? pool.query(`select status, created_by from compensation_proposals where status='Pending HR Review'`).then(r => r.rows) : [],
     can(role, 'hmo.view') ? pool.query(`select count(*)::int as n from hmo_enrollments where approval_status='Pending' and status in ('Pending','Submitted')`).then(r => r.rows[0].n) : 0,
     can(role, 'hmo.view') ? pool.query(`select count(*)::int as n from hmo_dependents where approval_status='Pending' and status in ('Pending','Submitted')`).then(r => r.rows[0].n) : 0,
-    can(role, 'employees.view') ? pool.query('select status, department from employees').then(r => r.rows) : null,
+    can(role, 'employees.view') ? pool.query('select status, department, employment_status from employees').then(r => r.rows) : null,
   ]);
-  ok(res, { approvals: pendingApprovals(req.user, { claims, runs, proposals, hmo: { enrollments, dependents } }), departments: employees ? departmentBreakdown(employees) : null });
+  ok(res, { approvals: pendingApprovals(req.user, { claims, runs, proposals, hmo: { enrollments, dependents } }), departments: employees ? departmentBreakdown(employees) : null, employeeOverview: employees ? employeeOverview(employees) : null });
 });
 
 // The Payroll Register of a run, built here from its saved figures; the app only displays it. Tax shows when the

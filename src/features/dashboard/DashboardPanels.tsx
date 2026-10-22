@@ -1,6 +1,26 @@
 import {Link} from 'react-router-dom';
 import {Card,Empty} from '../../components/common/ui';
-import type {DashboardSummary,PendingRow} from '../../../backend-render/dashboardRules.js';
+import type {DashboardSummary,EmployeeOverview,PendingRow} from '../../../backend-render/dashboardRules.js';
+
+const RECORD_DOTS:Record<string,string>={'Active':'bg-emerald-500','Inactive':'bg-slate-400','On Leave':'bg-amber-400','Resigned':'bg-rose-400'};
+/**
+ * Employee overview: record status and employment type as counted by the server; each section adds up to the total.
+ * Every record status is listed; employment types with no employees are left out.
+ */
+export function EmployeeOverviewCard({data,loading,error}:{data:EmployeeOverview|null;loading:boolean;error:string}){
+ const types=data?.employmentType.filter(item=>item.count>0)??[];
+ return <Card><h2 className="m-0 text-[16px] font-semibold">Employee overview</h2><p className="mt-1 text-[12px] text-slate-500">{data?`${data.total.toLocaleString()} ${data.total===1?'employee':'employees'}`:'Record status and employment type'}</p>
+  {loading?<div role="status" className="py-8 text-[13px] text-slate-500">Loading overview…</div>
+   :error?<Empty>Employee overview unavailable.</Empty>
+   :!data?.total?<Empty>No employee records yet.</Empty>
+   :<>
+    <h3 className="mb-0 mt-5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Record status</h3>
+    <dl className="mt-2 space-y-3">{data.recordStatus.map(item=><div key={item.name} className="flex items-center justify-between border-b border-slate-100 pb-3"><dt className="flex items-center gap-2 text-[13px] text-slate-500"><span aria-hidden="true" className={`h-2 w-2 rounded-full ${RECORD_DOTS[item.name]??'bg-slate-300'}`}/>{item.name}</dt><dd className="m-0 text-[18px] font-semibold text-slate-800">{item.count}</dd></div>)}</dl>
+    <h3 className="mb-0 mt-6 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Employment type</h3>
+    <dl className="mt-2 space-y-2">{types.map(item=><div key={item.name} className="flex items-center justify-between border-b border-slate-100 pb-2"><dt className="text-[13px] text-slate-500">{item.name}</dt><dd className="m-0 text-[15px] font-semibold text-slate-800">{item.count}</dd></div>)}</dl>
+   </>}
+ </Card>;
+}
 
 /** Pending Approvals: the rows the server allows for this role, each opening its page filtered to the pending items. */
 export function PendingApprovalsCard({rows,loading,error}:{rows:PendingRow[];loading:boolean;error:string}){

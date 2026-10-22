@@ -67,3 +67,26 @@ export function departmentBreakdown(employees, top = 5) {
   for (const i of exact.map((v, i) => [v - floors[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(([, i]) => i)) { if (left-- <= 0) break; floors[i]++; }
   return { total, slices: slices.map((s, i) => ({ ...s, percent: floors[i] })) };
 }
+
+export const RECORD_STATUSES = ['Active', 'Inactive', 'On Leave', 'Resigned'];
+export const EMPLOYMENT_TYPES = ['Regular', 'Probationary', 'Part-Time', 'Contractual', 'Project-Based', 'Temporary'];
+/**
+ * The Employee overview: every employee is counted once in each section, so both add up to the total.
+ * Record status: Resigned (employment status Resigned), On Leave (record or employment status On Leave), otherwise the
+ * record's Active or Inactive. Employment type: one of the six classifications, or 'Not recorded' when the record has
+ * none (older records kept On Leave or Resigned there).
+ */
+export function employeeOverview(employees) {
+  const record = Object.fromEntries(RECORD_STATUSES.map(name => [name, 0]));
+  const types = Object.fromEntries([...EMPLOYMENT_TYPES, 'Not recorded'].map(name => [name, 0]));
+  for (const employee of employees) {
+    const status = String(employee?.status ?? ''), employment = String(employee?.employment_status ?? '');
+    record[employment === 'Resigned' ? 'Resigned' : status === 'On Leave' || employment === 'On Leave' ? 'On Leave' : status === 'Inactive' ? 'Inactive' : 'Active']++;
+    types[EMPLOYMENT_TYPES.includes(employment) ? employment : 'Not recorded']++;
+  }
+  return {
+    total: employees.length,
+    recordStatus: RECORD_STATUSES.map(name => ({ name, count: record[name] })),
+    employmentType: [...EMPLOYMENT_TYPES, 'Not recorded'].map(name => ({ name, count: types[name] })),
+  };
+}
