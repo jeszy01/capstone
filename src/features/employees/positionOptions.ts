@@ -1,14 +1,6 @@
-const standardPositionOptions = [
-  'Project Manager', 'Construction Manager', 'Site Engineer', 'Civil Engineer',
-  'Project Architect', 'Quantity Surveyor', 'Estimator', 'Site Supervisor',
-  'General Foreman', 'Safety Officer', 'QA/QC Engineer', 'Surveyor',
-  'Heavy Equipment Operator', 'Crane Operator', 'Electrician', 'Plumber',
-  'Welder', 'Carpenter', 'Mason', 'Steelman', 'Construction Laborer',
-  'Procurement Officer', 'Warehouse Coordinator', 'HR Officer',
-  'Payroll Officer', 'Accountant', 'Administrative Assistant',
-  // Positions with configured Salary Grade defaults must be selectable in both forms.
-  'Software Developer', 'HR Specialist', 'Finance Manager', 'Operations Manager',
-];
+import {POSITIONS} from '../../../backend-render/positionCatalog.js';
+
+const standardPositionOptions = POSITIONS.map(item => item.position);
 
 /**
  * Shared autocomplete options for employee Position and Salary Grade Position.

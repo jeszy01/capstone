@@ -11,6 +11,7 @@ import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
+import { positionGrade } from './positionCatalog.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -1145,16 +1146,19 @@ async function deleteGrade(b, ctx) {
   await audit('compensation.grade.deleted', ctx.userId, 'salary_grades', id, { grade: grade.grade, position: grade.position, monthly_salary: Number(grade.monthly_salary) });
   return { id, deleted: true };
 }
-// A new hire's first salary comes from the active salary grade for their position, effective on the hire date (today
-// if none). Nothing is assigned when the employee already has compensation or no active grade matches the position.
+// A new hire's first salary comes from their position's grade in the position catalog (daily rate x working days per
+// month), else from an active salary grade for the position, effective on the hire date (today if none). Nothing is
+// assigned when the employee already has compensation or the position has no grade.
 async function autoAssignSalary(employee, userId) {
   const position = String(employee?.position ?? '').trim().toLowerCase();
   if (!employee?.id || !position) return null;
   if ((await listRows('employee_compensation', { employee_id: employee.id })).length) return null;
-  const grade = (await listRows('salary_grades')).find(r => String(r.position ?? '').trim().toLowerCase() === position && r.status !== 'Inactive');
-  if (!grade) return null;
   const hired = String(employee.hire_date ?? '').slice(0, 10);
   const effectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(hired) ? hired : new Date().toISOString().slice(0, 10);
+  const catalog = positionGrade(position);
+  if (catalog) return createInitialAssignment({ employee_id: String(employee.id), basic_salary: roundMoney(catalog.dailyRate * await monthlyWorkDays()), effective_date: effectiveDate }, { userId });
+  const grade = (await listRows('salary_grades')).find(r => String(r.position ?? '').trim().toLowerCase() === position && r.status !== 'Inactive');
+  if (!grade) return null;
   return createInitialAssignment({ employee_id: String(employee.id), basic_salary: Number(grade.monthly_salary), effective_date: effectiveDate, salary_code: String(grade.grade ?? '') }, { userId });
 }
 // Never fails the employee save: a salary that cannot be assigned is logged and left for HR.

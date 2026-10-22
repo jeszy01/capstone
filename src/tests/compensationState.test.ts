@@ -24,10 +24,9 @@ describe('Employee Compensation entry action',()=>{
 describe('Salary-grade form data',()=>{
   it('shares Employee Directory position options and includes existing employee titles without duplicates',()=>{
     const positions=employeePositionOptions(['HR Officer','finance manager','Custom Existing Role']);
-    expect(positions).toContain('Project Manager');
+    expect(positions).toContain('Rider');
     expect(positions).toContain('HR Officer');
-    expect(positions).toContain('Software Developer');
-    expect(positions).toContain('HR Specialist');
+    expect(positions).toContain('HR Manager');
     expect(positions).toContain('Finance Manager');
     expect(positions).toContain('Operations Manager');
     expect(positions).toContain('Custom Existing Role');

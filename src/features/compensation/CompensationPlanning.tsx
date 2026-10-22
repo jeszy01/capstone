@@ -29,11 +29,10 @@ import {can} from '../auth/permissions';
 import {getCurrentUser} from '../auth/authService';
 import {loadRates} from '../settings/payrollSettings';
 import {useSearchParams} from 'react-router-dom';
-import {numberValue,peso,read} from '../../utils/storage';
+import {peso,read} from '../../utils/storage';
 import {compensationService} from './compensationService';
 import {AllowancesPanel,IncentivesPanel} from './RewardPanels';
-import {loadSalaryStructure,saveSalaryStructure} from './salaryBands';
-import type {SalaryStructure} from './salaryBands';
+import {PAY_GRADES,POSITIONS,positionGrade} from '../../../backend-render/positionCatalog.js';
 import {InlineError,SearchToolbar,SectionHeading,StatusBadge,TableMessage,actionCell,formatDate,headerClass,matches,rowClass,tableClass,wholePeso} from './compensationUi';
 import {
   activeCompensations,
@@ -158,10 +157,6 @@ export default function CompensationPlanning({section}:{section:Section}){
   const pendingProposals=proposals.filter(proposal=>proposal.status==='Pending HR Review');
   const activeGrades=grades.filter(grade=>grade.status==='Active');
   const proposalStatus=(proposal:CompensationProposal)=>proposal.status==='Approved'?(proposal.effectiveDate<=date?'Effective':'Scheduled'):proposal.status==='Pending HR Review'?'Pending Approval':proposal.status;
-  // Salary Structure: pay grade bands (min/max daily rate) and each position's band; saved with the compensation data.
-  const[structure,setStructure]=useState<SalaryStructure>(loadSalaryStructure);
-  const saveStructure=(next:SalaryStructure)=>{setStructure(next);saveSalaryStructure(next)};
-  const updateBand=(index:number,field:'min'|'max',value:string)=>saveStructure({...structure,bands:structure.bands.map((band,at)=>at===index?{...band,[field]:numberValue(value)}:band)});
   // ?status=pending (from the Dashboard) shows only proposals awaiting review; &mine=1 only the signed-in user's own.
   const pendingOnly=params.get('status')==='pending',mineOnly=params.get('mine')==='1',userId=getCurrentUser()?.id;
   const showAllProposals=()=>{const next=new URLSearchParams(params);next.delete('status');next.delete('mine');setParams(next,{replace:true})};
@@ -237,13 +232,12 @@ export default function CompensationPlanning({section}:{section:Section}){
     {legacyImportWarning&&<div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">{legacyImportWarning}</div>}
     {success&&<div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[13px] font-medium text-emerald-800"><CheckCircle2 size={16}/>{success}</div>}
 
-    {section==='salary-structure'&&<section id="salary-structure-panel" aria-label="Salary Structure">
-      <SectionHeading id="salary-grades-heading" title="Salary Structure" description="Pay grades set the daily-rate range (minimum and maximum daily rate per grade)."/>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">{structure.bands.map((band,index)=><Card key={band.code} className="!p-4">
-          <div className="text-[12px] font-medium text-slate-500">Grade {band.code} (daily rate)</div>
-          {(['min','max'] as const).map(field=><div key={field} className="mt-2 flex items-center justify-between gap-3"><label htmlFor={`band-${band.code}-${field}`} className="text-[13px] text-slate-700">{field==='min'?'Min':'Max'}</label><TextInput id={`band-${band.code}-${field}`} type="number" min="0" step="0.01" className="w-28" value={String(band[field])} disabled={!canManageGrades} onChange={event=>updateBand(index,field,event.target.value)}/></div>)}
-          {band.min>=band.max&&<p className="mb-0 mt-2 text-[11px] text-red-700">Min must be lower than Max.</p>}
-        </Card>)}</div>
+    {section==='salary-structure'&&<section id="salary-structure-panel" aria-labelledby="salary-grades-heading">
+      <SectionHeading id="salary-grades-heading" title="Salary Structure" description="Each position's salary grade and daily rate. New hires get this rate automatically."/>
+      <div className="mt-4 flex flex-wrap gap-2">{PAY_GRADES.map(grade=><span key={grade.code} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[12px] text-slate-600"><b className="font-semibold text-slate-800">{grade.code}</b> · {wholePeso(grade.dailyRate)}/day</span>)}</div>
+      <Card className="mt-3 overflow-hidden !p-0"><div className="overflow-x-auto"><table className={`${tableClass} min-w-[560px]`}><thead><tr className={headerClass}>{['Position','Department','Grade','Daily Rate'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}</tr></thead><tbody>
+        {POSITIONS.map(item=><tr key={item.position} className={rowClass}><td className="px-4 py-3 font-medium text-slate-800">{item.position}</td><td className="px-4 py-3 text-slate-600">{item.department}</td><td className="px-4 py-3 text-slate-600">{item.grade}</td><td className="px-4 py-3 tabular-nums text-slate-800">{wholePeso(positionGrade(item.position)?.dailyRate??0)}</td></tr>)}
+      </tbody></table></div></Card>
     </section>}
     {section==='history'&&<section id="history-panel" aria-labelledby="history-heading">
       <SectionHeading id="history-heading" title="Compensation History" description="A read-only timeline of prior salaries, proposed changes, decisions and effective dates."/>
