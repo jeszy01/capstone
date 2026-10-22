@@ -37,6 +37,9 @@ import {useSearchParams} from 'react-router-dom';
 import {numberValue,peso,read} from '../../utils/storage';
 import {compensationService} from './compensationService';
 import {AllowancesPanel,IncentivesPanel} from './RewardPanels';
+import {bandForRate,compaRatio,loadSalaryStructure,rangePosition,saveSalaryStructure} from './salaryBands';
+import type {SalaryStructure} from './salaryBands';
+import {StatusBadge as CommonBadge} from '../../components/common/StatusBadge';
 import {ConfirmDialog,InlineError,SearchToolbar,SectionHeading,StatusBadge,TableMessage,actionCell,actionLabel,formatDate,headerClass,matches,rowClass,tableClass,wholePeso} from './compensationUi';
 import {
   activeCompensations,
@@ -182,7 +185,13 @@ export default function CompensationPlanning({section}:{section:Section}){
   const activeGrades=grades.filter(grade=>grade.status==='Active');
   const gradePositionOptions=useMemo(()=>employeePositionOptions(employees.map(employee=>employee.position)),[employees]);
   const proposalStatus=(proposal:CompensationProposal)=>proposal.status==='Approved'?(proposal.effectiveDate<=date?'Effective':'Scheduled'):proposal.status==='Pending HR Review'?'Pending Approval':proposal.status;
-  const filteredGrades=grades.filter(grade=>matches(search,grade.code,grade.position,grade.status));
+  // Salary Structure: pay grade bands (min/max daily rate) and each position's band; saved with the compensation data.
+  const[structure,setStructure]=useState<SalaryStructure>(loadSalaryStructure);
+  const saveStructure=(next:SalaryStructure)=>{setStructure(next);saveSalaryStructure(next)};
+  const updateBand=(index:number,field:'min'|'max',value:string)=>saveStructure({...structure,bands:structure.bands.map((band,at)=>at===index?{...band,[field]:numberValue(value)}:band)});
+  const setBand=(gradeId:string,code:string)=>saveStructure({...structure,positions:{...structure.positions,[gradeId]:code}});
+  const bandCodeOf=(grade:SalaryGrade)=>structure.positions[grade.id]??bandForRate(rateOf(grade.fixedSalary),structure.bands);
+  const filteredGrades=grades.filter(grade=>matches(search,grade.code,grade.position,grade.status,bandCodeOf(grade)));
   const filteredAssignments=visibleAssignments.filter(item=>{
     const employee=findCompensationEmployee(employees,item.employeeId);
     return matches(search,employee?.name,employee?.employeeNo,employee?.department,item.position,item.salaryCode,item.effectiveDate);
@@ -340,11 +349,25 @@ export default function CompensationPlanning({section}:{section:Section}){
     {section==='salary-structure'&&<section id="salary-structure-panel" aria-label="Salary Structure">
       <Tabs label="Salary Structure sections" value={structureTab} onChange={setStructureTab} tabs={structureTabs}/>
       {structureTab==='grades'?<div role="tabpanel" aria-labelledby="salary-grades-heading" className="mt-4">
-        <SectionHeading id="salary-grades-heading" title="Salary Grades" action={canManageGrades&&<Button disabled={compensationLoading||saving} onClick={()=>{setError('');setModal('grade')}}><Plus size={15}/>Add Salary Grade</Button>}/>
-        <SearchToolbar label="Search salary grades" value={search} onChange={setSearch} shown={filteredGrades.length} total={grades.length} placeholder="Search code, position or status"/>
+        <SectionHeading id="salary-grades-heading" title="Salary Structure" description="Pay grades set the daily-rate range. Compa-ratio is rate ÷ range midpoint." action={canManageGrades&&<Button disabled={compensationLoading||saving} onClick={()=>{setError('');setModal('grade')}}><Plus size={15}/>Add Salary Grade</Button>}/>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">{structure.bands.map((band,index)=><Card key={band.code} className="!p-4">
+          <div className="text-[12px] font-medium text-slate-500">Grade {band.code} (daily rate)</div>
+          {(['min','max'] as const).map(field=><div key={field} className="mt-2 flex items-center justify-between gap-3"><label htmlFor={`band-${band.code}-${field}`} className="text-[13px] text-slate-700">{field==='min'?'Min':'Max'}</label><TextInput id={`band-${band.code}-${field}`} type="number" min="0" step="0.01" className="w-28" value={String(band[field])} disabled={!canManageGrades} onChange={event=>updateBand(index,field,event.target.value)}/></div>)}
+          {band.min>=band.max&&<p className="mb-0 mt-2 text-[11px] text-red-700">Min must be lower than Max.</p>}
+        </Card>)}</div>
+        <SearchToolbar label="Search positions" value={search} onChange={setSearch} shown={filteredGrades.length} total={grades.length} placeholder="Search position or grade"/>
         <Card className="mt-3 overflow-hidden !p-0">
-          <div className="overflow-x-auto"><table className={`${tableClass} sm:min-w-[620px]`}><thead><tr className={headerClass}>{['Grade','Monthly Salary','Daily Rate','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
-            {compensationLoading?<TableMessage colSpan={5} loading>Loading salary grades…</TableMessage>:loadError?<TableMessage colSpan={5}>Salary grades could not be loaded.</TableMessage>:!filteredGrades.length?<TableMessage colSpan={5}>{grades.length?'No salary grades match this search.':'No salary grades yet.'}</TableMessage>:filteredGrades.map(grade=><tr key={grade.id} className={rowClass}><td className="px-4 py-3.5 font-semibold text-slate-800">{grade.code}</td><td className="px-4 py-3.5 font-semibold">{peso(grade.fixedSalary)}</td><td className="px-4 py-3.5">{wholePeso(rateOf(grade.fixedSalary))}</td><td className="px-4 py-3.5"><StatusBadge status={grade.status}/></td><td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} aria-label={`Details for ${grade.code}`} onClick={()=>setDetails({title:'Salary Grade Details',fields:[['Salary grade',grade.code],['Position',grade.position||'General'],['Monthly salary',peso(grade.fixedSalary)],['Daily rate',wholePeso(rateOf(grade.fixedSalary))],['Status',grade.status],['Created',formatDate(grade.createdAt)]]})}><Eye size={14}/><span className={actionLabel}>Details</span></button>{canManageGrades&&<><button type="button" className={ghost} aria-label={`Edit ${grade.code}`} disabled={saving} onClick={()=>openGradeEdit(grade)}><Pencil size={14}/><span className={actionLabel}>Edit</span></button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Delete ${grade.code}`} disabled={saving} onClick={()=>openGradeDelete(grade)}><Trash2 size={14}/><span className={actionLabel}>Delete</span></button></>}</div></td></tr>)}
+          <div className="overflow-x-auto"><table className={`${tableClass} sm:min-w-[760px]`}><thead><tr className={headerClass}>{['Position','Grade','Daily Rate','Compa-ratio','Position in Range'].map(label=><th key={label} className={`px-4 py-3.5 ${['Daily Rate','Compa-ratio'].includes(label)?'text-right':''}`}>{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
+            {compensationLoading?<TableMessage colSpan={6} loading>Loading positions…</TableMessage>:loadError?<TableMessage colSpan={6}>Positions could not be loaded.</TableMessage>:!filteredGrades.length?<TableMessage colSpan={6}>{grades.length?'No positions match this search.':'No positions yet.'}</TableMessage>:filteredGrades.map(grade=>{
+              const rate=rateOf(grade.fixedSalary),code=bandCodeOf(grade),band=structure.bands.find(item=>item.code===code),place=band?rangePosition(rate,band):null;
+              return <tr key={grade.id} className={rowClass}>
+                <td className="px-4 py-3.5 font-semibold text-slate-800">{grade.position||grade.code}{grade.status==='Inactive'&&<span className="ml-2 text-[11px] font-normal text-slate-500">Inactive</span>}</td>
+                <td className="px-4 py-3.5"><select aria-label={`Grade for ${grade.position||grade.code}`} className={`${input} w-24`} value={code} disabled={!canManageGrades} onChange={event=>setBand(grade.id,event.target.value)}>{structure.bands.map(item=><option key={item.code} value={item.code}>{item.code}</option>)}</select></td>
+                <td className="px-4 py-3.5 text-right tabular-nums">{peso(rate)}</td>
+                <td className="px-4 py-3.5 text-right tabular-nums">{band?compaRatio(rate,band).toFixed(2):'—'}</td>
+                <td className="px-4 py-3.5">{place?<CommonBadge status={place} tone={place==='Within range'?'success':'warning'}/>:'—'}</td>
+                <td className={actionCell}><div className="flex justify-end gap-2"><button type="button" className={ghost} aria-label={`Details for ${grade.code}`} onClick={()=>setDetails({title:'Salary Grade Details',fields:[['Salary grade',grade.code],['Position',grade.position||'General'],['Pay grade',code||'—'],['Monthly salary',peso(grade.fixedSalary)],['Daily rate',wholePeso(rate)],['Status',grade.status],['Created',formatDate(grade.createdAt)]]})}><Eye size={14}/><span className={actionLabel}>Details</span></button>{canManageGrades&&<><button type="button" className={ghost} aria-label={`Edit ${grade.code}`} disabled={saving} onClick={()=>openGradeEdit(grade)}><Pencil size={14}/><span className={actionLabel}>Edit</span></button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Delete ${grade.code}`} disabled={saving} onClick={()=>openGradeDelete(grade)}><Trash2 size={14}/><span className={actionLabel}>Delete</span></button></>}</div></td>
+              </tr>})}
           </tbody></table></div>
         </Card>
       </div>:<div role="tabpanel" aria-labelledby="salary-assignments-heading" className="mt-4">
