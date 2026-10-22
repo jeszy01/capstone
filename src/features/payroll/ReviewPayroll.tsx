@@ -214,8 +214,39 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
     {checks.length>0&&<ul className="m-0 list-none space-y-2 p-0">{checks.map(check=><li key={check.id} className="rounded-lg border border-slate-200 px-3 py-2 text-[12px]"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700">{check.title}</span><span className="font-semibold text-amber-700">{check.items.length}</span></div><ul className="mb-0 mt-1 list-disc pl-5 text-slate-600">{check.items.map(item=><li key={item}>{item}</li>)}</ul>{check.id==='timesheet'&&canGenerate&&status==='Computed'&&<button type="button" className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700" onClick={()=>{lockTimesheet({from:run.from,to:run.to},by);setChecksTick(t=>t+1)}}>Lock timesheet</button>}</li>)}</ul>}
    </Card>}
 
+   {approved&&<Card className="min-w-0 !p-0">
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+     <div><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Payouts</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{['Funded','Exported'].includes(status)?'Export each method’s file, then mark each employee Paid or Failed. Fix a failed payout and export it again.':status==='Approved'?'Export is blocked until the Admin confirms the payroll account is funded.':`${paidCount} of ${run.rows.length} employees paid.`}</p></div>
+     {canRelease&&run.payouts&&['Approved','Funded','Exported'].includes(status)&&<div className="flex flex-wrap gap-2">
+      {PAYOUT_METHODS.map(method=>{const count=pendingOf(method);return <button key={method} type="button" className={ghost} disabled={Boolean(busy)||status==='Approved'||!run.funding?.receiptId||!count} title={!run.funding?.receiptId?'Blocked until the funding receipt is attached':undefined} onClick={()=>void exportMethod(method)}><Download size={14}/>{busy===`export-${method}`?'Exporting…':`${METHOD_FILES[method]} (${count})`}</button>})}
+      {status==='Exported'&&exported.length>0&&<button type="button" className={success} disabled={Boolean(busy)} onClick={()=>void mark(exported.map(({row})=>({empId:row.input.empId,status:'Paid' as const})))}>Mark all exported Paid ({exported.length})</button>}
+     </div>}
+    </div>
+    {!run.payouts?<div className="px-5 py-4 text-[12px] text-slate-600">{['Approved','Funded'].includes(status)?<>This run was approved before payouts were tracked per employee. {canRelease&&<button type="button" className={`${ghost} ml-2`} disabled={Boolean(busy)} onClick={()=>void act('setup',async()=>{await addPayoutLines(run.id,await staff())})}>Set up payouts</button>}</>:'Paid before payouts were tracked per employee.'}</div>
+    :<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-[13px]">
+     <thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]">{['Employee','Method','Account','Net','Status',''].map(labelText=><th key={labelText||'actions'} className={`px-4 py-3 ${labelText==='Net'?'text-right':''}`}>{labelText}</th>)}</tr></thead>
+     <tbody>{lines.map(({row,line})=>line&&<tr key={row.input.empId} className="border-b border-slate-100">
+      <td className="px-4 py-3"><div className="font-semibold text-slate-800">{row.input.name}</div><div className="text-[11px] text-slate-500">{row.input.empId}</div></td>
+      <td className="px-4 py-3">{line.method}</td>
+      <td className="px-4 py-3">{payoutAccount(line)}{missingPayout(line)&&<div className="text-[11px] text-amber-700">Missing {missingPayout(line)}</div>}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{peso(row.result.net)}</td>
+      <td className="px-4 py-3"><StatusBadge status={line.status}/>{line.status==='Failed'&&line.reason&&<div className="mt-1 text-[11px] text-red-700">{line.reason}</div>}</td>
+      <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2 whitespace-nowrap">{canRelease&&['Approved','Funded','Exported'].includes(status)&&<>
+       {['Pending','Failed'].includes(line.status)&&<button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setFixing(row.input.empId)}>{line.status==='Failed'?'Fix':'Edit'}</button>}
+       {line.status==='Exported'&&<><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setFailing({empId:row.input.empId,name:row.input.name,reason:''})}>Failed</button><button type="button" className={success} disabled={Boolean(busy)} onClick={()=>void mark([{empId:row.input.empId,status:'Paid'}])}>Paid</button></>}
+      </>}</div></td>
+     </tr>)}</tbody>
+    </table></div>}
+    {(run.exports??[]).length>0&&<div className="border-t border-slate-100 px-5 py-3 text-[12px] text-slate-600"><div className="mb-1 font-semibold text-slate-700">Exported files</div><ul className="m-0 list-none space-y-1 p-0">{run.exports!.map(entry=><li key={entry.id} className="flex flex-wrap items-center gap-2">{entry.method} · {entry.employees.length} {entry.employees.length===1?'employee':'employees'} · {peso(entry.total)} · {new Date(entry.at).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})} by {entry.by}<button type="button" className="text-blue-700 underline" onClick={()=>{const file=payoutFile(run,entry.id,deptOf);downloadCsv(file.name,file.csv)}}>Download again</button></li>)}</ul></div>}
+   </Card>}
+  </div>
+
+  <PayrollRegister runId={run.id} refresh={checksTick}/>
+
+  {/* The employee table with drill-down, last on the page. */}
+  <div className="no-print">
    {rows.length>0&&<Card className="min-w-0 !p-0">
-    <div className="border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Employees</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Open a row for the full breakdown{editable?' and to type in amounts':''}. The full Payroll Register is below.</p></div>
+    <div className="border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Employees</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Open a row for the full breakdown{editable?' and to type in amounts':''}. The full Payroll Register is above.</p></div>
     <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-[13px]">
      <thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]"><th className="w-8 px-3 py-3"/><th className="px-3 py-3">Employee</th><th className="px-3 py-3 text-right">Gross</th><th className="px-3 py-3 text-right">Deductions</th><th className="px-3 py-3 text-right">Net</th>{approved&&run.payouts&&<th className="px-3 py-3">Payout</th>}</tr></thead>
      <tbody>{rows.map(row=>{
@@ -249,34 +280,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
     </table></div>
    </Card>}
 
-   {approved&&<Card className="min-w-0 !p-0">
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
-     <div><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Payouts</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{['Funded','Exported'].includes(status)?'Export each method’s file, then mark each employee Paid or Failed. Fix a failed payout and export it again.':status==='Approved'?'Export is blocked until the Admin confirms the payroll account is funded.':`${paidCount} of ${run.rows.length} employees paid.`}</p></div>
-     {canRelease&&run.payouts&&['Approved','Funded','Exported'].includes(status)&&<div className="flex flex-wrap gap-2">
-      {PAYOUT_METHODS.map(method=>{const count=pendingOf(method);return <button key={method} type="button" className={ghost} disabled={Boolean(busy)||status==='Approved'||!run.funding?.receiptId||!count} title={!run.funding?.receiptId?'Blocked until the funding receipt is attached':undefined} onClick={()=>void exportMethod(method)}><Download size={14}/>{busy===`export-${method}`?'Exporting…':`${METHOD_FILES[method]} (${count})`}</button>})}
-      {status==='Exported'&&exported.length>0&&<button type="button" className={success} disabled={Boolean(busy)} onClick={()=>void mark(exported.map(({row})=>({empId:row.input.empId,status:'Paid' as const})))}>Mark all exported Paid ({exported.length})</button>}
-     </div>}
-    </div>
-    {!run.payouts?<div className="px-5 py-4 text-[12px] text-slate-600">{['Approved','Funded'].includes(status)?<>This run was approved before payouts were tracked per employee. {canRelease&&<button type="button" className={`${ghost} ml-2`} disabled={Boolean(busy)} onClick={()=>void act('setup',async()=>{await addPayoutLines(run.id,await staff())})}>Set up payouts</button>}</>:'Paid before payouts were tracked per employee.'}</div>
-    :<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-[13px]">
-     <thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]">{['Employee','Method','Account','Net','Status',''].map(labelText=><th key={labelText||'actions'} className={`px-4 py-3 ${labelText==='Net'?'text-right':''}`}>{labelText}</th>)}</tr></thead>
-     <tbody>{lines.map(({row,line})=>line&&<tr key={row.input.empId} className="border-b border-slate-100">
-      <td className="px-4 py-3"><div className="font-semibold text-slate-800">{row.input.name}</div><div className="text-[11px] text-slate-500">{row.input.empId}</div></td>
-      <td className="px-4 py-3">{line.method}</td>
-      <td className="px-4 py-3">{payoutAccount(line)}{missingPayout(line)&&<div className="text-[11px] text-amber-700">Missing {missingPayout(line)}</div>}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{peso(row.result.net)}</td>
-      <td className="px-4 py-3"><StatusBadge status={line.status}/>{line.status==='Failed'&&line.reason&&<div className="mt-1 text-[11px] text-red-700">{line.reason}</div>}</td>
-      <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2 whitespace-nowrap">{canRelease&&['Approved','Funded','Exported'].includes(status)&&<>
-       {['Pending','Failed'].includes(line.status)&&<button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setFixing(row.input.empId)}>{line.status==='Failed'?'Fix':'Edit'}</button>}
-       {line.status==='Exported'&&<><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setFailing({empId:row.input.empId,name:row.input.name,reason:''})}>Failed</button><button type="button" className={success} disabled={Boolean(busy)} onClick={()=>void mark([{empId:row.input.empId,status:'Paid'}])}>Paid</button></>}
-      </>}</div></td>
-     </tr>)}</tbody>
-    </table></div>}
-    {(run.exports??[]).length>0&&<div className="border-t border-slate-100 px-5 py-3 text-[12px] text-slate-600"><div className="mb-1 font-semibold text-slate-700">Exported files</div><ul className="m-0 list-none space-y-1 p-0">{run.exports!.map(entry=><li key={entry.id} className="flex flex-wrap items-center gap-2">{entry.method} · {entry.employees.length} {entry.employees.length===1?'employee':'employees'} · {peso(entry.total)} · {new Date(entry.at).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})} by {entry.by}<button type="button" className="text-blue-700 underline" onClick={()=>{const file=payoutFile(run,entry.id,deptOf);downloadCsv(file.name,file.csv)}}>Download again</button></li>)}</ul></div>}
-   </Card>}
   </div>
-
-  <PayrollRegister runId={run.id} refresh={checksTick}/>
 
   {dialog==='submit'&&<Modal title="Submit for approval" onClose={()=>{if(!busy)setDialog(null)}}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Pay date',formatDate(run.payDate??run.to)],['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value])=><div key={labelText} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{labelText}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
