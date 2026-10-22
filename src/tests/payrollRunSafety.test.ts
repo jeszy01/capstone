@@ -32,6 +32,10 @@ describe('payroll run transitions are enforced by the server',()=>{
   expect((await save(hr,[draft()],[computed()]))[0][0]).toBe('payroll.computed');
   expect((await save(hr,[computed()],[computed({rows:[row('EMP-1',1500),row('EMP-2',2000)]})]))[0][0]).toBe('payroll.recomputed');
   expect((await save(hr,[computed()],[pending()]))[0][0]).toBe('payroll.submitted');
+  // Submitting takes the current payout details, but every line must stay Pending.
+  const refreshed={...pending(),payouts:{'EMP-1':pendingLine(),'EMP-2':{method:'E-wallet',provider:'GCash',walletNumber:'0917',status:'Pending'}}};
+  expect((await save(hr,[computed()],[refreshed]))[0][0]).toBe('payroll.submitted');
+  await expect(save(hr,[computed()],[{...refreshed,payouts:{...refreshed.payouts,'EMP-2':{method:'Cash',status:'Paid'}}}])).rejects.toThrow('pending payout line');
  });
  it('refuses skipping steps and changing figures while submitting',async()=>{
   await expect(save(hr,[draft()],[pending()])).rejects.toThrow('cannot move from Draft to Pending Approval');

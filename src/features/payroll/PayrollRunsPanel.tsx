@@ -11,19 +11,6 @@ import {PayrollSummaryModal} from './PayrollSummaryModal';
 import {StatusBadge} from '../../components/common/StatusBadge';
 import {cell,flushCard,rowHeader,tableHead} from '../../components/common/tableUi';
 
-// The payroll process, in order, with who does each step.
-const STEPS:[string,string][]=[
- ['Create & Compute','HR'],['Submit','HR'],['Approve','Admin'],['Confirm Funding','Admin'],['Export Payouts','HR'],['Mark Paid / Failed','HR'],['Payslips & Close','HR'],
-];
-export function PayrollSteps(){
- return <ol aria-label="Payroll process" className="grid list-none grid-cols-2 gap-2 p-0 sm:grid-cols-4 2xl:grid-cols-7">
-  {STEPS.map(([label,who],index)=><li key={label} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-   <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">{index+1}</span>
-   <span className="min-w-0"><span className="block text-[12px] font-semibold text-[#17345b]">{label}</span><span className="block text-[10px] text-slate-500">{who}</span></span>
-  </li>)}
- </ol>;
-}
-
 /** Payroll Runs: every run with its status, the next step and the one action that moves it forward. */
 export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAmounts:boolean}){
  const[summary,setSummary]=useState<PayrollRun|null>(null);

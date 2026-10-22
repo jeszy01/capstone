@@ -41,7 +41,8 @@ export const pesoText = v => `₱${Number(v || 0).toLocaleString('en-PH', { mini
 const RUN_SERVER_FIELDS = ['payslipsGeneratedAt', 'payslipsGeneratedBy', 'released', 'releasedAt', 'releasedBy', 'closedAt'];
 // Fixed when the run is created.
 const RUN_IDENTITY_FIELDS = ['id', 'runType', 'from', 'to', 'payDate', 'createdAt', 'preparedBy', 'preparedById'];
-const RUN_SUBMIT_FIELDS = ['status', 'submittedAt', 'submittedBy'];
+// Submitting also takes the current Payout Details, so payout lines may be refreshed (still all Pending).
+const RUN_SUBMIT_FIELDS = ['status', 'submittedAt', 'submittedBy', 'payouts'];
 const RUN_DECISION_FIELDS = ['status', 'decidedBy', 'decidedById', 'decidedAt', 'decisionComment'];
 const RUN_FUNDING_FIELDS = ['status', 'funding'];
 const RUN_PAYOUT_FIELDS = ['status', 'payouts', 'exports', 'paidAt', 'paidBy'];
@@ -152,6 +153,7 @@ async function payrollRunEvents(user, before, after) {
     } else if (now === 'Pending Approval') {
       need(user, 'payroll.generate', 'Only HR Staff can submit payroll.');
       if (!sameExcept(old, row, RUN_SUBMIT_FIELDS)) throw forbid('Submitting payroll cannot change its contents. Recompute it first.');
+      checkComputed(row);
       log('payroll.submitted', `Submitted payroll for ${runPeriod(row)} for approval (${plural(runEmployees(row).length, 'employee')}, net ${pesoText(runNet(row))}).`);
     } else if (['Approved', 'Returned', 'Rejected'].includes(now)) {
       need(user, 'payroll.approve', 'Only an Admin can approve, return or reject payroll.');

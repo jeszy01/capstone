@@ -18,7 +18,8 @@ import {buildPayslipBreakdownFromRun} from './payslipMath';
 import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,isThirteenthMonthRun,markPayouts,runLabel,runNextStep,runStatus,settleRunLoans,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
 import {calcRow,computeRunRows,submitBlocked} from './computeRun';
-import {reviewChecks} from './runChecks';
+import {loadReviewChecks,lockTimesheet} from './runChecks';
+import type {RunCheck} from './runChecks';
 import {addPayoutLines,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
 import {PayoutDetailsModal} from './PayoutDetails';
 import {PayslipPasskeyModal} from './PayslipPasskeyModal';
@@ -113,7 +114,21 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   return EDIT_KEYS.filter(key=>numberValue(row.input[key])!==numberValue(original[key])).map(key=>({empId:row.input.empId,name:row.input.name,field:key,label:EDIT_LABELS[key],original:numberValue(original[key]),amount:numberValue(row.input[key])}))}):[];
  const missingReason=changes.some(change=>(reasons[reasonKey(change.empId,change.field)]??'').trim().length<3);
  const totals=totalsOf(rows);
- const checks=['Computed','Pending Approval'].includes(status)?reviewChecks(run,rows):[];
+ // Checks are rebuilt from live data on every load, after every change on this page, and when the tab regains focus
+ // or another tab changes saved data (HR2 sync, timesheet lock, payout details); fixed ones disappear.
+ const checking=['Computed','Pending Approval'].includes(status);
+ const[checks,setChecks]=useState<RunCheck[]>([]),[checksTick,setChecksTick]=useState(0);
+ useEffect(()=>{
+  const refresh=()=>setChecksTick(t=>t+1);
+  window.addEventListener('focus',refresh);window.addEventListener('storage',refresh);
+  return()=>{window.removeEventListener('focus',refresh);window.removeEventListener('storage',refresh)};
+ },[]);
+ useEffect(()=>{
+  if(!checking){setChecks([]);return}
+  let active=true;
+  loadReviewChecks(run,rows,employees).then(list=>{if(active)setChecks(list)}).catch(()=>{if(active)setChecks([])});
+  return()=>{active=false};
+ },[checking,run,rows,employees,checksTick]);
  const flagged=checks.reduce((count,check)=>count+check.items.length,0);
  const payouts=run.payouts??{};
  const lines=run.rows.map(row=>({row,line:payouts[row.input.empId]}));
@@ -125,7 +140,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  // Runs one action against the server's current copy; the page re-reads the run afterwards.
  const act=async(name:string,work:()=>Promise<void>)=>{
   setBusy(name);setError('');setNotice('');
-  try{await work();onChanged()}
+  try{await work();onChanged();setChecksTick(t=>t+1)}
   catch(cause){setError(message(cause,'The change could not be saved.'))}
   finally{setBusy('')}
  };
@@ -153,7 +168,9 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   if(dirty)throw new Error('Save your changes before submitting.');
   const blocked=await submitBlocked(run,read<PayrollRun[]>(RUNS_KEY,[]));
   if(blocked)throw new Error(blocked);
-  await updateRun(run.id,item=>{expectStatus(item,'Computed');return {...item,status:'Pending Approval',submittedAt:new Date().toISOString(),submittedBy:by}});
+  // The run takes the current Payout Details, so fixes made since computing are submitted.
+  const people=await staff();
+  await updateRun(run.id,item=>{expectStatus(item,'Computed');return {...item,status:'Pending Approval',submittedAt:new Date().toISOString(),submittedBy:by,payouts:payoutLinesFor(item,people)}});
   notifyPayrollPending(run.id,title);setDialog(null);
  });
  const decide=(next:'Approved'|'Returned'|'Rejected')=>act('decide',async()=>{
@@ -228,10 +245,10 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
     {[['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value],index)=><div key={labelText} className={`rounded-xl border p-4 shadow-sm ${index===3?'border-blue-100 bg-gradient-to-br from-blue-50 to-white':'border-slate-200 bg-white'}`}><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelText}</div><div className={`mt-1 text-[20px] font-semibold ${index===3?'text-blue-800':'text-[#17345b]'}`}>{value}</div>{index===3&&approved&&run.payouts&&<div className="mt-1 text-[11px] text-slate-500">{paidCount} of {run.rows.length} paid</div>}</div>)}
    </div>}
 
-   {checks.length>0&&<Card className="min-w-0">
+   {checking&&<Card className="min-w-0">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Checks before submit</h2><StatusBadge status={flagged?'Pending':'Active'} label={flagged?`${flagged} to review`:'No issues found'}/></div>
     <p className="mb-2 mt-1 text-[12px] text-slate-500">Warnings only: they do not stop the submission.</p>
-    <ul className="m-0 list-none space-y-2 p-0">{checks.map(check=><li key={check.id} className="rounded-lg border border-slate-200 px-3 py-2 text-[12px]"><div className="flex justify-between gap-2"><span className="font-semibold text-slate-700">{check.title}</span><span className={check.items.length?'font-semibold text-amber-700':'text-emerald-700'}>{check.items.length?check.items.length:'OK'}</span></div>{check.items.length>0&&<ul className="mb-0 mt-1 list-disc pl-5 text-slate-600">{check.items.map(item=><li key={item}>{item}</li>)}</ul>}</li>)}</ul>
+    {checks.length>0&&<ul className="m-0 list-none space-y-2 p-0">{checks.map(check=><li key={check.id} className="rounded-lg border border-slate-200 px-3 py-2 text-[12px]"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700">{check.title}</span><span className="font-semibold text-amber-700">{check.items.length}</span></div><ul className="mb-0 mt-1 list-disc pl-5 text-slate-600">{check.items.map(item=><li key={item}>{item}</li>)}</ul>{check.id==='timesheet'&&canGenerate&&status==='Computed'&&<button type="button" className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1 font-semibold text-slate-700" onClick={()=>{lockTimesheet({from:run.from,to:run.to},by);setChecksTick(t=>t+1)}}>Lock timesheet</button>}</li>)}</ul>}
    </Card>}
 
    {rows.length>0&&<Card className="min-w-0 !p-0">
