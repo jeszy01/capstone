@@ -7,8 +7,6 @@ export const modules:NavItem[]=[
  {label:'Employees',to:'/employees',icon:Users},
  {label:'Payroll Management',to:'/payroll',icon:Wallet,children:[
   {label:'Payroll Runs',to:'/payroll'},{label:'Time & Attendance',to:'/time-attendance'},
-  {label:'Leave',to:'/leave'},
-  {label:'Deductions',to:'/deductions'},
  ]},
  {label:'Compensation Planning',to:'/compensation/salary-structure',icon:BarChart3,children:[
   {label:'Salary Structure',to:'/compensation/salary-structure'},

@@ -18,8 +18,6 @@ const routePermissions:Array<[string,Permission]>=[
  ['/payroll-settings','settings.view'],
  ['/payroll','payroll.view'],
  ['/time-attendance','attendance.view'],
- ['/leave','leave.view'],
- ['/deductions','deductions.view'],
  ['/employees','employees.view'],
  ['/compensation','compensation.view'],
  ['/claims-reimbursement','claims.view'],

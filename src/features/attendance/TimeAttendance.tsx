@@ -1,12 +1,12 @@
 import {useEffect,useMemo,useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
-import {CalendarCheck,ChevronLeft,ChevronRight,Clock,Download,Search} from 'lucide-react';
-import {Card,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,Tabs,TextInput,ghost,input} from '../../components/common/ui';
+import {ChevronLeft,ChevronRight,Download,Search} from 'lucide-react';
+import {Card,Empty,ErrorAlert,Field,LoadingState,PageHeader,TextInput,ghost,input} from '../../components/common/ui';
 import {formatDate} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
-import {fetchAttendance,hr2SyncedThrough,lastHr2Sync,runningRange} from './attendanceService';
-import {cutoffFor,loadRates,recentCutoffs,shortDate,shortRange} from '../settings/payrollSettings';
+import {fetchAttendance,lastHr2Sync} from './attendanceService';
+import {cutoffFor,loadRates,shortRange} from '../settings/payrollSettings';
 import {StatusBadge} from '../../components/common/StatusBadge';
 import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
@@ -42,14 +42,11 @@ function exportCsv(file:string,headers:string[],rows:(string|number)[][]){
 }
 
 export default function TimeAttendance(){
- const tabs=[{id:'daily',label:'Attendance Records',shortLabel:'Records',icon:CalendarCheck},{id:'timesheet',label:'Timesheet',shortLabel:'Timesheet',icon:Clock}] as const;
- const[tab,setTab]=useState<(typeof tabs)[number]['id']>('daily');
  const[employees,setEmployees]=useState<Employee[]>([]);
  useEffect(()=>{employeeService.getAll().then(setEmployees).catch(()=>setEmployees([]))},[]);
  return <div className="space-y-1">
   <PageHeader title="Time & Attendance"/>
-  <Tabs label="Time & Attendance sections" value={tab} onChange={setTab} tabs={tabs}/>
-  {tab==='daily'?<DailyAttendance employees={employees}/>:<Timesheet employees={employees}/>}
+  <DailyAttendance employees={employees}/>
  </div>;
 }
 
@@ -149,38 +146,5 @@ function DateAttendance({date,employees,onBack}:{date:string;employees:Employee[
    </table></div>
    {shown.length>PAGE_SIZE&&<div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 text-[12px] text-slate-500"><span>Showing {(current-1)*PAGE_SIZE+1}–{Math.min(current*PAGE_SIZE,shown.length)} of {shown.length}</span><div className="flex items-center gap-2"><button type="button" className={ghost} disabled={current===1} onClick={()=>setPage(current-1)}><ChevronLeft size={14}/>Previous</button><span>Page {current} of {pages}</span><button type="button" className={ghost} disabled={current===pages} onClick={()=>setPage(current+1)}>Next<ChevronRight size={14}/></button></div></div>}
   </Card>
- </div>;
-}
-
-type SheetRow={key:string;name:string;number:string;list:AttendanceRecord[];present:number;absent:number;leave:number;late:number;under:number;ot:number;hours:number};
-function Timesheet({employees}:{employees:Employee[]}){
- // Pay periods follow Payroll Settings; each weekly HR2 sync extends the synced part of the cutoff.
- const cutoffs=useMemo(()=>recentCutoffs(),[]);
- const[cutoff,setCutoff]=useState(cutoffs[0]),[q,setQ]=useState(''),[viewing,setViewing]=useState<SheetRow|null>(null);
- const running=runningRange(cutoff),through=hr2SyncedThrough();
- const{records,loading,error,reload}=useAttendance(running?.from??'',running?.to??'');
- const rows=useMemo(()=>{
-  const groups=new Map<string,SheetRow>();
-  records.forEach(record=>{
-   const employee=findAttendanceEmployee(employees,record.empId),key=employee?.id??record.empId;
-   const row=groups.get(key)??{key,name:employee?.name??record.name,number:employee?.employeeNo??record.empId,list:[],present:0,absent:0,leave:0,late:0,under:0,ot:0,hours:0};
-   const status=attendanceStatus(record),c=figures(record),h=Number(workedHours(record));
-   row.list.push(record);if(status==='Present'||status==='Late')row.present++;if(record.status==='Absent')row.absent++;if(record.status==='On Leave')row.leave++;
-   row.late+=c.late;row.under+=c.under;row.ot+=c.ot;if(!Number.isNaN(h))row.hours+=h;
-   groups.set(key,row);
-  });
-  return [...groups.values()].map(row=>({...row,list:[...row.list].sort((a,b)=>a.date.localeCompare(b.date))})).sort((a,b)=>a.name.localeCompare(b.name));
- },[records,employees]);
- const shown=rows.filter(row=>!q||`${row.name} ${row.number}`.toLowerCase().includes(q.toLowerCase()));
- const heads=['Employee','Days Present','Absent','Late (min)','Undertime (min)','OT (min)','Worked Hours','Leave','Action'];
- return <div>
-  <div className="mt-5 grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
-   <Field label="Cutoff"><select className={input} value={`${cutoff.from}|${cutoff.to}`} onChange={event=>setCutoff(cutoffs.find(item=>`${item.from}|${item.to}`===event.target.value)??cutoffs[0])}>{cutoffs.map(item=><option key={item.from} value={`${item.from}|${item.to}`}>{shortRange(item.from,item.to)}</option>)}</select></Field>
-   <span className="self-center text-[12px] text-slate-500 sm:pb-2.5">Synced up to {running&&through?shortDate(running.to):'—'}</span>
-   <TextInput aria-label="Employee Search" placeholder="Search employee..." value={q} onChange={event=>setQ(event.target.value)} className="col-span-2 sm:min-w-[220px]"/>
-  </div>
-  {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
-  <Card className="mt-5 overflow-x-auto"><table className="w-full min-w-[950px] text-left text-[13px]"><thead><tr className={head}>{heads.map(label=><th key={label} className="px-3 py-3">{label}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={heads.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={heads.length}><Empty>No attendance records for this period.</Empty></td></tr>:shown.map(row=><tr key={row.key} className="border-b border-[#eef1f6]"><td className="px-3 py-3"><div className="font-semibold text-slate-800">{row.name}</div><div className="text-[11px] text-[#6b7794]">{row.number}</div></td><td className="px-3 py-3">{row.present}</td><td className="px-3 py-3">{row.absent}</td><td className="px-3 py-3">{row.late}</td><td className="px-3 py-3">{row.under}</td><td className="px-3 py-3">{row.ot}</td><td className="px-3 py-3">{row.hours.toFixed(2)}</td><td className="px-3 py-3">{row.leave}</td><td className="px-3 py-3"><button className={ghost} onClick={()=>setViewing(row)}>View</button></td></tr>)}</tbody></table></Card>
-  {viewing&&<Modal title={`Daily Attendance - ${viewing.name}`} wide onClose={()=>setViewing(null)}><div className="overflow-x-auto"><table className="w-full min-w-[500px] text-left text-[13px]"><thead><tr className={head}>{['Date','Worked Hours','Status'].map(label=><th key={label} className="px-3 py-3">{label}</th>)}</tr></thead><tbody>{viewing.list.map(r=><tr key={`${r.id}-${r.date}`} className="border-b border-[#eef1f6]"><td className="px-3 py-3">{formatDate(r.date)}</td><td className="px-3 py-3">{workedHours(r)}</td><td className="px-3 py-3">{attendanceStatus(r)}</td></tr>)}</tbody></table></div></Modal>}
  </div>;
 }
