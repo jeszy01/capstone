@@ -7,7 +7,7 @@ import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appData
 import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from './hr2Rules.js';
 import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
 import { cutoffPayDate, runStatus } from './payrollFlow.js';
-import { buildRegister } from './payrollRegister.js';
+import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
@@ -526,7 +526,7 @@ const ACTION_LABELS = {
   'payroll.submitted': 'Submitted payroll', 'payroll.returned': 'Returned payroll', 'payroll.funded': 'Confirmed payroll funding',
   'payroll.exported': 'Exported payouts', 'payroll.payouts_paid': 'Marked payouts Paid', 'payroll.payout_failed': 'Marked payout Failed',
   'payroll.payouts_updated': 'Updated payout details', 'payroll.funding_receipt_replaced': 'Replaced funding receipt', 'payroll.paid': 'Payroll paid', 'payroll.closed': 'Closed payroll',
-  'payroll.timesheet_locked': 'Locked timesheet', 'payroll.deleted': 'Deleted payroll', 'attendance.hr2_synced': 'Synced HR2 attendance',
+  'payroll.timesheet_locked': 'Locked timesheet', 'payroll.deleted': 'Deleted payroll', 'payroll.ess_released': 'Released payslips to ESS', 'attendance.hr2_synced': 'Synced HR2 attendance',
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
   'payroll.payslips_generated': 'Generated payslips', 'payroll.payslips_generate_failed': 'Failed passkey attempt',
@@ -895,6 +895,50 @@ app.post('/payroll/payslips/release', auth, allow('payroll.release'), async (req
   }
   if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result, 'payroll.release_failed', 'releasing payslips to ESS for');
   ok(res, { released: false, ...passkeyFailure(result) });
+});
+
+// ---- Release to ESS (Payroll Runs list) ----
+// Publishes each employee's payslip (their Payroll Register line) to ESS and notifies them there. Only payslips not yet
+// released are sent, so releasing again sends nothing twice. Strict Mode off (testing): from Approved; on: once Paid.
+// A Paid run closes when every employee's payslip is released.
+await pool.query(`
+  create table if not exists ess_payslips(
+    run_id text not null, employee_no text not null, payslip jsonb not null,
+    released_at timestamptz not null default now(), released_by text, primary key(run_id, employee_no));
+  create table if not exists ess_notifications(
+    id uuid primary key default gen_random_uuid(), employee_no text not null, title text not null, message text not null,
+    run_id text, created_at timestamptz not null default now(), read_at timestamptz);
+  create index if not exists idx_ess_notifications_employee on ess_notifications(lower(employee_no));`);
+const ESS_RELEASE_STATUSES = ['Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
+app.post('/payroll/runs/:id/ess-release', auth, allow('payroll.release'), async (req, res) => {
+  const runId = req.params.id, at = new Date().toISOString();
+  const { result, payrollRun } = await withLockedRun(runId, async (client, runs, payrollRun) => {
+    const { rows: [options] } = await client.query(`select value, deleted from app_data where key='payroll:run-options'`);
+    const strict = Boolean(options && !options.deleted && appValue(options.value)?.strictMode), status = runStatus(payrollRun);
+    if (!(strict ? ['Paid', 'Closed'] : ESS_RELEASE_STATUSES).includes(status)) throw new HttpError(409, 'RELEASE_NOT_ALLOWED', strict
+      ? `Strict Mode is on: payslips are released to ESS only after the run is Paid. This run is ${status}.`
+      : `Payslips are released to ESS once the run is Approved. This run is ${status}.`);
+    const rows = (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).filter(r => r?.input?.empId);
+    const done = payrollRun.essReleased && typeof payrollRun.essReleased === 'object' ? payrollRun.essReleased : {};
+    const sent = [];
+    for (const row of rows.filter(r => !done[String(r.input.empId)])) {
+      const line = registerLine(row);
+      const payslip = { runId, period: runPeriod(payrollRun), from: payrollRun.from, to: payrollRun.to, payDate: payrollRun.payDate ?? payrollRun.to, ...line };
+      const { rowCount } = await client.query('insert into ess_payslips(run_id, employee_no, payslip, released_by) values($1,$2,$3,$4) on conflict do nothing',
+        [runId, line.empId, JSON.stringify(payslip), String(req.user.id)]);
+      if (rowCount) await client.query('insert into ess_notifications(employee_no, title, message, run_id) values($1,$2,$3,$4)',
+        [line.empId, 'Payslip available', `Your payslip for ${runPeriod(payrollRun)} is ready. Net pay ${pesoText(line.net)}.`, runId]);
+      sent.push(line.empId);
+    }
+    const essReleased = { ...done, ...Object.fromEntries(sent.map(no => [no, at])) };
+    const released = rows.filter(r => essReleased[String(r.input.empId)]).length, closes = sent.length > 0 && released === rows.length && status === 'Paid';
+    const next = runs.map(r => r && String(r.id) === runId ? { ...r, essReleased, ...(closes ? { status: 'Closed', closedAt: at } : {}) } : r);
+    if (sent.length) await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
+    return { sent: sent.length, released, total: rows.length, closes, runs: sent.length ? next : runs };
+  });
+  if (result.sent) await audit('payroll.ess_released', req.user.id, 'Payroll', runId, { description: `Released ${result.sent} payslip${result.sent === 1 ? '' : 's'} of ${runPeriod(payrollRun)} to ESS (${result.released} of ${result.total} released).` }, ipDevice(req));
+  if (result.closes) await audit('payroll.closed', req.user.id, 'Payroll', runId, { description: `Closed payroll for ${runPeriod(payrollRun)}: every payslip is released to ESS.` }, ipDevice(req));
+  ok(res, { sent: result.sent, released: result.released, total: result.total, runs: result.runs });
 });
 
 // ---- /users (admin user management) ----
@@ -2200,8 +2244,8 @@ app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) =
   ok(res, await govLoanWithEmployee(await first('government_loans', { id }) ?? { ...previous, id }));
 });
 
-// Deletes a payroll run in any status (HR Staff or Admin), with its private funding receipt. Loan deductions already
-// posted for a Paid run stay in the loan records. The audit entry keeps the run's status and net pay.
+// Deletes a payroll run that is not yet approved (HR Staff or Admin); an approved run (Approved to Closed) is kept, 409.
+// Any funding receipt or ESS payslips of the run go with it. The audit entry keeps the run's status and net pay.
 app.delete('/payroll/runs/:id', auth, async (req, res) => {
   if (!can(req.user.role, 'payroll.generate') && !can(req.user.role, 'payroll.approve')) throw new AccessError();
   const client = await pool.connect();
@@ -2213,9 +2257,12 @@ app.delete('/payroll/runs/:id', auth, async (req, res) => {
     const runs = data && !data.deleted && Array.isArray(appValue(data.value)) ? appValue(data.value) : [];
     removed = runs.find(r => r && String(r.id) === req.params.id);
     if (!removed) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found.');
+    if (ESS_RELEASE_STATUSES.includes(runStatus(removed))) throw new HttpError(409, 'PAYROLL_APPROVED', `An approved payroll run cannot be deleted. This run is ${runStatus(removed)}.`);
     next = runs.filter(r => r !== removed);
     await client.query(`update app_data set value=$1, updated_at=now(), updated_by=$2 where key='payroll:runs'`, [JSON.stringify(next), req.user.id]);
     await client.query('delete from payroll_funding_receipts where run_id=$1', [String(removed.id)]);
+    await client.query('delete from ess_payslips where run_id=$1', [String(removed.id)]);
+    await client.query('delete from ess_notifications where run_id=$1', [String(removed.id)]);
     await client.query('commit');
   } catch (e) {
     await client.query('rollback').catch(() => undefined);
@@ -2413,6 +2460,19 @@ app.get('/integrations/ess/claims', essAuth, async (req, res) => {
   const employee = await essEmployee(req.query.employee_no);
   const { claim: list } = await withClaims(claims => ({ claims, claim: claims.filter(item => item && String(item.employeeId) === String(employee.id)) }));
   ok(res, list.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''))).map(essClaimView));
+});
+
+// Released payslips of one employee (ESS Payslips page), newest first. See backend-render/ESS_PAYSLIPS_API.md.
+app.get('/integrations/ess/payslips', essAuth, async (req, res) => {
+  const employee = await essEmployee(req.query.employee_no);
+  const { rows } = await pool.query('select payslip, released_at from ess_payslips where lower(employee_no)=lower($1) order by released_at desc', [employee.employee_number]);
+  ok(res, rows.map(r => ({ ...r.payslip, releasedAt: r.released_at })));
+});
+// The employee's ESS notifications (a payslip was released), newest first.
+app.get('/integrations/ess/notifications', essAuth, async (req, res) => {
+  const employee = await essEmployee(req.query.employee_no);
+  const { rows } = await pool.query('select id, title, message, run_id, created_at, read_at from ess_notifications where lower(employee_no)=lower($1) order by created_at desc limit 100', [employee.employee_number]);
+  ok(res, rows);
 });
 
 // Row counts for checking which database this service reads; attendance is the HR2 store in app_data "attendance:hr2".

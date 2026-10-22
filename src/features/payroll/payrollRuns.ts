@@ -36,6 +36,7 @@ export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;
  funding?:{receiptId:string;fileName:string;mimeType:string;size:number;amount:number;uploadedAt:string;uploadedBy:string;uploadedById:string;confirmedAt:string;confirmedBy:string;confirmedById:string;replacedFrom?:string|null};
  payouts?:Record<string,PayoutLine>;exports?:PayoutExport[];paidAt?:string;paidBy?:string;
  payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;released?:Record<string,string>;closedAt?:string;
+ /** Set by the server on Release to ESS: employee number -> ISO date-time the payslip was published to ESS. */essReleased?:Record<string,string>;
  paymentMethod?:string;releasedAt?:string;releasedBy?:string;rejectionReason?:string};
 export const RUNS_KEY='payroll:runs';
 /** A payroll input with every amount at zero. */
@@ -135,6 +136,12 @@ export async function releaseDepartments(id:string,departments:string[],all:bool
  if(!data.released)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
  if(data.runs)write(RUNS_KEY,data.runs);
  return {verified:true};
+}
+/** Publishes the run's unreleased payslips to ESS; the server checks the status and role, notifies each employee and logs it. */
+export async function releaseToEss(id:string){
+ const {data}=await apiClient.post<Record<string,never>,{data:{sent:number;released:number;total:number;runs:PayrollRun[]}}>(`/payroll/runs/${id}/ess-release`,{});
+ write(RUNS_KEY,data.runs);
+ return data;
 }
 // Generates a Paid run's payslips after the server verifies the user's passkey; the server also writes Logs & Audit.
 export async function generatePayslips(id:string,passkey:string):Promise<PayslipPasskeyCheck>{

@@ -5,8 +5,8 @@ import {peso,read} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {can} from '../auth/permissions';
 import type {Employee} from '../../types/domain';
-import {cutoffNumberFor,loadRates} from '../settings/payrollSettings';
-import {RUNS_KEY,deleteRun,isThirteenthMonthRun,runLabel,runStatus} from './payrollRuns';
+import {cutoffNumberFor,loadRates,loadRunOptions} from '../settings/payrollSettings';
+import {APPROVED_STATUSES,RUNS_KEY,deleteRun,isThirteenthMonthRun,releaseToEss,runLabel,runStatus} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
 import {processRun} from './computeRun';
 import {StatusBadge} from '../../components/common/StatusBadge';
@@ -15,36 +15,54 @@ import {cell,flushCard,rowHeader,tableHead} from '../../components/common/tableU
 const HEADINGS=['Period','Schedule','Approval','Payslips','Total Net','Actions'];
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
-/** Payroll Runs: every run with its period, schedule and approval status. A Draft is processed here, any run can be deleted, and Details opens the run. */
+/**
+ * Payroll Runs: every run with its period, schedule and approval status. A Draft is processed here; a run not yet
+ * approved can be deleted; an approved run opens its payslips and releases them to ESS. Details opens the run.
+ */
 export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAmounts:boolean}){
  // ?status=Pending Approval (or a comma list) shows only runs in those statuses, as the Dashboard links do.
  const[params,setParams]=useSearchParams();
- const[busy,setBusy]=useState(''),[error,setError]=useState(''),[deleting,setDeleting]=useState<PayrollRun|null>(null),[,setTick]=useState(0);
+ const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleting,setDeleting]=useState<PayrollRun|null>(null),[releasing,setReleasing]=useState<PayrollRun|null>(null),[,setTick]=useState(0);
  const statusFilter=(params.get('status')??'').split(',').map(item=>item.trim()).filter(Boolean);
  const clearFilter=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
  const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].filter(run=>!statusFilter.length||statusFilter.includes(runStatus(run))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- const rates=loadRates(),canPrepare=can('payroll.generate'),canDelete=canPrepare||can('payroll.approve');
+ const rates=loadRates(),strict=loadRunOptions().strictMode,canPrepare=can('payroll.generate'),canDelete=canPrepare||can('payroll.approve'),canRelease=can('payroll.release');
  // A run is processed once it has computed rows; until then Payslips and Total Net show "—".
  const processed=(run:PayrollRun)=>runStatus(run)!=='Draft'&&run.rows.length>0;
  const net=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
  const schedule=(run:PayrollRun)=>isThirteenthMonthRun(run)?'13th month pay'
   :rates.payPeriodsPerMonth===1?'Monthly':`Semi-monthly · ${cutoffNumberFor(run.from,rates)===1?'1st':'2nd'} cutoff`;
- const payslips=(run:PayrollRun)=>run.released&&Object.keys(run.released).length?'Released':run.payslipsGeneratedAt?'Generated':'Not generated';
+ // Payslips published to ESS out of the run's employees (Release to ESS).
+ const essCount=(run:PayrollRun)=>run.rows.filter(row=>run.essReleased?.[row.input.empId]).length;
+ const payslips=(run:PayrollRun)=>{const sent=essCount(run);return sent?(sent===run.rows.length?'Released to ESS':`${sent} of ${run.rows.length} in ESS`):run.payslipsGeneratedAt?'Generated':'Not generated'};
+ // Strict Mode off (testing): Release to ESS from Approved; on: only once the run is Paid.
+ const releaseOpen=(run:PayrollRun)=>!strict||['Paid','Closed'].includes(runStatus(run));
  const act=async(name:string,work:()=>Promise<unknown>)=>{
-  setBusy(name);setError('');
+  setBusy(name);setError('');setNotice('');
   try{await work();setTick(t=>t+1)}
   catch(cause){setError(message(cause,'The payroll run could not be saved.'))}
   finally{setBusy('')}
  };
  const actions=(run:PayrollRun)=>{
+  const details=<Link className={ghost} to={`/payroll/review?run=${run.id}`}>Details</Link>;
+  if(APPROVED_STATUSES.includes(runStatus(run))){
+   const sent=essCount(run),total=run.rows.length;
+   return <>
+    <Link className={ghost} to={`/payroll?tab=payslip&run=${run.id}`}>Payslips</Link>
+    {total>0&&sent===total?<StatusBadge status="Released"/>
+     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Strict Mode is on: release to ESS after the run is Paid.'} onClick={()=>{setError('');setReleasing(run)}}>Release to ESS ({sent}/{total})</button>}
+    {details}
+   </>;
+  }
   return <>
    {runStatus(run)==='Draft'&&canPrepare&&<button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act(`process-${run.id}`,()=>processRun(run,employees))}>{busy===`process-${run.id}`?'Processing…':'Process'}</button>}
-   <Link className={ghost} to={`/payroll/review?run=${run.id}`}>Details</Link>
+   {details}
    {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}
   </>;
  };
  return <section className="min-w-0">
   {error&&<p role="alert" className="mb-3 mt-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+  {notice&&<p role="status" className="mb-3 mt-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
   <Card className={flushCard}>
    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-50 px-5 py-4">
     <div><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">Payroll runs</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Newest first, with each run's status.</p></div>
@@ -65,9 +83,13 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
     </tr>)}</tbody>
    </table></div>
   </Card>
+  {releasing&&<Modal title="Release payslips to ESS" onClose={()=>{if(!busy)setReleasing(null)}}>
+   <p className="mt-0 text-[13px] text-slate-600">Publish the payslips for {runLabel(releasing)} to each employee's ESS Payslips page? {releasing.rows.length-essCount(releasing)} of {releasing.rows.length} {releasing.rows.length===1?'payslip is':'payslips are'} not released yet; only those are sent, and each employee is notified in ESS.</p>
+   {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setReleasing(null)}>Cancel</button><button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act('release',async()=>{const result=await releaseToEss(releasing.id);setReleasing(null);setNotice(result.sent?`Released ${result.sent} ${result.sent===1?'payslip':'payslips'} to ESS (${result.released}/${result.total}).`:'Every payslip of this run is already in ESS; nothing was sent.')})}>{busy==='release'?'Releasing…':'Release'}</button></div>
+  </Modal>}
   {deleting&&<Modal title="Delete payroll run" onClose={()=>{if(!busy)setDeleting(null)}}>
-   <p className="mt-0 text-[13px] text-slate-600">Delete the {runStatus(deleting)} payroll for {runLabel(deleting)}? {runStatus(deleting)==='Draft'?'It has not been processed, so no figures are lost.':'Its figures, approval, funding receipt, payouts and payslips are removed with it.'} This cannot be undone.</p>
-   {['Paid','Closed'].includes(runStatus(deleting))&&<p className="mb-0 mt-2 rounded-lg bg-amber-50 p-3 text-[12px] text-amber-900">Loan deductions already posted for this run stay in the loan records, and payslips already released to employees are withdrawn.</p>}
+   <p className="mt-0 text-[13px] text-slate-600">Delete the {runStatus(deleting)} payroll for {runLabel(deleting)}? {runStatus(deleting)==='Draft'?'It has not been processed, so no figures are lost.':'Its computed figures are removed with it.'} This cannot be undone.</p>
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setDeleting(null)}>Cancel</button><button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act('delete',async()=>{await deleteRun(deleting.id);setDeleting(null)})}>{busy==='delete'?'Deleting…':'Delete'}</button></div>
   </Modal>}

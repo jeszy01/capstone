@@ -39,7 +39,7 @@ export const pesoText = v => `₱${Number(v || 0).toLocaleString('en-PH', { mini
 
 // ---- Payroll runs: the process and its statuses are in payrollFlow.js ----
 // Set only by the server: payslip generation, release to ESS (passkey required) and closing the run.
-const RUN_SERVER_FIELDS = ['payslipsGeneratedAt', 'payslipsGeneratedBy', 'released', 'releasedAt', 'releasedBy', 'closedAt'];
+const RUN_SERVER_FIELDS = ['payslipsGeneratedAt', 'payslipsGeneratedBy', 'released', 'releasedAt', 'releasedBy', 'closedAt', 'essReleased'];
 // Fixed when the run is created.
 const RUN_IDENTITY_FIELDS = ['id', 'runType', 'from', 'to', 'payDate', 'createdAt', 'preparedBy', 'preparedById'];
 // Submitting also takes the current Payout Details, so payout lines may be refreshed (still all Pending).

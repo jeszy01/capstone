@@ -1,4 +1,5 @@
 import {useMemo,useState} from 'react';
+import {useSearchParams} from 'react-router-dom';
 import {Button,Card,Empty,Field,Modal,TextInput,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {peso,read} from '../../utils/storage';
@@ -19,8 +20,10 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
  // Payslips exist for Paid runs once generated with the passkey; runs paid before that count as generated when paid.
  const generatedAt=(r:PayrollRun)=>r.payslipsGeneratedAt??(r.status==='Approved'?r.paidAt:undefined);
  const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null);
- const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>['Paid','Closed'].includes(runStatus(r))&&generatedAt(r)).sort((a,b)=>(generatedAt(b)??'').localeCompare(generatedAt(a)??'')),[tick]);
- const[runId,setRunId]=useState(''),[dept,setDept]=useState(''),[slip,setSlip]=useState<RunRow|null>(null);
+ // ?run=<id> (the Payslips button on Payroll Runs) opens that run's departments, even before it is Paid.
+ const linked=useSearchParams()[0].get('run')??'';
+ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>(['Paid','Closed'].includes(runStatus(r))&&generatedAt(r))||r.id===linked).sort((a,b)=>(generatedAt(b)??'').localeCompare(generatedAt(a)??'')),[tick,linked]);
+ const[runId,setRunId]=useState(linked),[dept,setDept]=useState(''),[slip,setSlip]=useState<RunRow|null>(null);
  const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
  const deptsOf=(run:PayrollRun)=>[...new Set(run.rows.map(deptOf))].sort();
  const run=runs.find(r=>r.id===runId);
