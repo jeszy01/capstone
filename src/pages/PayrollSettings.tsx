@@ -11,16 +11,16 @@ import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate,saveWithholdi
 import type {PayrollPeriod,TaxBracket,WithholdingTaxRuleSet} from '../features/payroll/withholdingTax';
 import {loadThirteenthMonthRules,saveThirteenthMonthRules,validateThirteenthMonthRules} from '../features/payroll/thirteenthMonth';
 import type {ThirteenthMonthRules} from '../features/payroll/thirteenthMonth';
-import {HOLIDAY_TYPES,OVERTIME_ROUNDING,RATE_FIELDS,loadHolidays,loadRates,loadTimeSettings,saveHolidays,saveRates,saveTimeSettings,validateRates,validateTimeSettings} from '../features/settings/payrollSettings';
-import type {Holiday,HolidayType,RateField,TimeSettings} from '../features/settings/payrollSettings';
+import {HOLIDAY_TYPES,OVERTIME_ROUNDING,RATE_FIELDS,loadHolidays,loadRates,loadRunOptions,loadTimeSettings,saveHolidays,saveRates,saveRunOptions,saveTimeSettings,validateRates,validateTimeSettings} from '../features/settings/payrollSettings';
+import type {Holiday,HolidayType,RateField,RunOptions,TimeSettings} from '../features/settings/payrollSettings';
 import type {OvertimeRounding,PayrollRates} from '../types/domain';
 import {peso} from '../utils/storage';
 import {formatDate} from '../utils/date';
 
-type SectionId='time'|'schedule'|'holiday'|'contributions'|'withholding'|'thirteenth';
+type SectionId='time'|'schedule'|'holiday'|'contributions'|'withholding'|'thirteenth'|'runs';
 const SECTIONS:Array<{id:SectionId;label:string}>=[
  {id:'time',label:'Working Time & Overtime'},{id:'schedule',label:'Pay Schedule'},{id:'holiday',label:'Holiday Pay'},{id:'contributions',label:'Government Contributions'},
- {id:'withholding',label:'Withholding Tax'},{id:'thirteenth',label:'13th Month Rules'},
+ {id:'withholding',label:'Withholding Tax'},{id:'thirteenth',label:'13th Month Rules'},{id:'runs',label:'Payroll Run Options'},
 ];
 type SectionProps={editing:boolean;canEdit:boolean;onEdit:()=>void;onDone:(message?:string)=>void;onDirty:(dirty:boolean)=>void};
 type RateDraft=Record<keyof PayrollRates,string>;
@@ -93,7 +93,9 @@ function PayScheduleSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps
   <Field label="Cutoff periods"><TextInput value={cutoffs} readOnly/></Field>
   {semiMonthly&&rate('firstPayDay')}
   {rate('secondPayDay',semiMonthly?undefined:'Pay day')}
- </div></SectionShell>;
+ </div>
+  <p className="mb-0 mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-600">Payroll runs set their pay date automatically: the 15th for the 1st cutoff and the last day of the month for the 2nd, moved to the previous working day for a weekend or a holiday in Holiday Pay.</p>
+ </SectionShell>;
 }
 
 function HolidaySection({editing,canEdit,onEdit,onDone,onDirty,calendarLocked}:SectionProps&{calendarLocked:boolean}){
@@ -223,6 +225,21 @@ function ThirteenthMonthSection({editing,canEdit,onEdit,onDone,onDirty,positions
  </div></SectionShell>;
 }
 
+const RUN_OPTION_FIELDS:Array<[keyof RunOptions,string,string]>=[
+ ['strictMode','Strict Mode','Create Payroll blocks instead of warning when the timesheet is not locked, HR2 attendance does not reach the cutoff end, or a run for the cutoff already exists.'],
+ ['showNightDifferential','Night Differential column','Show Night Differential in the printed payroll register.'],
+ ['showTax','Tax column','Show withholding tax in the printed payroll register.'],
+ ['showPriorEmployer','Prior-employer columns','Show the prior-employer year-to-date inputs in Review Payroll and their columns in the printed register.'],
+];
+function RunOptionsSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){
+ const {draft,setDraft}=useDraft(loadRunOptions,editing,onDirty);
+ const save=useSave(()=>[],()=>{saveRunOptions(draft);onDone('Payroll Run Options saved.')});
+ return <SectionShell title="Payroll Run Options" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}><div className="grid gap-3">
+  {RUN_OPTION_FIELDS.map(([key,label,help])=><label key={key} className="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-3 text-[13px]"><input type="checkbox" className={`${checkbox} mt-0.5`} disabled={!editing} checked={draft[key]} onChange={event=>setDraft({...draft,[key]:event.target.checked})}/><span><span className="block font-semibold text-slate-700">{label}</span><span className="block text-[12px] text-slate-500">{help}</span></span></label>)}
+  <p className="m-0 text-[12px] text-slate-500">All are off by default. Night differential, tax and prior-employer amounts are computed either way; these options only show them.</p>
+ </div></SectionShell>;
+}
+
 export default function PayrollSettings(){
  const navigate=useNavigate();
  const canEdit=can('settings.edit');
@@ -265,6 +282,7 @@ export default function PayrollSettings(){
     {section==='contributions'&&<ContributionsSection {...props('contributions')}/>}
     {section==='withholding'&&<WithholdingSection {...props('withholding')}/>}
     {section==='thirteenth'&&<ThirteenthMonthSection {...props('thirteenth')} positions={positions}/>}
+    {section==='runs'&&<RunOptionsSection {...props('runs')}/>}
    </div>
   </div>
   {leave&&<ConfirmDialog title="Discard changes?" message="Leave without saving your changes?" confirmLabel="Discard" danger saving={false} onCancel={()=>setLeave(null)} onConfirm={()=>{const action=leave;setLeave(null);setEditing(null);setDirty(false);action()}}/>}

@@ -30,6 +30,15 @@ export const DEFAULT_TIME_SETTINGS:TimeSettings={shiftStart:'08:00',shiftEnd:'17
 export const loadTimeSettings=():TimeSettings=>({...DEFAULT_TIME_SETTINGS,...read<Partial<TimeSettings>>(TIME_SETTINGS_KEY,{})});
 export const saveTimeSettings=(settings:TimeSettings)=>write(TIME_SETTINGS_KEY,settings);
 export const OVERTIME_ROUNDING:Array<[OvertimeRounding,string]>=[['none','No rounding'],['15','Round down to 15 minutes'],['30','Round down to 30 minutes'],['60','Round down to 1 hour']];
+
+// Payroll run options. Strict Mode turns the Create Payroll warnings (timesheet not locked, HR2 sync short of the
+// cutoff end, a run already exists) into blocks. The show* options add those columns to the printed register and the
+// prior-employer inputs to Review Payroll; the amounts are computed either way.
+export const RUN_OPTIONS_KEY='payroll:run-options';
+export interface RunOptions{strictMode:boolean;showNightDifferential:boolean;showTax:boolean;showPriorEmployer:boolean}
+export const DEFAULT_RUN_OPTIONS:RunOptions={strictMode:false,showNightDifferential:false,showTax:false,showPriorEmployer:false};
+export const loadRunOptions=():RunOptions=>({...DEFAULT_RUN_OPTIONS,...read<Partial<RunOptions>>(RUN_OPTIONS_KEY,{})});
+export const saveRunOptions=(options:RunOptions)=>write(RUN_OPTIONS_KEY,options);
 export const loadAttendanceSchedule=():AttendanceSchedule=>{const time=loadTimeSettings();return {start:time.shiftStart,end:time.shiftEnd,otMin:loadRates().otMinMinutes,otRounding:time.otRounding}};
 
 export type HolidayType='Regular Holiday'|'Special Non-Working Day'|'Special Working Day';

@@ -30,7 +30,7 @@ describe('payroll period report',()=>{
   expect(report.runs.map(item=>item.id)).toEqual(['oct-1','oct-2']);
   expect(report.excludedPending).toBe(1);
   expect(report.totals).toEqual(expect.objectContaining({gross:28000,deductions:2800,net:25200,employees:2}));
-  expect(report.byRun.map(line=>line.detail)).toEqual(['Released','Paid']);
+  expect(report.byRun.map(line=>line.detail)).toEqual(['Closed','Paid']);
   expect(report.byEmployee.map(line=>[line.label,line.totals.gross])).toEqual([['Ana Cruz',20000],['Ben Reyes',8000]]);
   expect(report.byDepartment.map(line=>line.label)).toEqual(['Finance','Sales']);
   expect(report.title).toBe('Monthly Payroll Report · October 2026');

@@ -7,8 +7,9 @@ type PendingWrite={raw?:string;deleted?:boolean};
 // Logs & Audit is kept by the server, so 'audit:' keys are no longer synchronized.
 const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','notifications:','payroll:','reimbursement:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
-// Payroll Settings keys: every 'payroll:' key except runs and records, plus the legacy 13th month rules key.
-const settingsKey=(key:string)=>(key.startsWith('payroll:')&&key!=='payroll:runs'&&key!=='payroll:records')||key==='compensation:thirteenth-month-rules';
+// Payroll Settings keys: every 'payroll:' key except the payroll data HR keeps, plus the legacy 13th month rules key.
+const PAYROLL_DATA_KEYS=['payroll:runs','payroll:records','payroll:payouts','payroll:timesheet-locks'];
+const settingsKey=(key:string)=>(key.startsWith('payroll:')&&!PAYROLL_DATA_KEYS.includes(key))||key==='compensation:thirteenth-month-rules';
 // Attendance now comes from HR2; purge the retired manually-entered copies.
 const RETIRED_KEYS=['attendance:records','attendance:schedule'];
 const rawSet=Storage.prototype.setItem;

@@ -1,251 +1,344 @@
-import {useEffect,useMemo,useState} from 'react';
-import {useNavigate,useSearchParams} from 'react-router-dom';
-import {Button,Empty,LoadingState,Modal,ghost} from '../../components/common/ui';
-import type {PayrollInput,PayrollRates} from '../../types/domain';
+import {Fragment,useEffect,useMemo,useState} from 'react';
+import {Link,useNavigate,useSearchParams} from 'react-router-dom';
+import {ChevronDown,ChevronRight,Download} from 'lucide-react';
+import {Button,Card,Empty,Field,Modal,TextInput,button,ghost,input,success} from '../../components/common/ui';
+import type {Employee,PayrollInput,PayrollResult} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
-import {hmoService} from '../hmo/hmoService';
-import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
-import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
-import {fetchAttendance} from '../attendance/attendanceService';
-import {attendanceGaps} from '../attendance/workDays';
-import {finalCutoffBlocked,isFinalTaxRow,isYearEndCutoff,yearToDateHistory} from './taxHistory';
-import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payDateFor,payrollSettingsSnapshot} from '../settings/payrollSettings';
-import {holidayPay,nightDifferentialPay} from './premiumPay';
-import {computeDeductions} from '../deductions/deductionService';
 import {getCurrentUser} from '../auth/authService';
-import {notifyPayrollPending} from '../notifications/notificationService';
+import {notifyPayrollDecided,notifyPayrollFunded,notifyPayrollPending} from '../notifications/notificationService';
 import {can} from '../auth/permissions';
-import {calculatePayroll} from './payrollCalculator';
-import {BLANK_PAYROLL_INPUT,RUNS_KEY,isThirteenthMonthRun,periodLabel,runLabel,runStatusLabel,updateRuns} from './payrollRuns';
-import {cutoffSynced} from '../attendance/attendanceService';
-import type {ManualAdjustment,PayrollRun,PayrollRunType,RunRow} from './payrollRuns';
 import {recordAudit} from '../audit/auditService';
-import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
-import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
-import {activeCompensations,isBonusReward} from '../compensation/compensationState';
-import {numberValue,peso,read} from '../../utils/storage';
-import {loadWithholdingRules} from './withholdingTax';
-import {compensationService} from '../compensation/compensationService';
-import {loanService} from '../deductions/loanService';
-import {governmentLoanService} from '../governmentLoans/governmentLoanService';
-import {governmentLoanDeductions,governmentLoanTotals,rowLoanAmounts} from '../governmentLoans/governmentLoanPayroll';
 import {StatusBadge} from '../../components/common/StatusBadge';
+import {numberValue,peso,read,write} from '../../utils/storage';
+import {formatDate} from '../../utils/date';
+import {loadRates,loadRunOptions,payrollSettingsSnapshot} from '../settings/payrollSettings';
+import type {RunOptions} from '../settings/payrollSettings';
+import {rowLoanAmounts} from '../governmentLoans/governmentLoanPayroll';
+import {buildPayslipBreakdownFromRun} from './payslipMath';
+import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,isThirteenthMonthRun,markPayouts,runLabel,runNextStep,runStatus,settleRunLoans,updateRun} from './payrollRuns';
+import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
+import {calcRow,computeRunRows,submitBlocked} from './computeRun';
+import {reviewChecks} from './runChecks';
+import {addPayoutLines,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
+import {PayoutDetailsModal} from './PayoutDetails';
+import {PayslipPasskeyModal} from './PayslipPasskeyModal';
+import {RunActivityLog,RunStepper} from './RunProgress';
 
-type EditKey='sssLoan'|'pagibigLoan'|'companyLoan'|'cashAdvance'|'otherDeductions'|'thirteenthMonthAndOtherBenefits'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
-const editLabels:Record<EditKey,string>={sssLoan:'SSS Loan',pagibigLoan:'Pag-IBIG Loan',companyLoan:'Company Loan',cashAdvance:'Cash Advance',otherDeductions:'Other Deductions',thirteenthMonthAndOtherBenefits:'13th-month & other benefits',taxExemptBenefits:'Tax-exempt benefits',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
-const editKeys:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance','otherDeductions','thirteenthMonthAndOtherBenefits','taxExemptBenefits','priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
-const blank=BLANK_PAYROLL_INPUT;
-// Loan installments come from the approved loan schedules and cannot be typed in.
-const automatedLoanFields:EditKey[]=['sssLoan','pagibigLoan','companyLoan','cashAdvance'];
-const governmentLoanSum=(row:RunRow)=>{const loans=rowLoanAmounts(row.input,row.governmentLoans);return loans.govSssLoan+loans.govPagibigLoan};
+// Amounts HR may type in while a run is Computed; each change needs a reason.
+type EditKey='otherDeductions'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
+const EDIT_LABELS:Record<EditKey,string>={otherDeductions:'Other Deductions',taxExemptBenefits:'Tax-exempt benefits',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
+const PRIOR_KEYS:EditKey[]=['priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
+const EDIT_KEYS:EditKey[]=['otherDeductions','taxExemptBenefits',...PRIOR_KEYS];
 const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const heads=['Present','Absent','Leave','Rest Day','Late (min)','Undertime (min)','OT (hrs)','Basic Pay','Overtime','Night Differential','Holiday Pay','Leave Pay','Allowances','Incentives & Bonuses','Gross Pay','Absences','Late / Undertime','SSS','PhilHealth','Pag-IBIG','HMO','Tax','Government Loans','SSS Loan','Pag-IBIG Loan','Company Loan','Cash Advance','Other Deductions','13th-month & other benefits','Tax-exempt benefits','Prior-employer taxable YTD','Prior-employer benefits YTD','Prior-employer tax withheld','Prior-employer payroll periods','Total'];
+const sameInput=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
+// The amounts as computed, before any hand-typed change.
+const originalInput=(row:RunRow):PayrollInput=>({...row.input,...Object.fromEntries((row.manualAdjustments??[]).map(change=>[change.field,change.original]))});
+const totalsOf=(rows:RunRow[])=>({gross:rows.reduce((t,row)=>t+row.result.gross,0),deductions:rows.reduce((t,row)=>t+row.result.deductions,0),net:rows.reduce((t,row)=>t+row.result.net,0)});
+const governmentLoanSum=(row:RunRow)=>{const loans=rowLoanAmounts(row.input,row.governmentLoans);return loans.govSssLoan+loans.govPagibigLoan};
+const reasonKey=(empId:string,field:string)=>`${empId}|${field}`;
+const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
+// The full register, printed only. Night Differential, Tax and the prior-employer columns follow Payroll Run Options.
+type Column={label:string;group:'Attendance'|'Earnings'|'Deductions & benefits';value:(row:RunRow,c:PayrollResult)=>number;count?:boolean;option?:keyof Omit<RunOptions,'strictMode'>};
+const COLUMNS:Column[]=[
+ {label:'Present',group:'Attendance',count:true,value:row=>numberValue(row.input.daysWorked)},
+ {label:'Absent',group:'Attendance',count:true,value:row=>numberValue(row.input.absentDays)},
+ {label:'Leave',group:'Attendance',count:true,value:row=>numberValue(row.input.vlDays)},
+ {label:'Rest Day',group:'Attendance',count:true,value:row=>row.rest},
+ {label:'Late (min)',group:'Attendance',count:true,value:row=>numberValue(row.input.lateMin)},
+ {label:'Undertime (min)',group:'Attendance',count:true,value:row=>numberValue(row.input.undertimeMin)},
+ {label:'OT (hrs)',group:'Attendance',count:true,value:row=>numberValue(row.input.otHours)},
+ {label:'Basic Pay',group:'Earnings',value:(_,c)=>c.basic},
+ {label:'Overtime',group:'Earnings',value:(_,c)=>c.overtime},
+ {label:'Night Differential',group:'Earnings',option:'showNightDifferential',value:row=>numberValue(row.input.nightDifferential)},
+ {label:'Holiday Pay',group:'Earnings',value:row=>numberValue(row.input.holidayPay)},
+ {label:'Leave Pay',group:'Earnings',value:(_,c)=>c.leavePay},
+ {label:'Allowances',group:'Earnings',value:(_,c)=>c.allowances??0},
+ {label:'Incentives & Bonuses',group:'Earnings',value:row=>numberValue(row.input.otherEarnings)+numberValue(row.input.bonusesNonTaxable)},
+ {label:'Gross Pay',group:'Earnings',value:(_,c)=>c.gross},
+ {label:'Absences',group:'Deductions & benefits',value:(_,c)=>c.absences??0},
+ {label:'Late / Undertime',group:'Deductions & benefits',value:(_,c)=>c.lateUt},
+ {label:'SSS',group:'Deductions & benefits',value:(_,c)=>c.sss},
+ {label:'PhilHealth',group:'Deductions & benefits',value:(_,c)=>c.phil},
+ {label:'Pag-IBIG',group:'Deductions & benefits',value:(_,c)=>c.pagibig},
+ {label:'HMO',group:'Deductions & benefits',value:row=>row.hmo},
+ {label:'Tax',group:'Deductions & benefits',option:'showTax',value:(_,c)=>c.tax},
+ {label:'Government Loans',group:'Deductions & benefits',value:row=>governmentLoanSum(row)},
+ {label:'SSS Loan',group:'Deductions & benefits',value:row=>numberValue(row.input.sssLoan)},
+ {label:'Pag-IBIG Loan',group:'Deductions & benefits',value:row=>numberValue(row.input.pagibigLoan)},
+ {label:'Company Loan',group:'Deductions & benefits',value:row=>numberValue(row.input.companyLoan)},
+ {label:'Cash Advance',group:'Deductions & benefits',value:row=>numberValue(row.input.cashAdvance)},
+ {label:'Other Deductions',group:'Deductions & benefits',value:row=>numberValue(row.input.otherDeductions)},
+ {label:'13th-month & other benefits',group:'Deductions & benefits',value:row=>numberValue(row.input.thirteenthMonthAndOtherBenefits)},
+ {label:'Tax-exempt benefits',group:'Deductions & benefits',value:row=>numberValue(row.input.taxExemptBenefits)},
+ ...PRIOR_KEYS.map((key):Column=>({label:EDIT_LABELS[key],group:'Deductions & benefits',option:'showPriorEmployer',value:row=>numberValue(row.input[key])})),
+ {label:'Total',group:'Deductions & benefits',value:(_,c)=>c.deductions},
+];
+
+const METHOD_FILES:Record<PayoutMethod,string>={'Bank':'Export bank CSV','E-wallet':'Export e-wallet list','Cash':'Export cash list'};
+type Dialog='submit'|'Approved'|'Returned'|'Rejected'|'fund'|'payslips';
+
+/** One payroll run, from Draft to Closed: its figures, checks, approval, funding, payouts and activity. */
 export default function ReviewPayroll(){
- const[params]=useSearchParams();const nav=useNavigate();const user=getCurrentUser();
- const runId=params.get('run');
- const saved=useMemo(()=>runId?read<PayrollRun[]>(RUNS_KEY,[]).find(run=>run.id===runId):undefined,[runId]);
- const runType:PayrollRunType=saved?.runType??(params.get('type')==='thirteenth-month'?'thirteenth-month':'regular');
- const thirteenth=runType==='thirteenth-month';
- // A 13th month run is dated on its release date.
- const from=saved?.from??(thirteenth?params.get('date'):params.get('from'))??'',to=saved?.to??(thirteenth?params.get('date'):params.get('to'))??'';
- const title=from&&to?runLabel({runType,from,to}):'';
- // A saved run keeps the settings it was generated with.
- const rates=useMemo<PayrollRates>(()=>saved?.settings?.rates??loadRates(),[saved]);
- const payDate=saved?.payDate??(from&&to?(thirteenth?to:payDateFor(from,to,rates)):'');
- const[rows,setRows]=useState<RunRow[]>(saved?.rows??[]);
- // The amounts as loaded, so typed changes can be listed with a reason before submission.
- const[originals,setOriginals]=useState<Record<string,PayrollInput>>({}),[reasons,setReasons]=useState<Record<string,string>>({});
- const[loading,setLoading]=useState(!saved&&Boolean(from&&to));
- const[error,setError]=useState('');
- const[confirming,setConfirming]=useState(false),[submitBusy,setSubmitBusy]=useState(false);
- const[loanError,setLoanError]=useState('');
- const payPeriod=rates.payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const;
- // The last December payroll is the year-end adjustment: it annualizes the year's pay and withholding.
- const yearEnd=!thirteenth&&isYearEndCutoff(to);
- const calc=(row:RunRow)=>{const rules=loadWithholdingRules();const final=isFinalTaxRow({runType,to},row);const history=yearToDateHistory(read<PayrollRun[]>(RUNS_KEY,[]),row,{year:from.slice(0,4),from,to,currentRunId:saved?.id,final},rates,rules);if(thirteenth)return calculatePayroll(row.input,rates,[],{periodStart:from,periodEnd:to,period:payPeriod,priorYear:history,rules});return calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:final,rules})};
+ const[params]=useSearchParams();const nav=useNavigate();
+ const runId=params.get('run')??'';
+ const[tick,setTick]=useState(0);
+ const run=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).find(item=>item.id===runId),[runId,tick]);
+ const[employees,setEmployees]=useState<Employee[]>([]);
+ useEffect(()=>{employeeService.getAll().then(setEmployees).catch(()=>setEmployees([]))},[]);
+ if(!run)return <div className="space-y-4"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><Empty>Payroll run not found. Create a payroll from Payroll Runs.</Empty></div>;
+ return <RunPage key={run.id} run={run} employees={employees} onChanged={()=>setTick(t=>t+1)}/>;
+}
 
- useEffect(()=>{
-  if(saved||!from||!to)return;
-  let active=true;
-  setLoanError('');
-  (async()=>{
-   try{
- if(thirteenth){
-  const employees=await employeeService.getAllFromServer();
-  const lines=computeThirteenthMonth({runs:read<PayrollRun[]>(RUNS_KEY,[]),employees,rules:loadThirteenthMonthRules(),releaseDate:to});
-  const built=lines.map(line=>{const input:PayrollInput={...blank,empId:line.empId,name:line.name,thirteenthMonthAndOtherBenefits:line.amount};return {position:line.position,rest:0,hmo:0,input,result:calculatePayroll(input,rates,[],{periodStart:from,periodEnd:to,period:payPeriod,rules:loadWithholdingRules()})}});
-  if(active){setRows(built);setOriginals(Object.fromEntries(built.map(row=>[row.input.empId,row.input])));setLoading(false)}
-  return;
- }
- const employees=await employeeService.getAllFromServer();
- const[records,bundle,scheduledLoans,scheduledGovernmentLoans,hmoLines]=await Promise.all([
- fetchAttendance({from,to},employees),
- compensationService.load(),
- loanService.schedule(from,to),
- governmentLoanService.schedule(from,to),
- hmoService.cutoffLines(from,to,rates.payPeriodsPerMonth),
-]);
- const assignments=bundle.assignments;
-const grades=bundle.grades;
-// Allowances and approved incentives & bonuses are maintained in Compensation Planning.
-const rewards=bundle.bonuses;
+function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];onChanged:()=>void}){
+ const nav=useNavigate();const user=getCurrentUser();const by=user?.name??'HR Staff';
+ const status=runStatus(run),thirteenth=isThirteenthMonthRun(run),title=runLabel(run),options=loadRunOptions();
+ const rates=run.settings?.rates??loadRates();
+ const[rows,setRows]=useState<RunRow[]>(run.rows);
+ useEffect(()=>setRows(run.rows),[run]);
+ const[reasons,setReasons]=useState<Record<string,string>>(()=>Object.fromEntries(run.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>[reasonKey(row.input.empId,change.field),change.reason]))));
+ const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[settleError,setSettleError]=useState('');
+ const[expanded,setExpanded]=useState<string[]>([]),[dialog,setDialog]=useState<Dialog|null>(null),[comment,setComment]=useState(''),[reference,setReference]=useState('');
+ const[failing,setFailing]=useState<{empId:string;name:string;reason:string}|null>(null),[fixing,setFixing]=useState<string|null>(null),[logTick,setLogTick]=useState(0);
+ const deptOf=(empId:string)=>employees.find(employee=>employee.employeeNo===empId)?.department||'Unassigned';
+ const staff=async()=>employees.length?employees:employeeService.getAllFromServer();
 
-const time=loadTimeSettings(),holidays=loadHolidays();
-const base=computeDeductions({employees,records,schedule:loadAttendanceSchedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
-const activeAssignments=activeCompensations(assignments,to);
-const gradeCodes=new Set(grades.map(grade=>grade.code.trim().toLowerCase()).filter(Boolean));
-const built:RunRow[]=[];
-    for(const item of base){
-     const employee=item.employee;
-     const mine=records.filter(record=>(record.empId===employee.employeeNo||record.empId===employee.id)&&record.date>=from&&record.date<=to);
-     const employeeIds=[employee.id,employee.employeeNo];
-     const approvedBonuses=rewards.filter(entry=>isBonusReward(entry)&&entry.status==='Approved'&&employeeIds.includes(entry.employeeId)&&entry.cutoffEnd>=from&&entry.cutoffEnd<=to);
-     const taxableBonus=approvedBonuses.filter(entry=>entry.taxable).reduce((total,entry)=>total+entry.amount,0);
-     const nonTaxableBonus=approvedBonuses.filter(entry=>!entry.taxable).reduce((total,entry)=>total+entry.amount,0);
-     const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),rates.payPeriodsPerMonth,to);
-     // The same HMO cutoff deduction shown under Deductions → HMO.
-     const hmo=hmoCutoffDeduction(hmoLines,employee.id),hmoCompany=hmoCompanyCutoffShare(hmoLines,employee.id);
-     const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
-     const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
-     // A graded assignment carries the grade's whole-peso daily rate; a manual salary keeps salary ÷ working days.
-     const graded=activeAssignments.find(assignment=>employeeIds.includes(assignment.employeeId)&&gradeCodes.has(assignment.salaryCode.trim().toLowerCase()));
-     const dailyRate=graded?graded.dailyRate:(item.salary as number)/rates.daysPerMonth;
-     const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave!==false).length,lwopDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave===false).length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,otherDeductions:otherDeductionsForCutoff(loadOtherDeductions(),employee.id,from,to),allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,allowancesOtherBenefits:allowance.otherBenefits,...loanAmounts};
-     // Government loans are deducted from the net pay left after every other deduction.
-     // Other authorized deductions (Deductions → Other Authorized Deductions) plus the HMO cutoff deduction.
-     const compute=(payrollInput:PayrollInput)=>calculatePayroll({...payrollInput,otherDeductions:numberValue(payrollInput.otherDeductions)+hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()});
-     const governmentLoans=governmentLoanDeductions(scheduledGovernmentLoans,employeeIds,compute(input).net,rates.payPeriodsPerMonth);
-     const governmentTotals=governmentLoanTotals(governmentLoans);
-     // Government loans have their own fields so they never mix with employee loan installments.
-     input.govSssLoan=governmentTotals.sssLoan;input.govPagibigLoan=governmentTotals.pagibigLoan;
-     // An employee who is no longer active is checked only up to their last attendance day.
-     const lastDay=mine.map(record=>record.date).sort().pop()??to;
-     const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to:employee.status==='Active'?to:lastDay,holidays});
-     // Inactive or resigned: this is their last pay, so its withholding annualizes the year to date.
-     const separated=employee.status==='Inactive'||employee.employmentStatus==='Resigned';
-     const row:RunRow={position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))};
-     built.push(row);
-    }
-    if(active){setRows(built);setOriginals(Object.fromEntries(built.map(row=>[row.input.empId,row.input])));setLoading(false)}
-   }catch(cause){if(active){const message=cause instanceof Error?cause.message:'The approved loan installment schedule could not be loaded.';setLoanError(`Payroll cannot be submitted or paid until compensation records and approved loan schedules load from the database. ${message}`);setError('Payroll data could not be loaded. Please retry after the employee, attendance, compensation, and loan schedule services are available.');setLoading(false)}}
-  })();
-  return()=>{active=false};
- },[from,to,saved]);
+ const canGenerate=can('payroll.generate'),canApprove=can('payroll.approve'),canFund=can('payroll.fund'),canRelease=can('payroll.release');
+ const editable=canGenerate&&status==='Computed';
+ const ownRun=Boolean(run.preparedById&&user?.id===run.preparedById);
+ const approved=APPROVED_STATUSES.includes(status);
+ const savedRow=(empId:string)=>run.rows.find(row=>row.input.empId===empId);
+ const dirty=rows.some(row=>!sameInput(row.input,savedRow(row.input.empId)?.input));
+ const changes=editable?rows.flatMap(row=>{const saved=savedRow(row.input.empId);if(!saved)return [];const original=originalInput(saved);
+  return EDIT_KEYS.filter(key=>numberValue(row.input[key])!==numberValue(original[key])).map(key=>({empId:row.input.empId,name:row.input.name,field:key,label:EDIT_LABELS[key],original:numberValue(original[key]),amount:numberValue(row.input[key])}))}):[];
+ const missingReason=changes.some(change=>(reasons[reasonKey(change.empId,change.field)]??'').trim().length<3);
+ const totals=totalsOf(rows);
+ const checks=['Computed','Pending Approval'].includes(status)?reviewChecks(run,rows):[];
+ const flagged=checks.reduce((count,check)=>count+check.items.length,0);
+ const payouts=run.payouts??{};
+ const lines=run.rows.map(row=>({row,line:payouts[row.input.empId]}));
+ const pendingOf=(method:PayoutMethod)=>lines.filter(({line})=>line?.method===method&&line.status==='Pending').length;
+ const exported=lines.filter(({line})=>line?.status==='Exported');
+ const paidCount=lines.filter(({line})=>line?.status==='Paid').length;
+ const generated=Boolean(run.payslipsGeneratedAt||(run.status==='Approved'&&run.paidAt));
 
- const setField=(index:number,key:EditKey,value:string)=>setRows(list=>list.map((row,i)=>i===index?{...row,input:{...row.input,[key]:value}}:row));
- const view=rows.map(row=>({row,c:saved?row.result:calc(row)}));
- const cols=view.map(({row,c})=>[c.basic,c.overtime,numberValue(row.input.nightDifferential),numberValue(row.input.holidayPay),c.leavePay,c.allowances??0,numberValue(row.input.otherEarnings)+numberValue(row.input.bonusesNonTaxable),c.gross,c.absences??0,c.lateUt,c.sss,c.phil,c.pagibig,row.hmo]);
- const colSums=cols.length?cols[0].map((_,k)=>cols.reduce((total,line)=>total+line[k],0)):[];
- const editSums=editKeys.map(key=>rows.reduce((total,row)=>total+numberValue(row.input[key]),0));
- const totals={gross:view.reduce((t,x)=>t+x.c.gross,0),deductions:view.reduce((t,x)=>t+x.c.deductions,0),net:view.reduce((t,x)=>t+x.c.net,0)};
- // Employees whose deductions exceed their pay; the run cannot be submitted until these are fixed.
- const negative=view.filter(({c})=>c.net<0).map(({row})=>row.input.name);
- const gapRows=rows.filter(row=>row.attendanceGaps);
- const changeKey=(empId:string,field:string)=>`${empId}|${field}`;
- const changes=saved||thirteenth?[]:rows.flatMap(row=>editKeys.filter(key=>!automatedLoanFields.includes(key)&&key!=='thirteenthMonthAndOtherBenefits'&&numberValue(row.input[key])!==numberValue(originals[row.input.empId]?.[key]))
-  .map(key=>({empId:row.input.empId,name:row.input.name,field:key,label:editLabels[key],original:numberValue(originals[row.input.empId]?.[key]),amount:numberValue(row.input[key])})));
- const missingReason=changes.some(change=>(reasons[changeKey(change.empId,change.field)]??'').trim().length<3);
- const adjustmentsFor=(row:RunRow):ManualAdjustment[]=>changes.filter(change=>change.empId===row.input.empId).map(({field,label,original,amount,empId})=>({field,label,original,amount,reason:(reasons[changeKey(empId,field)]??'').trim()}));
- const savedAdjustments=saved?saved.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>({...change,name:row.input.name}))):[];
- const dayCount=(n:number,what:string)=>`${n} ${n===1?'day':'days'} ${what}`;
- // 13th month pay is released only through its own run type.
- const editCell=(index:number,row:RunRow,key:EditKey)=>saved||thirteenth||key==='thirteenthMonthAndOtherBenefits'||automatedLoanFields.includes(key)?nf(numberValue(row.input[key])):<input className="paper-input" type="number" min="0" step="0.01" value={String(row.input[key]??0)} onChange={event=>setField(index,key,event.target.value)}/>;
-
- const submit=async()=>{
-  if(loanError){setConfirming(false);setError(loanError);return}
-  // A regular cutoff can be submitted only once HR2 attendance covers the whole period.
-  if(!thirteenth&&!cutoffSynced({from,to})){setConfirming(false);setError('Attendance not yet synced for this cutoff');return}
-  if(missingReason){setError('Give a reason for every amount typed in by hand.');return}
-  if(negative.length){setConfirming(false);setError(`Net pay is below zero for ${negative.join(', ')}. Reduce their other deductions or loan installments before submitting.`);return}
-  setSubmitBusy(true);setError('');
-  if(!thirteenth)try{
-   const [currentEmployees,currentSchedule]=await Promise.all([employeeService.getAllFromServer(),loanService.schedule(from,to)]);
-   const payrollEmployeeNumbers=new Set(rows.map(row=>row.input.empId));
-   const currentLines=currentSchedule.filter(item=>{const employee=currentEmployees.find(candidate=>candidate.id===item.employeeId);return Boolean(employee&&payrollEmployeeNumbers.has(employee.employeeNo))});
-   const plannedLines=rows.flatMap(row=>row.loanRepayments??[]);
-   const signature=(items:{loanId:string;employeeId:string;amount:number;recordType:'Loan'|'Cash Advance';loanType:string;installmentNumber:number;installmentCount:number}[])=>items.map(item=>`${item.loanId}|${item.employeeId}|${item.amount.toFixed(2)}|${item.recordType}|${item.loanType}|${item.installmentNumber}|${item.installmentCount}`).sort().join('\n');
-   if(signature(plannedLines)!==signature(currentLines)){
-    const message='The approved loan schedule changed while this payroll was being reviewed. Reload the payroll preview to recalculate before submission.';
-    setLoanError(message);setError(message);setConfirming(false);return;
-   }
-  }catch(cause){
-   const message=`The current employee and loan schedule could not be verified. Payroll was not submitted. ${cause instanceof Error?cause.message:''}`;
-   setLoanError(message);setError(message);setConfirming(false);return;
-  }finally{setSubmitBusy(false)}
-  // Checked against the server's current runs, so a run another user submitted meanwhile is seen.
-  const blockedBy=(runs:PayrollRun[])=>{
-   if(runs.some(run=>run.from===from&&run.to===to&&run.status!=='Rejected'))return 'A payroll for this cutoff has already been submitted.';
-   if(yearEnd)return finalCutoffBlocked(runs,from.slice(0,4));
-   const leaving=rows.filter(row=>row.separated).map(row=>row.input.empId);
-   if(leaving.length){const blocked=finalCutoffBlocked(runs,from.slice(0,4),undefined,leaving);if(blocked)return `This payroll is the last pay of an employee who has left, and it annualizes their tax. ${blocked}`}
-   if(!thirteenth)return '';
-   if(runs.some(run=>!isThirteenthMonthRun(run)&&run.status!=='Rejected'&&run.to===`${to.slice(0,4)}-12-31`))return `The ${to.slice(0,4)} year-end tax adjustment was already made in the last December payroll. Release 13th month pay before submitting the last December payroll.`;
-   const rules=loadThirteenthMonthRules(),year=to.slice(0,4),deadline=releaseDeadlineFor(year,rules);
-   const releases=runs.filter(run=>isThirteenthMonthRun(run)&&run.to.slice(0,4)===year&&run.status!=='Rejected');
-   return to>deadline?`13th month pay for ${year} must be released on or before ${periodLabel(deadline,deadline).split(' - ')[0]}.`
-    :releases.some(run=>run.status==='Pending Approval')?`A 13th month run for ${year} is awaiting approval.`
-    :releases.length>=(rules.allowInstallments?rules.installments:1)?`All 13th month releases for ${year} have been submitted.`:'';
-  };
-  const run:PayrollRun={id:crypto.randomUUID(),runType,from,to,payDate,settings:payrollSettingsSnapshot(to),status:'Pending Approval',rows:rows.map(row=>{const manualAdjustments=adjustmentsFor(row);return {...row,result:calc(row),...(manualAdjustments.length?{manualAdjustments}:{})}}),totals,preparedBy:user?.name??'Unknown',createdAt:new Date().toISOString()};
-  setSubmitBusy(true);
-  try{await updateRuns(runs=>{const blocked=blockedBy(runs);if(blocked)throw new Error(blocked);return [...runs,run]})}
-  catch(cause){setConfirming(false);setError(cause instanceof Error&&cause.message?cause.message:'The payroll could not be submitted.');return}
-  finally{setSubmitBusy(false)}
-  if(changes.length)recordAudit({action:'Changed payroll amounts by hand',module:'Payroll',description:`Submitted ${runLabel(run)} with ${changes.length} hand-typed amount${changes.length===1?'':'s'}: ${changes.map(change=>`${change.name} ${change.label} ${peso(change.original)} → ${peso(change.amount)} (${(reasons[changeKey(change.empId,change.field)]??'').trim()})`).join('; ')}.`});
-  notifyPayrollPending(run.id,runLabel(run));
-  nav('/payroll');
+ // Runs one action against the server's current copy; the page re-reads the run and the activity log afterwards.
+ const act=async(name:string,work:()=>Promise<void>)=>{
+  setBusy(name);setError('');setNotice('');
+  try{await work();onChanged();setLogTick(t=>t+1)}
+  catch(cause){setError(message(cause,'The change could not be saved.'))}
+  finally{setBusy('')}
  };
+ const compute=()=>act('compute',async()=>{
+  const current=loadRates(),scope={id:run.id,runType:run.runType,from:run.from,to:run.to};
+  const built=await computeRunRows(scope,current);
+  if(!built.length)throw new Error(thirteenth?'No eligible employees with 13th month pay due.':'No employees with an assigned salary for this cutoff.');
+  const withTax=built.map(row=>({...row,result:calcRow(row,scope,current)}));
+  const people=await staff();
+  await updateRun(run.id,item=>{expectStatus(item,'Draft','Computed','Returned');return {...item,status:'Computed',rows:withTax,totals:totalsOf(withTax),settings:payrollSettingsSnapshot(item.to),payouts:payoutLinesFor({rows:withTax},people)}});
+  setReasons({});
+  setNotice(`Computed ${withTax.length} ${withTax.length===1?'employee':'employees'}. Review the checks, then submit for approval.`);
+ });
+ const saveEdits=()=>act('save',async()=>{
+  if(missingReason)throw new Error('Give a reason (at least 3 characters) for every amount typed in by hand.');
+  const next=rows.map(row=>{
+   const manualAdjustments=changes.filter(change=>change.empId===row.input.empId).map(({field,label,original,amount,empId})=>({field,label,original,amount,reason:(reasons[reasonKey(empId,field)]??'').trim()}));
+   const {manualAdjustments:_previous,...rest}=row;
+   return {...rest,...(manualAdjustments.length?{manualAdjustments}:{})};
+  });
+  await updateRun(run.id,item=>{expectStatus(item,'Computed');return {...item,rows:next,totals:totalsOf(next)}});
+  if(changes.length)recordAudit({action:'Changed payroll amounts by hand',module:'Payroll',description:`${title}: ${changes.map(change=>`${change.name} ${change.label} ${peso(change.original)} → ${peso(change.amount)} (${(reasons[reasonKey(change.empId,change.field)]??'').trim()})`).join('; ')}.`});
+ });
+ const submit=()=>act('submit',async()=>{
+  if(dirty)throw new Error('Save your changes before submitting.');
+  const blocked=await submitBlocked(run,read<PayrollRun[]>(RUNS_KEY,[]));
+  if(blocked)throw new Error(blocked);
+  await updateRun(run.id,item=>{expectStatus(item,'Computed');return {...item,status:'Pending Approval',submittedAt:new Date().toISOString(),submittedBy:by}});
+  notifyPayrollPending(run.id,title);setDialog(null);
+ });
+ const decide=(next:'Approved'|'Returned'|'Rejected')=>act('decide',async()=>{
+  const text=comment.trim();
+  if(next!=='Approved'&&text.length<3)throw new Error(`Write a comment (at least 3 characters) to ${next==='Returned'?'return':'reject'} this payroll.`);
+  await updateRun(run.id,item=>{expectStatus(item,'Pending Approval');const {decisionComment:_previous,...rest}=item;return {...rest,status:next,decidedBy:user?.name??'Admin',decidedById:user?.id,decidedAt:new Date().toISOString(),...(text?{decisionComment:text}:{})}});
+  // The Dashboard's payroll figures read the last approved run's inputs.
+  if(next==='Approved'){const stamp=Date.now();write('payroll:records',run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
+  notifyPayrollDecided(run.id,title,next,text);setDialog(null);setComment('');
+ });
+ const fund=()=>act('fund',async()=>{
+  const text=reference.trim();
+  if(text.length<3)throw new Error('Enter the transfer reference number.');
+  await updateRun(run.id,item=>{expectStatus(item,'Approved');return {...item,status:'Funded',funding:{reference:text,confirmedAt:new Date().toISOString(),confirmedBy:user?.name??'Admin',confirmedById:user?.id??''}}});
+  notifyPayrollFunded(run.id,title);setDialog(null);setReference('');
+ });
+ const exportMethod=(method:PayoutMethod)=>act(`export-${method}`,async()=>{
+  const {run:saved,exportId}=await exportPayouts(run.id,method,by);
+  const file=payoutFile(saved,exportId,deptOf);downloadCsv(file.name,file.csv);
+  setNotice(`${file.label} exported. Mark each employee Paid or Failed once the payment result is known.`);
+ });
+ const mark=(list:Array<{empId:string;status:'Paid'|'Failed';reason?:string}>)=>act('mark',async()=>{
+  try{const saved=await markPayouts(run.id,list,by);if(runStatus(saved)==='Paid')setNotice('Every employee is Paid. Generate the payslips next.')}
+  catch(cause){
+   // The run was saved as Paid but posting its loan deductions failed: it can be retried.
+   const now=read<PayrollRun[]>(RUNS_KEY,[]).find(item=>item.id===run.id);
+   if(now&&runStatus(now)==='Paid'){setSettleError(message(cause,'Loan deductions could not be posted.'));return}
+   throw cause;
+  }
+  setFailing(null);
+ });
+ const retrySettle=()=>act('settle',async()=>{await settleRunLoans(run);setSettleError('');setNotice('Loan deductions posted.')});
+
+ const primary=(name:string,labelText:string,onClick:()=>void,disabled=false)=><Button disabled={Boolean(busy)||disabled} onClick={onClick}>{busy===name?'Working…':labelText}</Button>;
+ const actions=<>
+  <button className={ghost} onClick={()=>window.print()}>Print register</button>
+  {canGenerate&&['Draft','Computed','Returned'].includes(status)&&(status==='Draft'?primary('compute','Compute payroll',()=>void compute()):<button className={ghost} disabled={Boolean(busy)} onClick={()=>void compute()}>{busy==='compute'?'Computing…':'Recompute'}</button>)}
+  {editable&&dirty&&<button className={success} disabled={Boolean(busy)} onClick={()=>void saveEdits()}>{busy==='save'?'Saving…':'Save changes'}</button>}
+  {canGenerate&&status==='Computed'&&primary('submit','Submit for approval',()=>{setError('');setDialog('submit')},dirty)}
+  {canApprove&&status==='Pending Approval'&&<><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Rejected')}}>Reject</button><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Returned')}}>Return</button>{primary('decide','Approve',()=>setDialog('Approved'),ownRun)}</>}
+  {canFund&&status==='Approved'&&primary('fund','Confirm funding',()=>{setReference('');setDialog('fund')})}
+  {canRelease&&status==='Paid'&&!generated&&primary('payslips','Generate payslips',()=>setDialog('payslips'))}
+  {canRelease&&status==='Paid'&&generated&&<Link className={button} to="/payroll?tab=payslip">Release payslips</Link>}
+ </>;
+
+ const visibleColumns=COLUMNS.filter(column=>!column.option||options[column.option]);
+ const groups=(['Attendance','Earnings','Deductions & benefits'] as const).map(group=>({group,span:visibleColumns.filter(column=>column.group===group).length}));
+ const sums=visibleColumns.map(column=>rows.reduce((total,row)=>total+column.value(row,row.result),0));
+ const editKeys=EDIT_KEYS.filter(key=>key==='otherDeductions'||key==='taxExemptBenefits'||options.showPriorEmployer);
 
  return <div className="space-y-4">
-  <style>{`.paper table{border-collapse:collapse;width:100%}.paper th,.paper td{border:1px solid #d7e0ed;padding:7px 8px;font-size:11px;color:#0f172a}.paper th{background:#f1f6fc;text-align:center;font-weight:600}.paper td.n{text-align:right;font-variant-numeric:tabular-nums}.paper-input{width:72px;border:1px solid #cbd5e1;border-radius:6px;padding:4px 5px;text-align:right;font-size:11px}.paper tbody tr:hover{background:#f8fbff}@media print{@page{size:landscape;margin:8mm}aside,header,.no-print{display:none!important}.paper{box-shadow:none!important;border:0!important;padding:0!important}.paper th,.paper td{padding:3px 4px;font-size:8px}.paper-input{width:52px;border:0!important;padding:0!important;background:transparent!important;font-size:8px}}`}</style>
+  <style>{`.paper table{border-collapse:collapse;width:100%}.paper th,.paper td{border:1px solid #d7e0ed;padding:4px 5px;font-size:8px;color:#0f172a}.paper th{background:#f1f6fc;text-align:center;font-weight:600}.paper td.n{text-align:right;font-variant-numeric:tabular-nums}.print-only{display:none}@media print{@page{size:landscape;margin:8mm}aside,header,.no-print{display:none!important}.print-only{display:block!important}}`}</style>
   <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
-   <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll register</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title||'Payroll entry'}</div></div>{saved&&<StatusBadge status={runStatusLabel(saved)}/>}</div>
-   <div className="flex flex-wrap gap-2">
-    <button className={ghost} onClick={()=>window.print()}>Print</button>
-    {!saved&&can('payroll.generate')&&<Button disabled={!rows.length||loading||Boolean(loanError)||submitBusy||negative.length>0} onClick={()=>{setError('');setConfirming(true)}}>Submit to Finance</Button>}
+   <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">PR-{run.id.slice(0,8).toUpperCase()} · {thirteenth?'13th month pay':'Regular payroll'}</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title}</div><div className="text-[11px] text-slate-500">Pay date {formatDate(run.payDate??run.to)} · Prepared by {run.preparedBy}</div></div><StatusBadge status={status}/></div>
+   <div className="flex flex-wrap gap-2">{actions}</div>
+  </div>
+  <div className="no-print space-y-4">
+   <RunStepper run={run}/>
+   <p className="m-0 text-[12px] text-slate-600"><b>Next:</b> {runNextStep(run)}</p>
+   {error&&<p role="alert" className="m-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+   {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
+   {settleError&&<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><b>The run is Paid, but its loan deductions were not posted.</b> {settleError}{canRelease&&<button type="button" className="ml-2 rounded-lg border border-amber-300 bg-white px-3 py-1 font-semibold" disabled={Boolean(busy)} onClick={()=>void retrySettle()}>Retry</button>}</div>}
+   {status==='Draft'&&<p className="m-0 rounded-lg border border-blue-100 bg-blue-50 p-3 text-[12px] text-[#17345b]">Compute this payroll to load attendance, compensation, loans and HMO for the {thirteenth?'release':'cutoff'}.</p>}
+   {['Draft','Computed','Returned'].includes(status)&&run.warnings?.length?<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Warnings when this payroll was created</div><ul className="mb-0 mt-1 list-disc pl-5">{run.warnings.map(item=><li key={item}>{item}</li>)}</ul></div>:null}
+   {run.decisionComment&&['Returned','Rejected','Computed'].includes(status)&&<p role="alert" className={`m-0 rounded-lg border p-3 text-[12px] ${status==='Rejected'?'border-red-200 bg-red-50 text-red-800':'border-amber-200 bg-amber-50 text-amber-900'}`}><b>{status==='Computed'?'Returned earlier':status} by {run.decidedBy??'Admin'}{run.decidedAt?` on ${formatDate(run.decidedAt)}`:''}:</b> {run.decisionComment}{status==='Rejected'?' Create a new payroll for this cutoff.':''}</p>}
+   {status==='Pending Approval'&&!canApprove&&<p className="m-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">Submitted {run.submittedAt?`on ${formatDate(run.submittedAt)} `:''}by {run.submittedBy??run.preparedBy}. View only while the Admin reviews it.</p>}
+   {status==='Pending Approval'&&canApprove&&ownRun&&<p className="m-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">You prepared this payroll, so another Admin must approve it.</p>}
+   {status==='Approved'&&!canFund&&<p className="m-0 rounded-lg border border-blue-100 bg-blue-50 p-3 text-[12px] text-[#17345b]">Approved by {run.decidedBy}. Waiting for the Admin to confirm the payroll account is funded; payouts cannot be exported until then.</p>}
+   {run.funding&&<p className="m-0 text-[12px] text-slate-600">Funded · reference <b>{run.funding.reference}</b> · confirmed by {run.funding.confirmedBy} on {formatDate(run.funding.confirmedAt)}</p>}
+
+   {rows.length>0&&<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    {[['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value],index)=><div key={labelText} className={`rounded-xl border p-4 shadow-sm ${index===3?'border-blue-100 bg-gradient-to-br from-blue-50 to-white':'border-slate-200 bg-white'}`}><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelText}</div><div className={`mt-1 text-[20px] font-semibold ${index===3?'text-blue-800':'text-[#17345b]'}`}>{value}</div>{index===3&&approved&&run.payouts&&<div className="mt-1 text-[11px] text-slate-500">{paidCount} of {run.rows.length} paid</div>}</div>)}
+   </div>}
+
+   {checks.length>0&&<Card className="min-w-0">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Checks before submit</h2><StatusBadge status={flagged?'Pending':'Active'} label={flagged?`${flagged} to review`:'No issues found'}/></div>
+    <p className="mb-2 mt-1 text-[12px] text-slate-500">Warnings only: they do not stop the submission.</p>
+    <ul className="m-0 list-none space-y-2 p-0">{checks.map(check=><li key={check.id} className="rounded-lg border border-slate-200 px-3 py-2 text-[12px]"><div className="flex justify-between gap-2"><span className="font-semibold text-slate-700">{check.title}</span><span className={check.items.length?'font-semibold text-amber-700':'text-emerald-700'}>{check.items.length?check.items.length:'OK'}</span></div>{check.items.length>0&&<ul className="mb-0 mt-1 list-disc pl-5 text-slate-600">{check.items.map(item=><li key={item}>{item}</li>)}</ul>}</li>)}</ul>
+   </Card>}
+
+   {rows.length>0&&<Card className="min-w-0 !p-0">
+    <div className="border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Employees</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Open a row for the full breakdown{editable?' and to type in amounts':''}. The full register is in Print register.</p></div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-[13px]">
+     <thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]"><th className="w-8 px-3 py-3"/><th className="px-3 py-3">Employee</th><th className="px-3 py-3 text-right">Gross</th><th className="px-3 py-3 text-right">Deductions</th><th className="px-3 py-3 text-right">Net</th>{approved&&run.payouts&&<th className="px-3 py-3">Payout</th>}</tr></thead>
+     <tbody>{rows.map(row=>{
+      const open=expanded.includes(row.input.empId),c=row.result,line=payouts[row.input.empId];
+      const breakdown=open?buildPayslipBreakdownFromRun(row):null;
+      return <Fragment key={row.input.empId}>
+       <tr className="cursor-pointer border-b border-slate-100 hover:bg-blue-50/40" onClick={()=>setExpanded(list=>open?list.filter(id=>id!==row.input.empId):[...list,row.input.empId])}>
+        <td className="px-3 py-3 text-slate-400">{open?<ChevronDown size={15}/>:<ChevronRight size={15}/>}</td>
+        <td className="px-3 py-3"><div className="font-semibold text-slate-800">{row.input.name}</div><div className="text-[11px] text-slate-500">{row.input.empId} · {row.position||'—'}{row.manualAdjustments?.length?' · amounts typed in':''}</div></td>
+        <td className="px-3 py-3 text-right tabular-nums">{peso(c.gross)}</td>
+        <td className="px-3 py-3 text-right tabular-nums text-rose-700">{peso(c.deductions)}</td>
+        <td className={`px-3 py-3 text-right font-semibold tabular-nums ${c.net<0?'text-red-700':'text-[#17345b]'}`}>{peso(c.net)}</td>
+        {approved&&run.payouts&&<td className="px-3 py-3">{line?<StatusBadge status={line.status}/>:'—'}</td>}
+       </tr>
+       {open&&breakdown&&<tr className="border-b border-slate-100 bg-slate-50/60"><td/><td colSpan={approved&&run.payouts?5:4} className="px-3 py-4">
+        <div className="grid gap-4 md:grid-cols-2">
+         {([['Earnings',breakdown.earnings,c.gross],['Deductions',breakdown.deductions,c.deductions]] as const).map(([heading,list,total])=><div key={heading} className="rounded-lg border border-slate-200 bg-white"><div className="border-b border-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">{heading}</div>{list.map(item=><div key={item.label} className="flex justify-between px-3 py-1 text-[12px]"><span>{item.label}</span><span className="tabular-nums">{nf(item.amount)}</span></div>)}<div className="flex justify-between border-t border-slate-100 px-3 py-2 text-[12px] font-bold"><span>Total</span><span className="tabular-nums">{nf(total)}</span></div></div>)}
+        </div>
+        {!thirteenth&&<p className="mb-0 mt-3 text-[12px] text-slate-600">Present {numberValue(row.input.daysWorked)} · Absent {numberValue(row.input.absentDays)} · Leave {numberValue(row.input.vlDays)} · Late {numberValue(row.input.lateMin)} min · Undertime {numberValue(row.input.undertimeMin)} min · OT {numberValue(row.input.otHours)} h</p>}
+        {row.manualAdjustments?.length?<ul className="mb-0 mt-2 list-disc pl-5 text-[12px] text-[#17345b]">{row.manualAdjustments.map(change=><li key={change.field}>{change.label}: {peso(change.original)} → {peso(change.amount)} — {change.reason}</li>)}</ul>:null}
+        {editable&&<div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onClick={event=>event.stopPropagation()}>
+         {editKeys.map(key=>{const changed=changes.find(change=>change.empId===row.input.empId&&change.field===key);return <div key={key} className="grid gap-1">
+          <Field label={EDIT_LABELS[key]}><TextInput type="number" min="0" step={key==='priorEmployerPayrollPeriods'?'1':'0.01'} value={String(row.input[key]??0)} onChange={event=>{const value=event.target.value;setRows(list=>list.map(item=>{if(item.input.empId!==row.input.empId)return item;const next={...item,input:{...item.input,[key]:value}};return {...next,result:calcRow(next,run,rates)}}))}}/></Field>
+          {changed&&<input className={`${input} !py-1.5 text-[12px]`} maxLength={200} placeholder="Reason for this amount" value={reasons[reasonKey(row.input.empId,key)]??''} onChange={event=>setReasons(previous=>({...previous,[reasonKey(row.input.empId,key)]:event.target.value}))}/>}
+         </div>})}
+        </div>}
+        {editable&&options.showPriorEmployer&&<p className="mb-0 mt-2 text-[11px] leading-relaxed text-slate-500">For a new hire with another employer this year, enter that employer's taxable compensation, benefits paid, tax withheld and payroll periods. They are used only for annualized withholding, not added to gross pay.</p>}
+       </td></tr>}
+      </Fragment>;
+     })}</tbody>
+     <tfoot><tr className="border-t-2 border-slate-200 font-semibold"><td/><td className="px-3 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{peso(totals.gross)}</td><td className="px-3 py-3 text-right tabular-nums">{peso(totals.deductions)}</td><td className="px-3 py-3 text-right tabular-nums">{peso(totals.net)}</td>{approved&&run.payouts&&<td/>}</tr></tfoot>
+    </table></div>
+   </Card>}
+
+   {approved&&<Card className="min-w-0 !p-0">
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+     <div><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Payouts</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{['Funded','Exported'].includes(status)?'Export each method’s file, then mark each employee Paid or Failed. Fix a failed payout and export it again.':status==='Approved'?'Export is blocked until the Admin confirms the payroll account is funded.':`${paidCount} of ${run.rows.length} employees paid.`}</p></div>
+     {canRelease&&run.payouts&&['Approved','Funded','Exported'].includes(status)&&<div className="flex flex-wrap gap-2">
+      {PAYOUT_METHODS.map(method=>{const count=pendingOf(method);return <button key={method} type="button" className={ghost} disabled={Boolean(busy)||status==='Approved'||!count} title={status==='Approved'?'Blocked until funding is confirmed':undefined} onClick={()=>void exportMethod(method)}><Download size={14}/>{busy===`export-${method}`?'Exporting…':`${METHOD_FILES[method]} (${count})`}</button>})}
+      {status==='Exported'&&exported.length>0&&<button type="button" className={success} disabled={Boolean(busy)} onClick={()=>void mark(exported.map(({row})=>({empId:row.input.empId,status:'Paid' as const})))}>Mark all exported Paid ({exported.length})</button>}
+     </div>}
+    </div>
+    {!run.payouts?<div className="px-5 py-4 text-[12px] text-slate-600">{['Approved','Funded'].includes(status)?<>This run was approved before payouts were tracked per employee. {canRelease&&<button type="button" className={`${ghost} ml-2`} disabled={Boolean(busy)} onClick={()=>void act('setup',async()=>{await addPayoutLines(run.id,await staff())})}>Set up payouts</button>}</>:'Paid before payouts were tracked per employee.'}</div>
+    :<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-[13px]">
+     <thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]">{['Employee','Method','Account','Net','Status',''].map(labelText=><th key={labelText||'actions'} className={`px-4 py-3 ${labelText==='Net'?'text-right':''}`}>{labelText}</th>)}</tr></thead>
+     <tbody>{lines.map(({row,line})=>line&&<tr key={row.input.empId} className="border-b border-slate-100">
+      <td className="px-4 py-3"><div className="font-semibold text-slate-800">{row.input.name}</div><div className="text-[11px] text-slate-500">{row.input.empId}</div></td>
+      <td className="px-4 py-3">{line.method}</td>
+      <td className="px-4 py-3">{payoutAccount(line)}{missingPayout(line)&&<div className="text-[11px] text-amber-700">Missing {missingPayout(line)}</div>}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{peso(row.result.net)}</td>
+      <td className="px-4 py-3"><StatusBadge status={line.status}/>{line.status==='Failed'&&line.reason&&<div className="mt-1 text-[11px] text-red-700">{line.reason}</div>}</td>
+      <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2 whitespace-nowrap">{canRelease&&['Approved','Funded','Exported'].includes(status)&&<>
+       {['Pending','Failed'].includes(line.status)&&<button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setFixing(row.input.empId)}>{line.status==='Failed'?'Fix':'Edit'}</button>}
+       {line.status==='Exported'&&<><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setFailing({empId:row.input.empId,name:row.input.name,reason:''})}>Failed</button><button type="button" className={success} disabled={Boolean(busy)} onClick={()=>void mark([{empId:row.input.empId,status:'Paid'}])}>Paid</button></>}
+      </>}</div></td>
+     </tr>)}</tbody>
+    </table></div>}
+    {(run.exports??[]).length>0&&<div className="border-t border-slate-100 px-5 py-3 text-[12px] text-slate-600"><div className="mb-1 font-semibold text-slate-700">Exported files</div><ul className="m-0 list-none space-y-1 p-0">{run.exports!.map(entry=><li key={entry.id} className="flex flex-wrap items-center gap-2">{entry.method} · {entry.employees.length} {entry.employees.length===1?'employee':'employees'} · {peso(entry.total)} · {new Date(entry.at).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})} by {entry.by}<button type="button" className="text-blue-700 underline" onClick={()=>{const file=payoutFile(run,entry.id,deptOf);downloadCsv(file.name,file.csv)}}>Download again</button></li>)}</ul></div>}
+   </Card>}
+
+   <RunActivityLog runId={run.id} refresh={logTick}/>
+  </div>
+
+  <div className="print-only paper">
+   <div className="mb-3 text-center"><div className="text-[14px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title} · Pay Date: {formatDate(run.payDate??run.to)} · Status: {status}</div></div>
+   {!rows.length?<p>No figures yet. Compute the payroll first.</p>:<table>
+    <thead><tr><th rowSpan={2}>Employee</th>{groups.map(({group,span})=>span>0&&<th key={group} colSpan={span}>{group}</th>)}<th rowSpan={2}>Net Pay</th></tr><tr>{visibleColumns.map(column=><th key={column.label}>{column.label}</th>)}</tr></thead>
+    <tbody>
+     {rows.map(row=><tr key={row.input.empId}><td><b>{row.input.name}</b><div>{row.input.empId} · {row.position}</div></td>{visibleColumns.map(column=>{const value=column.value(row,row.result);return <td key={column.label} className="n">{column.count?value:nf(value)}</td>})}<td className="n"><b>{nf(row.result.net)}</b></td></tr>)}
+     <tr><td><b>TOTAL</b></td>{visibleColumns.map((column,index)=><td key={column.label} className="n"><b>{column.count?'':nf(sums[index])}</b></td>)}<td className="n"><b>{nf(totals.net)}</b></td></tr>
+    </tbody>
+   </table>}
+   <div className="mt-8 grid grid-cols-3 gap-10 text-center text-[11px]">
+    <div><div className="h-5">{run.preparedBy}</div><div className="border-t border-slate-500 pt-1">Prepared by</div></div>
+    <div><div className="h-5">{approved?run.decidedBy:''}</div><div className="border-t border-slate-500 pt-1">Approved by</div></div>
+    <div><div className="h-5">{run.funding?.confirmedBy??''}</div><div className="border-t border-slate-500 pt-1">Funding confirmed by</div></div>
    </div>
   </div>
-  {error&&<p role="alert" className="no-print mb-3 text-[13px] text-red-700">{error}</p>}
-  {loanError&&<div role="alert" className="no-print mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div>{loanError}</div><button type="button" className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold" onClick={()=>window.location.reload()}>Reload payroll preview</button></div>}
-  {!loading&&negative.length>0&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">Net pay is below zero for {negative.join(', ')}. This payroll cannot be submitted until their deductions are reduced.</p>}
-  {!loading&&gapRows.length>0&&<div role="alert" className="no-print rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Some work days are not paid because their attendance is missing or incomplete. Ask HR2 to complete these records, then reload the preview.</div><ul className="mb-0 mt-1.5 list-disc pl-5">{gapRows.map(row=>{const gaps=row.attendanceGaps!;return <li key={row.input.empId}><b>{row.input.name}</b>: {[gaps.missingDays.length?dayCount(gaps.missingDays.length,'with no attendance record'):'',gaps.incompleteDays.length?dayCount(gaps.incompleteDays.length,'without a time-in or time-out'):''].filter(Boolean).join(', ')} ({[...gaps.missingDays,...gaps.incompleteDays].sort().map(date=>periodLabel(date,date).split(' - ')[0]).join(', ')})</li>})}</ul></div>}
-  {saved?.status==='Pending Approval'&&<p className="no-print mb-0 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900">Submitted to Finance on {periodLabel(saved.createdAt.slice(0,10),saved.createdAt.slice(0,10)).split(' - ')[0]}. Waiting for Finance to approve or reject it.</p>}
-  {saved?.status==='Rejected'&&<p role="alert" className="no-print mb-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><b>Rejected by {saved.decidedBy??'Finance'}.</b> {saved.rejectionReason??'No reason given.'} Correct the inputs and submit a new payroll for this cutoff.</p>}
-  {savedAdjustments.length>0&&<div className="no-print rounded-lg border border-blue-200 bg-blue-50 p-3 text-[12px] text-[#17345b]"><div className="font-semibold">Amounts typed in by hand in this run</div><ul className="mb-0 mt-1.5 list-disc pl-5">{savedAdjustments.map(change=><li key={`${change.name}|${change.field}`}><b>{change.name}</b> · {change.label}: {peso(change.original)} → {peso(change.amount)} — {change.reason}</li>)}</ul></div>}
-  {!loading&&rows.length>0&&<div className="no-print grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Employees</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{rows.length}</div></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gross compensation</div><div className="mt-1 text-[22px] font-semibold text-[#17345b]">{peso(totals.gross)}</div></div><div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm"><div className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Net pay</div><div className="mt-1 text-[22px] font-semibold text-blue-800">{peso(totals.net)}</div><div className="mt-1 text-[10px] text-slate-500">Total deductions · {peso(totals.deductions)}</div></div></div>}
-  {runId&&!saved?<Empty>Payroll run not found.</Empty>:<div className="paper overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_8px_28px_rgba(23,52,91,0.06)]">
-   <div className="mb-4 text-center"><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[12px] font-semibold">PAYROLL REGISTER</div><div className="text-[11px]">{thirteenth?'Release':'Cutoff'}: {title||'-'}</div>{payDate&&!thirteenth&&<div className="text-[11px]">Pay Date: {periodLabel(payDate,payDate).split(' - ')[0]}</div>}{saved&&<div className="text-[11px]">Status: {runStatusLabel(saved)}</div>}{saved?.paidAt&&<div className="text-[11px]">Payment: {saved.paymentMethod}</div>}</div>
-   {!saved&&<p className="no-print mb-3 text-[10px] leading-relaxed text-slate-600">For new hires with another employer this calendar year, enter that employer’s taxable compensation (after mandatory contributions and eligible exemptions), 13th-month/other-benefits paid, tax withheld, and related payroll-period count in the prior-employer columns. Use verified year-to-date amounts; leave at zero when not applicable. These figures are used only for cumulative/annualized withholding, not added to this payroll’s gross pay. HR-approved employee loans and cash advances are loaded from the database into the four loan deduction columns; those amounts are locked so they cannot be double-entered.</p>}
-   {loading?<LoadingState>Loading payroll data…</LoadingState>:!rows.length?<Empty>{thirteenth?'No eligible employees with 13th month pay due.':'No employees with an assigned salary for this cutoff.'}</Empty>:<>
-    <div className="overflow-x-auto rounded-xl border border-slate-200"><table>
-     <thead>
-      <tr><th rowSpan={2}>Employee</th><th colSpan={7}>Attendance</th><th colSpan={8}>Earnings</th><th colSpan={20}>Deductions / benefit classification / prior employer annual history</th><th rowSpan={2}>Net Pay</th></tr>
-      <tr>{heads.map(label=><th key={label}>{label}</th>)}</tr>
-     </thead>
-     <tbody>
-      {view.map(({row,c},index)=><tr key={row.input.empId}>
-       <td><b>{row.input.name}</b><div>{row.input.empId} · {row.position}</div></td>
-       <td className="n">{numberValue(row.input.daysWorked)}</td><td className="n">{numberValue(row.input.absentDays)}</td><td className="n">{numberValue(row.input.vlDays)}</td><td className="n">{row.rest}</td><td className="n">{numberValue(row.input.lateMin)}</td><td className="n">{numberValue(row.input.undertimeMin)}</td><td className="n">{numberValue(row.input.otHours)}</td>
-       {cols[index].map((value,k)=><td key={k} className="n">{nf(value)}</td>)}
-      <td className="n">{nf(c.tax)}</td><td className="n">{nf(governmentLoanSum(row))}</td>{editKeys.map(key=><td key={key} className="n">{editCell(index,row,key)}</td>)}
-       <td className="n"><b>{nf(c.deductions)}</b></td><td className="n"><b>{nf(c.net)}</b></td>
-      </tr>)}
-      <tr><td colSpan={8}><b>TOTAL</b></td>{colSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(view.reduce((t,x)=>t+x.c.tax,0))}</b></td><td className="n"><b>{nf(rows.reduce((t,row)=>t+governmentLoanSum(row),0))}</b></td>{editSums.map((value,k)=><td key={k} className="n"><b>{nf(value)}</b></td>)}<td className="n"><b>{nf(totals.deductions)}</b></td><td className="n"><b>{nf(totals.net)}</b></td></tr>
-     </tbody>
-    </table></div>
-    <div className="mt-10 grid grid-cols-2 gap-16 text-center text-[11px]">
-     <div><div className="h-5">{saved?.preparedBy??user?.name}</div><div className="border-t border-slate-500 pt-1">Prepared by</div></div>
-     <div><div className="h-5">{saved?.status==='Approved'?saved.decidedBy:''}</div><div className="border-t border-slate-500 pt-1">Approved by (Finance)</div></div>
-    </div>
-   </>}
-  </div>}
-  {confirming&&<Modal title="Confirm Payroll Submission" onClose={()=>setConfirming(false)}>
-   <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Employees',String(rows.length)],['Gross Pay',peso(totals.gross)],['Total Deductions',peso(totals.deductions)],['Net Pay',peso(totals.net)]].map(([label,value])=><div key={label} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{label}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
-   {changes.length>0&&<div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3"><div className="text-[12px] font-semibold text-amber-900">Amounts typed in by hand — give a reason for each. The Admin sees these when reviewing.</div>
-    <div className="mt-2 grid gap-2">{changes.map(change=>{const key=changeKey(change.empId,change.field);return <label key={key} className="grid gap-1 text-[12px] text-amber-900"><span><b>{change.name}</b> · {change.label}: {peso(change.original)} → {peso(change.amount)}</span><input className="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[12px] text-slate-800" maxLength={200} placeholder="Reason" value={reasons[key]??''} onChange={event=>setReasons(previous=>({...previous,[key]:event.target.value}))}/></label>})}</div></div>}
-   <p className="mt-4 text-[13px]">Submit this payroll to Finance for approval?</p>
-   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={submitBusy} onClick={()=>setConfirming(false)}>Cancel</button><Button disabled={Boolean(loanError)||submitBusy||missingReason} onClick={submit}>{submitBusy?'Verifying schedule…':'Confirm'}</Button></div>
+
+  {dialog==='submit'&&<Modal title="Submit for approval" onClose={()=>{if(!busy)setDialog(null)}}>
+   <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Pay date',formatDate(run.payDate??run.to)],['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value])=><div key={labelText} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{labelText}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
+   {flagged>0&&<p className="mb-0 mt-4 rounded-lg bg-amber-50 p-3 text-[12px] text-amber-900">{flagged} {flagged===1?'check needs':'checks need'} review. You can still submit; the Admin sees the same checks.</p>}
+   {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('submit','Submit',()=>void submit())}</div>
   </Modal>}
+  {(dialog==='Approved'||dialog==='Returned'||dialog==='Rejected')&&<Modal title={dialog==='Approved'?'Approve payroll':dialog==='Returned'?'Return for changes':'Reject payroll'} onClose={()=>{if(!busy)setDialog(null)}}>
+   <p className="mt-0 text-[13px] text-slate-600">{dialog==='Approved'?`Approve ${title} (${rows.length} employees, net ${peso(totals.net)})? Next, confirm the payroll account is funded.`:dialog==='Returned'?'HR can fix and recompute the run, then submit it again.':'A rejected run is locked; HR creates a new payroll for this cutoff.'}</p>
+   <Field label={dialog==='Approved'?'Comment (optional)':'Comment (required)'}><textarea className={`${input} min-h-[90px]`} maxLength={500} value={comment} onChange={event=>setComment(event.target.value)}/></Field>
+   {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('decide',dialog==='Approved'?'Approve':dialog==='Returned'?'Return':'Reject',()=>void decide(dialog),dialog!=='Approved'&&comment.trim().length<3)}</div>
+  </Modal>}
+  {dialog==='fund'&&<Modal title="Confirm payroll account funded" onClose={()=>{if(!busy)setDialog(null)}}>
+   <p className="mt-0 text-[13px] text-slate-600">Confirm that {peso(totals.net)} for {title} is in the payroll account. Payouts can be exported after this.</p>
+   <Field label="Transfer reference number"><TextInput autoFocus maxLength={80} value={reference} onChange={event=>setReference(event.target.value)}/></Field>
+   {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('fund','Confirm funded',()=>void fund(),reference.trim().length<3)}</div>
+  </Modal>}
+  {dialog==='payslips'&&<PayslipPasskeyModal title="Generate payslips" verify={passkey=>generatePayslips(run.id,passkey)} onClose={()=>setDialog(null)} onVerified={()=>{setDialog(null);setNotice('Payslips generated. Release them to ESS by department.');onChanged();setLogTick(t=>t+1)}}/>}
+  {failing&&<Modal title={`Payout failed · ${failing.name}`} onClose={()=>{if(!busy)setFailing(null)}}>
+   <Field label="Reason (required)"><TextInput autoFocus maxLength={200} placeholder="e.g. Account closed, wrong account number" value={failing.reason} onChange={event=>setFailing({...failing,reason:event.target.value})}/></Field>
+   {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setFailing(null)}>Cancel</button>{primary('mark','Mark Failed',()=>void mark([{empId:failing.empId,status:'Failed',reason:failing.reason}]),failing.reason.trim().length<3)}</div>
+  </Modal>}
+  {fixing&&payouts[fixing]&&<PayoutDetailsModal title={`Payout details · ${savedRow(fixing)?.input.name??fixing}`} initial={payouts[fixing]} busy={busy==='fix'} error={error} onClose={()=>setFixing(null)} onSave={details=>void act('fix',async()=>{await updatePayout(run.id,fixing,details,by);setFixing(null)})}/>}
  </div>;
 }

@@ -1,7 +1,7 @@
 import type {PayrollRates} from '../../types/domain';
 import {numberValue} from '../../utils/storage';
 import {calculatePayroll} from './payrollCalculator';
-import {isThirteenthMonthRun,runTaxPeriod} from './payrollRuns';
+import {isApprovedRun,isThirteenthMonthRun,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {ruleForDate} from './withholdingTax';
 import type {AnnualTaxHistory,WithholdingTaxRuleSet} from './withholdingTax';
@@ -23,8 +23,8 @@ export type TaxHistoryScope={year:string;from:string;to:string;currentRunId?:str
  */
 export function taxHistoryRuns(runs:PayrollRun[],scope:TaxHistoryScope){
  return runs.filter(run=>run.id!==scope.currentRunId&&run.from.slice(0,4)===scope.year&&(scope.final
-  ?run.status==='Approved'&&(run.to<scope.from||(isThirteenthMonthRun(run)&&run.to<=scope.to))
-  :(run.status==='Approved'||run.status==='Pending Approval')&&run.to<scope.from));
+  ?isApprovedRun(run)&&(run.to<scope.from||(isThirteenthMonthRun(run)&&run.to<=scope.to))
+  :(isApprovedRun(run)||run.status==='Pending Approval')&&run.to<scope.from));
 }
 
 /**

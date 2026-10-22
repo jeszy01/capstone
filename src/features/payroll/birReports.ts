@@ -3,6 +3,7 @@
 // Entry module; they are not the official BIR file formats.
 import type {Employee} from '../../types/domain';
 import {numberValue} from '../../utils/storage';
+import {isApprovedRun} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {DEFAULT_WITHHOLDING_RULES,ruleForDate,taxFromTable} from './withholdingTax';
 import type {WithholdingTaxRuleSet} from './withholdingTax';
@@ -34,7 +35,7 @@ export function rowTotals(row:RunRow):CompensationTotals{
  return {...lines,compensation:r2(r.gross-(r.absences??0)-(r.late??0)-(r.undertime??0)),nonTaxable:r2(nonTaxable),taxable:r2(b?.taxableCompensation??0),withheld:r2(r.tax)};
 }
 
-const approvedIn=(runs:PayrollRun[],inPeriod:(run:PayrollRun)=>boolean)=>runs.filter(run=>run.status==='Approved'&&inPeriod(run));
+const approvedIn=(runs:PayrollRun[],inPeriod:(run:PayrollRun)=>boolean)=>runs.filter(run=>isApprovedRun(run)&&inPeriod(run));
 /** The month a run's compensation is paid in: its pay date, or the cutoff's last day. */
 export const remittanceMonth=(run:PayrollRun)=>(run.payDate||run.to).slice(0,7);
 

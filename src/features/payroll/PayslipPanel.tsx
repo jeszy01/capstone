@@ -1,13 +1,13 @@
 import {useMemo,useState} from 'react';
-import {Button,Card,Empty,Field,Modal,TextInput,ghost,success} from '../../components/common/ui';
+import {Button,Card,Empty,Field,Modal,TextInput,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {peso,read} from '../../utils/storage';
-import {RUNS_KEY,runLabel,releaseDepartments,releaseRun} from './payrollRuns';
-import {PayslipPasskeyModal} from './PayslipPasskeyModal';
+import {RUNS_KEY,runLabel,releaseDepartments,runStatus} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {can} from '../auth/permissions';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
 import {StatusBadge} from '../../components/common/StatusBadge';
+import {formatDate} from '../../utils/date';
 
 const when=(iso?:string)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'—';
 const Badge=({on,text}:{on:boolean;text?:string})=><StatusBadge status={on?'Released':'Not released'} label={text}/>;
@@ -16,14 +16,16 @@ const th='px-4 py-3';
 const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500';
 
 export function PayslipPanel({employees}:{employees:Employee[]}){
- // Only approved payrolls have generated payslips: generated after the passkey is verified, or (older runs) released to Finance
-const generatedAt=(r:PayrollRun)=>r.payslipsGeneratedAt??r.paidAt;
-const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null),[releasing,setReleasing]=useState<PayrollRun|null>(null);
-const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='Approved'&&generatedAt(r)).sort((a,b)=>(generatedAt(b)??'').localeCompare(generatedAt(a)??'')),[tick]);
+ // Payslips exist for Paid runs once generated with the passkey; runs paid before that count as generated when paid.
+ const generatedAt=(r:PayrollRun)=>r.payslipsGeneratedAt??(r.status==='Approved'?r.paidAt:undefined);
+ const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null);
+ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>['Paid','Closed'].includes(runStatus(r))&&generatedAt(r)).sort((a,b)=>(generatedAt(b)??'').localeCompare(generatedAt(a)??'')),[tick]);
  const[runId,setRunId]=useState(''),[dept,setDept]=useState(''),[slip,setSlip]=useState<RunRow|null>(null);
  const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
  const deptsOf=(run:PayrollRun)=>[...new Set(run.rows.map(deptOf))].sort();
  const run=runs.find(r=>r.id===runId);
+ // Payslips are released only while the run is Paid; it closes when every department is released.
+ const releasable=Boolean(run&&can('payroll.release')&&runStatus(run)==='Paid');
  // Releasing to ESS needs the user's passkey, verified by the server; the field is cleared whenever the modal closes.
  const[releasePasskey,setReleasePasskey]=useState(''),[releaseError,setReleaseError]=useState(''),[releaseBusy,setReleaseBusy]=useState(false);
  const closeConfirm=()=>{if(releaseBusy)return;setConfirm(null);setReleasePasskey('');setReleaseError('')};
@@ -54,9 +56,9 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
  if(run){
   const depts=deptsOf(run);
   return <section className="mt-6 space-y-4">
-  <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setRunId('')}>Back</button>{can('payroll.release')&&run.paidAt&&depts.some(d=>!run.released?.[d])&&<Button onClick={()=>setConfirm(depts.filter(d=>!run.released?.[d]))}>Release All to ESS</Button>}</div>
-   <Card><h2 className="m-0 text-[16px] font-semibold">Release payslips to ESS</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{runLabel(run)} · Release each department so its employees can view their payslips in ESS, then report the run to Finance from the payslip list.</p>
-    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{can('payroll.release')&&run.paidAt&&!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release to ESS</Button>}</div></td></tr>)}</tbody></table></div>
+  <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setRunId('')}>Back</button>{releasable&&depts.some(d=>!run.released?.[d])&&<Button onClick={()=>setConfirm(depts.filter(d=>!run.released?.[d]))}>Release All to ESS</Button>}</div>
+   <Card><h2 className="m-0 text-[16px] font-semibold">Release payslips to ESS</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{runLabel(run)} · Release each department so its employees can view their payslips in ESS, The run closes once every department is released.</p>
+    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{releasable&&!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release to ESS</Button>}</div></td></tr>)}</tbody></table></div>
    </Card>
    {confirm&&<Modal title="Release payslips to ESS" onClose={closeConfirm}>
  <p className="text-[13px]">Release payslips of <b>{confirm.join(', ')}</b> for {runLabel(run)} to ESS?</p>
@@ -71,10 +73,8 @@ const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>r.status==='App
  // Level 1: approved runs
   return <section className="mt-6 space-y-4" aria-label="Payslip records">
   <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll documents</div><h2 className="mb-0 mt-1 text-[18px] font-semibold text-[#17345b]">Payslips</h2></div><span className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700">{runs.length} {runs.length===1?"run":"runs"}</span></div>
-   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Generated','Released to ESS','Reported to Finance','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={5}><Empty>No generated payslips yet. Approve a payroll run first.</Empty></td></tr>:runs.map(r=>{return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="whitespace-nowrap px-4 py-3 font-semibold text-[#17345b]">{runLabel(r)}</td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{when(generatedAt(r))}</td><td className="px-4 py-3">{(()=>{const depts=deptsOf(r);return progressBadge(depts.filter(d=>r.released?.[d]).length,depts.length)})()}</td><td className="px-4 py-3"><Badge on={Boolean(r.releasedAt)}/></td><td className="px-4 py-3"><div className="flex gap-2 whitespace-nowrap"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button>{!r.releasedAt&&can('payroll.release')&&<button type="button" className={success} onClick={()=>setReleasing(r)}>Report to Finance</button>}</div></td></tr>})}</tbody></table></div>
+   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Generated','Released to ESS','Run status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={5}><Empty>No payslips yet. They are generated once every employee in a run is Paid.</Empty></td></tr>:runs.map(r=>{return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="whitespace-nowrap px-4 py-3 font-semibold text-[#17345b]">{runLabel(r)}</td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{when(generatedAt(r))}</td><td className="px-4 py-3">{(()=>{const depts=deptsOf(r);return progressBadge(depts.filter(d=>r.released?.[d]).length,depts.length)})()}</td><td className="px-4 py-3"><StatusBadge status={runStatus(r)}/></td><td className="px-4 py-3"><div className="flex gap-2 whitespace-nowrap"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button></div></td></tr>})}</tbody></table></div>
   </Card>
-  {/* Release to Finance: the user's passkey is verified by the server, then the run is marked Released and locked. */}
-  {releasing&&<PayslipPasskeyModal title="Report to Finance" verify={passkey=>releaseRun(releasing.id,passkey)} onClose={()=>setReleasing(null)} onVerified={()=>{setReleasing(null);setTick(t=>t+1)}}/>}
  </section>;
 }
 
@@ -107,7 +107,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
    </div>
    <div className="grid gap-1.5 border-b border-slate-200 py-4 text-[12px] sm:grid-cols-2">
     <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}</div>
-    <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',run.paidAt?new Date(run.paidAt).toLocaleDateString('en-PH',{dateStyle:'medium'}):'—')}{info('Payment Method',run.paymentMethod??'—')}</div>
+    <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',formatDate(run.payDate??run.paidAt))}{info('Payment Method',run.payouts?.[row.input.empId]?.method??run.paymentMethod??'—')}</div>
    </div>
    {Math.abs(breakdown.earningsDifference)>0.01||Math.abs(breakdown.deductionsDifference)>0.01||Math.abs(breakdown.netDifference)>0.01?<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-900">This saved payroll does not reconcile. Earnings difference: {nf(breakdown.earningsDifference)}; deductions difference: {nf(breakdown.deductionsDifference)}; net-pay difference: {nf(breakdown.netDifference)}. Have Payroll review the run before relying on this payslip.</div>:null}
    <div className="grid gap-4 py-4 sm:grid-cols-2">

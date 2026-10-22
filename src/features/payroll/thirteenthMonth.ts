@@ -1,6 +1,6 @@
 import type {Employee} from '../../types/domain';
 import {numberValue,read,write} from '../../utils/storage';
-import {isThirteenthMonthRun} from './payrollRuns';
+import {isApprovedRun,isThirteenthMonthRun} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
 
 // 13th month pay = basic salary earned in the calendar year ÷ 12, less amounts already released that year.
@@ -37,7 +37,7 @@ export interface ThirteenthMonthLine{empId:string;name:string;position:string;ba
  */
 export function computeThirteenthMonth({runs,employees,rules,releaseDate}:{runs:PayrollRun[];employees:Employee[];rules:ThirteenthMonthRules;releaseDate:string}):ThirteenthMonthLine[]{
  const year=releaseDate.slice(0,4);
- const counted=runs.filter(run=>run.status==='Approved'&&run.from.slice(0,4)===year&&run.to<=releaseDate);
+ const counted=runs.filter(run=>isApprovedRun(run)&&run.from.slice(0,4)===year&&run.to<=releaseDate);
  const managerial=new Set(rules.managerialPositions.map(item=>item.trim().toLowerCase()));
  const lines=new Map<string,ThirteenthMonthLine>();
  for(const run of counted)for(const row of run.rows){

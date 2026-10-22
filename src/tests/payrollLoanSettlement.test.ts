@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({data:new Map<string,unknown>(),order:[] as string[],post:vi.fn(),validate:vi.fn(),settle:vi.fn(),govValidate:vi.fn(),govSettle:vi.fn(),audit:vi.fn()}));
 vi.mock('../utils/storage',()=>({read:(key:string,fallback:unknown)=>mocks.data.has(key)?mocks.data.get(key):fallback,write:(key:string,value:unknown)=>{mocks.data.set(key,value)},peso:(value:number)=>`₱${value}`}));
-// The server copy of payroll:runs is the stored test data; payRun reads it before saving.
+// The server copy of payroll:runs is the stored test data; markPayouts reads it before saving.
 vi.mock('../services/api/apiClient',()=>({apiClient:{get:async()=>({data:[{key:'payroll:runs',value:mocks.data.get('payroll:runs')??[]}]}),post:async(...args:unknown[])=>{mocks.order.push('app-data');return mocks.post(...args)}}}));
 vi.mock('../features/deductions/loanService',()=>({loanService:{
  validatePaidPayrollRun:async(...args:unknown[])=>{mocks.order.push('validate');return mocks.validate(...args)},
@@ -12,76 +12,64 @@ vi.mock('../features/governmentLoans/governmentLoanService',()=>({governmentLoan
  settle:async(...args:unknown[])=>{mocks.order.push('gov-settle');return mocks.govSettle(...args)},
 }}));
 vi.mock('../features/audit/auditService',()=>({recordAudit:(...args:unknown[])=>mocks.audit(...args)}));
-import {RUNS_KEY,payRun} from '../features/payroll/payrollRuns';
+import {RUNS_KEY,markPayouts} from '../features/payroll/payrollRuns';
 import type {PayrollRun} from '../features/payroll/payrollRuns';
 
 type Row=PayrollRun['rows'][number];
 const employeeLoan:Row['loanRepayments']=[{loanId:'loan-1',employeeId:'employee-1',recordType:'Loan',loanType:'Company Loan',amount:100,installmentNumber:1,installmentCount:4}];
 const governmentLoan:Row['governmentLoans']=[{loanId:'gov-1',loanType:'SSS',referenceNo:'SSS-1',amount:300,scheduledAmount:300}];
-const row=(loans:{employee?:boolean;government?:boolean}):Row=>({position:'',rest:0,hmo:0,input:{} as Row['input'],result:{} as Row['result'],loanRepayments:loans.employee?employeeLoan:[],...(loans.government?{governmentLoans:governmentLoan}:{})});
-const run=(status:PayrollRun['status'],loans:{employee?:boolean;government?:boolean}={}):PayrollRun=>({id:'run-1',from:'2026-11-01',to:'2026-11-15',status,rows:[row(loans)],totals:{gross:1000,deductions:100,net:900},preparedBy:'Payroll',createdAt:'2026-11-15T00:00:00.000Z'});
-const paidMarker=()=>(mocks.data.get(RUNS_KEY) as PayrollRun[])[0].paidAt;
+const row=(empId:string,loans:{employee?:boolean;government?:boolean}):Row=>({position:'',rest:0,hmo:0,input:{empId} as Row['input'],result:{net:900} as Row['result'],loanRepayments:loans.employee?employeeLoan:[],...(loans.government?{governmentLoans:governmentLoan}:{})});
+// An Exported run: EMP-1 is waiting for its result; EMP-2 is already Paid unless twoWaiting.
+const run=(loans:{employee?:boolean;government?:boolean}={},twoWaiting=false):PayrollRun=>({id:'run-1',from:'2026-11-01',to:'2026-11-15',status:'Exported',rows:[row('EMP-1',loans),row('EMP-2',{})],totals:{gross:2000,deductions:200,net:1800},preparedBy:'Payroll',createdAt:'2026-11-15T00:00:00.000Z',
+ payouts:{'EMP-1':{method:'Bank',bankName:'BDO',accountNumber:'1',status:'Exported',exportId:'x'},'EMP-2':{method:'Cash',status:twoWaiting?'Exported':'Paid',exportId:'x'}}});
+const saved=()=>(mocks.data.get(RUNS_KEY) as PayrollRun[])[0];
 
-describe('paying a payroll run settles each loan type separately',()=>{
+describe('marking the last payout Paid settles each loan type separately',()=>{
  beforeEach(()=>{
   mocks.data.clear();mocks.order.length=0;mocks.audit.mockReset();
   mocks.post.mockReset().mockResolvedValue({});
   mocks.validate.mockReset().mockResolvedValue({valid:true});mocks.settle.mockReset().mockResolvedValue({posted:true});
-  mocks.govValidate.mockReset().mockResolvedValue({valid:true});mocks.govSettle.mockReset().mockResolvedValue({posted:true,count:1,totalAmount:300});
+  mocks.govValidate.mockReset().mockResolvedValue({valid:true});mocks.govSettle.mockReset().mockResolvedValue({posted:true,count:1,totalAmount:300,idempotent:false});
  });
 
- it('does not settle an unapproved payroll',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Pending Approval',{employee:true,government:true})]);
-  await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('not approved');
-  expect(mocks.order).toEqual([]);
- });
-
- it('no loans: saves the paid run to the server without calling either settlement',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved')]);
-  await payRun('run-1','Bank Transfer','HR');
+ it('a Failed result needs no settlement and keeps the run Exported',async()=>{
+  mocks.data.set(RUNS_KEY,[run({employee:true})]);
+  await markPayouts('run-1',[{empId:'EMP-1',status:'Failed',reason:'Account closed'}],'HR');
   expect(mocks.order).toEqual(['app-data']);
-  expect(paidMarker()).toEqual(expect.any(String));
+  expect(saved()).toMatchObject({status:'Exported',payouts:{'EMP-1':{status:'Failed',reason:'Account closed'}}});
  });
 
- it('employee loans only: checks, then posts only the employee loan batch',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true})]);
-  await payRun('run-1','Bank Transfer','HR');
-  expect(mocks.order).toEqual(['app-data','validate','settle']);
-  expect(mocks.settle).toHaveBeenCalledWith('run-1');
-  expect(mocks.govSettle).not.toHaveBeenCalled();
-  expect(paidMarker()).toEqual(expect.any(String));
-  await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('already paid');
-  expect(mocks.settle).toHaveBeenCalledTimes(1);
+ it('a Paid result that leaves others waiting does not settle loans yet',async()=>{
+  mocks.data.set(RUNS_KEY,[run({employee:true},true)]);
+  await markPayouts('run-1',[{empId:'EMP-1',status:'Paid'}],'HR');
+  expect(mocks.order).toEqual(['app-data']);
+  expect(saved().status).toBe('Exported');
  });
 
- it('government loans only: checks, then posts only the government deductions',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved',{government:true})]);
-  await payRun('run-1','Bank Transfer','HR');
-  expect(mocks.order).toEqual(['app-data','gov-validate','gov-settle']);
-  expect(mocks.settle).not.toHaveBeenCalled();
+ it('no loans: the last Paid result makes the run Paid without calling either settlement',async()=>{
+  mocks.data.set(RUNS_KEY,[run()]);
+  await markPayouts('run-1',[{empId:'EMP-1',status:'Paid'}],'HR');
+  expect(mocks.order).toEqual(['app-data']);
+  expect(saved()).toMatchObject({status:'Paid',paidAt:expect.any(String),paidBy:'HR'});
+ });
+
+ it('both loan types: checks both before saving the run as Paid, then posts both',async()=>{
+  mocks.data.set(RUNS_KEY,[run({employee:true,government:true})]);
+  await markPayouts('run-1',[{empId:'EMP-1',status:'Paid'}],'HR');
+  expect(mocks.order).toEqual(['validate','gov-validate','app-data','settle','gov-settle']);
   expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({action:'Posted government loan deductions'}));
  });
 
- it('both: checks both settlements before posting either',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true,government:true})]);
-  await payRun('run-1','Bank Transfer','HR');
-  expect(mocks.order).toEqual(['app-data','validate','gov-validate','settle','gov-settle']);
-  expect(paidMarker()).toEqual(expect.any(String));
- });
-
- it('posts no balances and rolls back the paid marker when a government check fails',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true,government:true})]);
+ it('saves nothing when a settlement check fails',async()=>{
+  mocks.data.set(RUNS_KEY,[run({employee:true,government:true})]);
   mocks.govValidate.mockRejectedValueOnce(new Error('A government loan in this run is no longer active.'));
-  await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('no longer active');
-  expect(mocks.settle).not.toHaveBeenCalled();
-  expect(mocks.govSettle).not.toHaveBeenCalled();
-  expect(paidMarker()).toBeUndefined();
-  expect(mocks.post).toHaveBeenLastCalledWith('/app-data',expect.objectContaining({key:RUNS_KEY,value:[expect.objectContaining({paidAt:undefined,paymentMethod:undefined})]}));
+  await expect(markPayouts('run-1',[{empId:'EMP-1',status:'Paid'}],'HR')).rejects.toThrow('no longer active');
+  expect(mocks.order).toEqual(['validate','gov-validate']);
+  expect(saved().status).toBe('Exported');
  });
 
- it('rolls back the paid marker when posting the employee loan batch fails',async()=>{
-  mocks.data.set(RUNS_KEY,[run('Approved',{employee:true})]);mocks.settle.mockRejectedValueOnce(new Error('Loan schedule changed'));
-  await expect(payRun('run-1','Bank Transfer','HR')).rejects.toThrow('Loan schedule changed');
-  expect(mocks.data.get(RUNS_KEY)).toEqual([expect.objectContaining({id:'run-1',status:'Approved',paidAt:undefined,paymentMethod:undefined})]);
+ it('refuses a result for a payout that was not exported',async()=>{
+  mocks.data.set(RUNS_KEY,[run()]);
+  await expect(markPayouts('run-1',[{empId:'EMP-2',status:'Paid'}],'HR')).rejects.toThrow('not waiting for a payment result');
  });
 });

@@ -7,7 +7,7 @@ import {can} from '../auth/permissions';
 import {employeeService} from '../employees/employeeService';
 import {calculatePayroll} from './payrollCalculator';
 import {loadRates} from '../settings/payrollSettings';
-import {RUNS_KEY,periodLabel,runTaxPeriod} from './payrollRuns';
+import {RUNS_KEY,isApprovedRun,periodLabel,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {loadWithholdingRules,validateRuleSet} from './withholdingTax';
 import type {AnnualTaxHistory} from './withholdingTax';
@@ -22,7 +22,7 @@ const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 type Entry={key:string;run:PayrollRun;row:RunRow;result:PayrollResult;employee?:Employee;recalculated:boolean;error?:string};
 const rowKey=(runId:string,empId:string,index:number)=>`${runId}:${empId}:${index}`;
 function employeeFor(employees:Employee[],input:PayrollInput){return employees.find(employee=>employee.id===input.empId||employee.employeeNo===input.empId)}
-function reportStatus(entry:Entry){return entry.error?'Validation error':entry.run.status==='Approved'?'Actual':entry.run.status==='Rejected'?'Rejected':entry.recalculated||entry.result.taxBreakdown?'Estimate':'Pending estimate'}
+function reportStatus(entry:Entry){return entry.error?'Validation error':isApprovedRun(entry.run)?'Actual':entry.run.status==='Rejected'?'Rejected':entry.recalculated||entry.result.taxBreakdown?'Estimate':'Pending estimate'}
 // The same year-to-date history Review Payroll uses (see taxHistory.ts).
 function priorHistory(runs:PayrollRun[],currentRun:PayrollRun,row:RunRow,allRules=loadWithholdingRules(),currentRates:PayrollRates=rates):AnnualTaxHistory{
  return yearToDateHistory(runs,row,{year:currentRun.from.slice(0,4),from:currentRun.from,to:currentRun.to,currentRunId:currentRun.id,final:isFinalTaxRow(currentRun,row)},currentRates,allRules);
@@ -80,7 +80,7 @@ export function WithholdingTaxReport({from,to,query}:{from:string;to:string;quer
     const errors=validationForRun(run,employees,!employeeLoading&&!employeeError,activeRules);
     if(errors.length){allErrors.push(...errors);for(const row of run.rows)rowErrors[rowKey(run.id,row.input.empId,run.rows.indexOf(row))]=errors.find(error=>error.toLowerCase().includes(row.input.empId.toLowerCase()))??errors[0];continue}
     // An approved run keeps the tax it was approved with; Review Payroll already computed it, year-end adjustment included.
-    if(run.status==='Approved'){locked++;continue}
+    if(isApprovedRun(run)){locked++;continue}
     run.rows.forEach((row,index)=>{
      const calculated=calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},activeRates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,activeRates.payPeriodsPerMonth),priorYear:priorHistory(runs,run,row,activeRules,activeRates),finalPeriod:isFinalTaxRow(run,row),rules:activeRules});
      nextEstimates[rowKey(run.id,row.input.empId,index)]=calculated;

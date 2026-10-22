@@ -7,8 +7,12 @@ import {governmentLoanService} from '../governmentLoans/governmentLoanService';
 import type {GovernmentLoanDeduction} from '../governmentLoans/governmentLoanPayroll';
 import {cutoffFor,cutoffNumberFor} from '../settings/payrollSettings';
 import type {PayrollSettingsSnapshot} from '../settings/payrollSettings';
+import {runStatus} from '../../../backend-render/payrollFlow.js';
+import type {PayoutMethod,PayoutStatus,RunStatus} from '../../../backend-render/payrollFlow.js';
 
-export type RunStatus='Pending Approval'|'Approved'|'Rejected';
+// The process (statuses, allowed changes, pay date) is shared with the server: backend-render/payrollFlow.js.
+export {APPROVED_STATUSES,PAYOUT_METHODS,PREPARING_STATUSES,PROCESS_STEPS,cutoffPayDate,isApprovedRun,runStatus} from '../../../backend-render/payrollFlow.js';
+export type {PayoutMethod,PayoutStatus,RunStatus} from '../../../backend-render/payrollFlow.js';
 export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:'Loan'|'Cash Advance';loanType:string;amount:number;installmentNumber:number;installmentCount:number};
 // hmoCompany: the company's HMO premium cost for the cutoff (not deducted); missing on runs saved before it was recorded.
 // attendanceGaps: work days Payroll could not pay (no HR2 record, or Present without a time-in or time-out).
@@ -17,44 +21,49 @@ export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:
 // withholding annualizes the year to date (RR 2-98 Sec. 2.79(B)(1)(b)(i)).
 export type ManualAdjustment={field:string;label:string;original:number;amount:number;reason:string};
 export type RunRow={position:string;rest:number;hmo:number;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];separated?:boolean;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
-// released: department name -> ISO date-time when released to ESS
+/** One employee's payout in a run: where the net pay goes and whether it was paid. */
+export type PayoutLine={method:PayoutMethod;bankName?:string;accountNumber?:string;provider?:string;walletNumber?:string;status:PayoutStatus;reason?:string;exportId?:string;updatedAt?:string;updatedBy?:string};
+/** One exported payout file. */
+export type PayoutExport={id:string;method:PayoutMethod;employees:string[];total:number;at:string;by:string};
 export type PayrollRunType='regular'|'thirteenth-month';
-export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};preparedBy:string;createdAt:string;decidedBy?:string;decidedAt?:string;released?:Record<string,string>;paymentMethod?:PaymentMethod;paidAt?:string;paidBy?:string;payDate?:string;settings?:PayrollSettingsSnapshot;payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;releasedAt?:string;releasedBy?:string;/** Finance's reason when it rejects the run. */rejectionReason?:string};
+// released: department name -> ISO date-time when released to ESS. Runs paid before payout tracking carry
+// paymentMethod and, once reported, releasedAt; runStatus() reads them as Paid or Closed.
+export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};
+ preparedBy:string;preparedById?:string;createdAt:string;payDate?:string;settings?:PayrollSettingsSnapshot;
+ /** What Create Payroll warned about (Strict Mode off), shown on the run. */warnings?:string[];
+ submittedAt?:string;submittedBy?:string;decidedBy?:string;decidedById?:string;decidedAt?:string;/** The Admin's comment; required to return or reject. */decisionComment?:string;
+ funding?:{reference:string;confirmedAt:string;confirmedBy:string;confirmedById:string};
+ payouts?:Record<string,PayoutLine>;exports?:PayoutExport[];paidAt?:string;paidBy?:string;
+ payslipsGeneratedAt?:string;payslipsGeneratedBy?:string;released?:Record<string,string>;closedAt?:string;
+ paymentMethod?:string;releasedAt?:string;releasedBy?:string;rejectionReason?:string};
 export const RUNS_KEY='payroll:runs';
 /** A payroll input with every amount at zero. */
 export const BLANK_PAYROLL_INPUT:PayrollInput={empId:'',name:'',dailyRate:0,daysWorked:0,absentDays:0,lateMin:0,undertimeMin:0,otHours:0,otRestHours:0,vlDays:0,slDays:0,lwopDays:0,holidayPay:0,slConversion:0,transportation:0,riceSubsidy:0,otherEarnings:0,withholdingTax:0,sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0,govSssLoan:0,govPagibigLoan:0,otherDeductions:0,thirteenthMonthAndOtherBenefits:0,taxExemptBenefits:0,priorEmployerTaxableCompensation:0,priorEmployerBenefitsPaid:0,priorEmployerWithheld:0,priorEmployerPayrollPeriods:0};
 
-/** Pending Approval (submitted to Finance) -> Approved or Rejected by Finance -> Released (reported to Finance after payslips are released); a released run is locked. */
-export const runStatusLabel=(run:Pick<PayrollRun,'status'|'releasedAt'>)=>run.status==='Approved'&&run.releasedAt?'Released':run.status;
-
-export type PaymentMethod='Bank Transfer'|'Direct Deposit';
-
-/** Where a run is in the payroll process. */
-export type RunStage='Pending Approval'|'Rejected'|'Approved'|'Payslips Generated'|'Released to ESS'|'Reported';
-export function runStage(run:Pick<PayrollRun,'status'|'payslipsGeneratedAt'|'released'|'releasedAt'>):RunStage{
- if(run.status!=='Approved')return run.status;
- if(run.releasedAt)return 'Reported';
- if(run.released&&Object.keys(run.released).length)return 'Released to ESS';
- return run.payslipsGeneratedAt?'Payslips Generated':'Approved';
-}
-const NEXT_STEP:Record<RunStage,string>={
- 'Pending Approval':'Waiting for Finance approval.',
- 'Rejected':'Rejected by Finance. Submit a new payroll for this cutoff.',
- 'Approved':'HR pays and generates the payslips.',
- 'Payslips Generated':'HR releases payslips to ESS (Payslip tab).',
- 'Released to ESS':'Release remaining departments, then report to Finance.',
- 'Reported':'Complete. The run is locked.',
+type StatusFields=Pick<PayrollRun,'status'|'paidAt'|'releasedAt'|'closedAt'|'funding'>;
+/** The status shown for a run (runs saved before payout tracking read as Paid or Closed). */
+export const runStatusLabel=(run:StatusFields)=>runStatus(run);
+const NEXT_STEP:Record<RunStatus,string>={
+ 'Draft':'HR computes the payroll.',
+ 'Computed':'HR reviews the checks and submits it.',
+ 'Pending Approval':'Waiting for the Admin to approve it.',
+ 'Returned':'Returned by the Admin. HR fixes and recomputes it.',
+ 'Rejected':'Rejected. Create a new payroll for this cutoff.',
+ 'Approved':'The Admin confirms the payroll account is funded.',
+ 'Funded':'HR exports the bank, e-wallet and cash payout files.',
+ 'Exported':'HR marks each employee Paid or Failed.',
+ 'Paid':'HR generates payslips and releases them to ESS.',
+ 'Closed':'Complete. The run is locked.',
 };
-export const runNextStep=(run:Pick<PayrollRun,'status'|'payslipsGeneratedAt'|'released'|'releasedAt'>)=>NEXT_STEP[runStage(run)];
-
+export const runNextStep=(run:StatusFields)=>NEXT_STEP[runStatus(run)];
 
 const label=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 export const periodLabel=(from:string,to:string)=>`${label(from)} - ${label(to)}`;
 export const isThirteenthMonthRun=(run:Pick<PayrollRun,'runType'>)=>run.runType==='thirteenth-month';
 // A 13th month run is dated on its release day; tax it with the regular pay-period table.
 export const runTaxPeriod=(run:Pick<PayrollRun,'runType'>,payPeriodsPerMonth:number)=>isThirteenthMonthRun(run)?(payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const):undefined;
-/** The most recently created regular payroll run that was not rejected; the Dashboard and payroll cards summarize it. */
-export const latestPayrollRun=(runs:PayrollRun[])=>runs.filter(run=>run.status!=='Rejected'&&!isThirteenthMonthRun(run)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
+/** The most recently created regular payroll run that has figures and was not rejected; the Dashboard and payroll cards summarize it. */
+export const latestPayrollRun=(runs:PayrollRun[])=>runs.filter(run=>!['Rejected','Draft'].includes(runStatus(run))&&!isThirteenthMonthRun(run)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
 export const runLabel=(run:Pick<PayrollRun,'runType'|'from'|'to'>)=>isThirteenthMonthRun(run)?`13th Month Pay · ${label(run.to)}`:periodLabel(run.from,run.to);
 /** The cutoff containing today, from the Pay Schedule settings. */
 export const cutoffRange=()=>{const d=new Date(),date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;return cutoffFor(date.slice(0,7),cutoffNumberFor(date))};
@@ -72,74 +81,72 @@ export async function updateRuns(change:(runs:PayrollRun[])=>PayrollRun[]):Promi
  write(RUNS_KEY,stored);
  return stored;
 }
+/** Changes one run on the server's current copy; change may throw to stop the save. Returns the saved run. */
+export async function updateRun(id:string,change:(run:PayrollRun)=>PayrollRun):Promise<PayrollRun>{
+ const runs=await updateRuns(list=>{
+  const run=list.find(item=>item.id===id);
+  if(!run)throw new Error('This payroll run was not found. Reload the page.');
+  return list.map(item=>item.id===id?change(item):item);
+ });
+ return runs.find(item=>item.id===id)!;
+}
+/** Refuses a change when the server's copy of the run is no longer in the expected status (another user moved it). */
+export const expectStatus=(run:PayrollRun,...statuses:RunStatus[])=>{
+ const status=runStatus(run);
+ if(!statuses.includes(status))throw new Error(`This payroll run is now ${status}. Reload the page.`);
+};
 
-// Finance approves or rejects submitted runs through POST /integrations/finance/payroll-runs/:id/decision.
+/**
+ * Marks exported payouts Paid or Failed. When this makes every employee Paid, the run becomes Paid: the loan
+ * settlements are checked first (nothing is saved if a check fails), then the run is saved as Paid and the loan
+ * and government loan deductions are posted.
+ */
+export async function markPayouts(id:string,changes:Array<{empId:string;status:'Paid'|'Failed';reason?:string}>,by:string){
+ const now=new Date().toISOString();
+ const apply=(run:PayrollRun):PayrollRun=>{
+  expectStatus(run,'Exported');
+  const payouts={...run.payouts};
+  for(const change of changes){
+   const line=payouts[change.empId];
+   if(!line||line.status!=='Exported')throw new Error(`${change.empId} is not waiting for a payment result.`);
+   const {reason:_reason,...rest}=line;
+   payouts[change.empId]={...rest,status:change.status,...(change.status==='Failed'?{reason:(change.reason??'').trim()}:{}),updatedAt:now,updatedBy:by};
+  }
+  const allPaid=Object.values(payouts).every(line=>line.status==='Paid');
+  return {...run,payouts,...(allPaid?{status:'Paid' as const,paidAt:now,paidBy:by}:{})};
+ };
+ const current=read<PayrollRun[]>(RUNS_KEY,[]).find(run=>run.id===id);
+ const completes=Boolean(current&&runStatus(apply(current))==='Paid');
+ // Check both loan settlements before the run is Paid, so a failing check leaves the run as it was.
+ if(completes&&current!.rows.some(row=>row.loanRepayments?.length))await loanService.validatePaidPayrollRun(id);
+ if(completes&&current!.rows.some(row=>row.governmentLoans?.length))await governmentLoanService.validateSettlement(id);
+ const saved=await updateRun(id,apply);
+ if(runStatus(saved)==='Paid')await settleRunLoans(saved);
+ return saved;
+}
+/** Posts a Paid run's loan and government loan deductions. Safe to retry: each posts once. */
+export async function settleRunLoans(run:PayrollRun){
+ if(run.rows.some(row=>row.loanRepayments?.length))await loanService.postPaidPayrollRun(run.id);
+ if(run.rows.some(row=>row.governmentLoans?.length)){
+  const posted=await governmentLoanService.settle(run.id);
+  if(posted.count&&!posted.idempotent)recordAudit({action:'Posted government loan deductions',module:'Government Loans',description:`Deducted ${peso(posted.totalAmount)} from ${posted.count} government loan${posted.count===1?'':'s'} for ${periodLabel(run.from,run.to)}.`});
+ }
+}
 
-// Releases payslips to ESS for the given departments after the server verifies the user's passkey; the server logs it.
+export type PayslipPasskeyCheck={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
+export type ReleaseRunResult=PayslipPasskeyCheck;
+// Releases payslips to ESS for the given departments after the server verifies the user's passkey; the server logs it
+// and closes the run once every department is released.
 export async function releaseDepartments(id:string,departments:string[],all:boolean,passkey:string):Promise<ReleaseRunResult>{
  const {data}=await apiClient.post<{run_id:string;departments:string[];all:boolean;passkey:string},{data:{released:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;runs?:PayrollRun[]}}>('/payroll/payslips/release',{run_id:id,departments,all,passkey});
  if(!data.released)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
  if(data.runs)write(RUNS_KEY,data.runs);
  return {verified:true};
 }
-
-export type GeneratePayslipsResult={generated:true}|{generated:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
-export type PayslipPasskeyCheck={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
-// The signed-in user's passkey (Settings & Privacy > Passkey) is checked by the server before the payment method is saved, and again on generate.
-export async function verifyPayslipPasskey(id:string,passkey:string):Promise<PayslipPasskeyCheck>{
- const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null}}>('/payroll/payslips/verify-passkey',{run_id:id,passkey});
- return data.verified?{verified:true}:{verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
-}
-// Marks the run's payslips as generated with its saved payment method; the server also writes Logs & Audit.
-export async function generatePayslips(id:string,passkey:string):Promise<GeneratePayslipsResult>{
+// Generates a Paid run's payslips after the server verifies the user's passkey; the server also writes Logs & Audit.
+export async function generatePayslips(id:string,passkey:string):Promise<PayslipPasskeyCheck>{
  const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{generated:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;runs?:PayrollRun[]}}>('/payroll/payslips/generate',{run_id:id,passkey});
- if(!data.generated)return {generated:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
- if(data.runs)write(RUNS_KEY,data.runs);
- return {generated:true};
-}
-
-export type ReleaseRunResult={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';lockedUntil?:string|null};
-// Release to Finance: the server verifies the user's passkey, marks the run Released (releasedAt, releasedBy) and logs it.
-export async function releaseRun(id:string,passkey:string):Promise<ReleaseRunResult>{
- const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{released:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;runs?:PayrollRun[]}}>('/payroll/release',{run_id:id,passkey});
- if(!data.released)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
+ if(!data.generated)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
  if(data.runs)write(RUNS_KEY,data.runs);
  return {verified:true};
-}
-
-/** Proceed to Payment, after the user's passkey is verified: saves the payment method on the run (once; it is locked
- * after that) and generates the payslips with it. Throws with a short message when either step fails. */
-export async function payAndGeneratePayslips(id:string,method:PaymentMethod,passkey:string,by:string){
- const current=read<PayrollRun[]>(RUNS_KEY,[]).find(run=>run.id===id);
- if(current&&!current.paidAt)await payRun(id,method,by);
- const result=await generatePayslips(id,passkey);
- if(!result.generated)throw new Error(result.reason==='invalid'?'Incorrect passkey':result.reason==='locked'?'Passkey locked':'Passkey not set');
-}
-
-export async function payRun(id:string,method:PaymentMethod,by:string):Promise<PayrollRun[]>{
- const paid:{run?:PayrollRun}={};
- // Saved to the server right away: payslip generation and loan settlement read the run from there.
- const next=await updateRuns(runs=>{
-  paid.run=runs.find(item=>item.id===id);
-  if(!paid.run||paid.run.status!=='Approved'||paid.run.paidAt)throw new Error('This payroll run is not approved, or it was already paid.');
-  return runs.map(item=>item.id===id?{...item,paymentMethod:method,paidAt:new Date().toISOString(),paidBy:by}:item);
- });
- const run=paid.run!;
- const hasLoans=run.rows.some(row=>Boolean(row.loanRepayments?.length)),hasGovernmentLoans=run.rows.some(row=>Boolean(row.governmentLoans?.length));
- try{
-  // Check both loan settlements before posting either, so one failing never leaves the other's balances changed.
-  if(hasLoans)await loanService.validatePaidPayrollRun(id);
-  if(hasGovernmentLoans)await governmentLoanService.validateSettlement(id);
-  if(hasLoans)await loanService.postPaidPayrollRun(id);
-  // Government loan balances drop only now, when the payroll is released.
-  if(hasGovernmentLoans){
-   const posted=await governmentLoanService.settle(id);
-   if(posted.count)recordAudit({action:'Posted government loan deductions',module:'Government Loans',description:`Deducted ${peso(posted.totalAmount)} from ${posted.count} government loan${posted.count===1?'':'s'} for ${periodLabel(run.from,run.to)}.`});
-  }
- }catch(cause){
-  const revert=(runs:PayrollRun[])=>runs.map(item=>item.id===id?{...item,paidAt:undefined,paidBy:undefined,paymentMethod:undefined}:item);
-  try{await updateRuns(revert)}catch{write(RUNS_KEY,revert(read<PayrollRun[]>(RUNS_KEY,[])))/* local sync retries the rollback */}
-  throw cause;
- }
- return next;
 }

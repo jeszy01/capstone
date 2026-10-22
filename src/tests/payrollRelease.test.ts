@@ -14,18 +14,33 @@ describe('employer shares',()=>{
  });
 });
 
-describe('release to Finance',()=>{
- it('shows Released only after the run is released, not when it is paid',()=>{
+describe('payslip release',()=>{
+ const paid={id:'run-1',status:'Paid',from:'2026-10-01',to:'2026-10-15',rows:[],paidAt:'2026-10-16T00:00:00.000Z',payouts:{}};
+ const hr={id:'u',role:'hr_staff'};
+ it('shows runs paid before payout tracking as Paid, and Closed once reported',()=>{
   expect(runStatusLabel({status:'Approved'})).toBe('Approved');
-  expect(runStatusLabel({status:'Approved',releasedAt:'2026-10-18T10:00:00.000Z'})).toBe('Released');
+  expect(runStatusLabel({status:'Approved',paidAt:'2026-10-16T00:00:00.000Z'})).toBe('Paid');
+  expect(runStatusLabel({status:'Approved',paidAt:'2026-10-16T00:00:00.000Z',releasedAt:'2026-10-18T10:00:00.000Z'})).toBe('Closed');
  });
- it('refuses releasing department payslips to ESS through a browser sync',async()=>{
-  const paid={id:'run-1',status:'Approved',from:'2026-10-01',to:'2026-10-15',rows:[],paidAt:'2026-10-16T00:00:00.000Z',paymentMethod:'Bank Transfer'};
-  await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:runs',[paid],[{...paid,released:{Engineering:'2026-10-18T10:00:00.000Z'}}],true)).rejects.toThrow();
+ it('refuses generating or releasing payslips, or closing a run, through a browser sync',async()=>{
+  await expect(appDataEvents(hr,'payroll:runs',[paid],[{...paid,payslipsGeneratedAt:'2026-10-18T10:00:00.000Z'}],true)).rejects.toThrow();
+  await expect(appDataEvents(hr,'payroll:runs',[paid],[{...paid,released:{Engineering:'2026-10-18T10:00:00.000Z'}}],true)).rejects.toThrow();
+  await expect(appDataEvents(hr,'payroll:runs',[paid],[{...paid,status:'Closed',closedAt:'x'}],true)).rejects.toThrow();
  });
- it('refuses releasing a run through a browser sync',async()=>{
-  const paid={id:'run-1',status:'Approved',from:'2026-10-01',to:'2026-10-15',rows:[],paidAt:'2026-10-16T00:00:00.000Z',paymentMethod:'Bank Transfer'};
-  const hr={id:'u',role:'hr_staff'};
-  await expect(appDataEvents(hr,'payroll:runs',[paid],[{...paid,releasedAt:'2026-10-18T10:00:00.000Z',releasedBy:'HR'}],true)).rejects.toThrow();
+});
+
+describe('payroll data HR keeps',()=>{
+ it('lets HR keep payout details but not the Admin',async()=>{
+  expect(await appDataEvents({id:'u',role:'hr_staff'},'payroll:payouts',null,{'EMP-1':{method:'Cash'}},false)).toEqual([]);
+  await expect(appDataEvents({id:'a',role:'admin'},'payroll:payouts',null,{'EMP-1':{method:'Cash'}},false)).rejects.toThrow();
+ });
+ it('only adds timesheet locks and logs each one',async()=>{
+  const lock={id:'l1',from:'2026-10-01',to:'2026-10-15',lockedAt:'x',lockedBy:'HR'};
+  expect(await appDataEvents({id:'u',role:'hr_staff'},'payroll:timesheet-locks',[],[lock],true)).toEqual([['payroll.timesheet_locked','Payroll','l1',expect.stringContaining('2026-10-01 to 2026-10-15')]]);
+  await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:timesheet-locks',[lock],[],true)).rejects.toThrow('cannot be unlocked');
+ });
+ it('treats run options as an Admin-only payroll setting',async()=>{
+  await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:run-options',null,{strictMode:true},false)).rejects.toThrow();
+  expect((await appDataEvents({id:'a',role:'admin'},'payroll:run-options',{strictMode:false},{strictMode:true},true))[0][0]).toBe('settings.updated');
  });
 });

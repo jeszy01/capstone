@@ -5,7 +5,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { AccessError, FORBIDDEN_MESSAGE, PAYROLL_RULE_KEYS, ROLE_LABELS, appDataEvents, can, keepMissingRuns, pesoText, readableKey, roleKey, runPeriod, SENSITIVE_EMPLOYEE_FIELDS, visibleEmployee } from './accessRules.js';
 import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from './hr2Rules.js';
-import { FINANCE_STATUSES, applyFinanceDecision, financeStatus, runDetail, runSummary } from './financeRules.js';
+import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
+import { runStatus } from './payrollFlow.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
@@ -124,7 +125,7 @@ async function saveAppData(req, key, isDel, value) {
       if (isDel) throw new AccessError(key === 'payroll:runs' ? 'Payroll runs cannot be deleted.' : 'Claims cannot be deleted.');
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
     }
-    events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed, releasedRecentlyBy);
+    events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed);
     await client.query(
       `insert into app_data(key,value,deleted,updated_by) values($1,$2,$3,$4)
        on conflict(key) do update set value=$2, deleted=$3, updated_at=now(), updated_by=$4`,
@@ -477,15 +478,14 @@ const created = (res, data) => res.status(201).json({ data });
 const ctxOf = req => ({ userId: req.user.id, sessionId: req.sessionId ?? null });
 const input = req => (req.body && typeof req.body === 'object' ? req.body : {});
 
-// A release may be undone only by the HR user who made it, within minutes, when posting its loan deductions failed.
-async function releasedRecentlyBy(user, runId) {
-  const { rows: [last] } = await run(`select actor_id, created_at from audit_logs where action='payroll.released' and entity_id=$1 order by created_at desc limit 1`, [runId]);
-  return Boolean(last && String(last.actor_id) === String(user.id) && Date.now() - Date.parse(last.created_at) < 10 * 60_000);
-}
-
 // ---- /audit-logs (Logs & Audit) ----
 // Entries with a description are listed: decisions the server records itself and activity the app reports.
 const ACTION_LABELS = {
+  'payroll.created': 'Created payroll', 'payroll.computed': 'Computed payroll', 'payroll.recomputed': 'Recomputed payroll',
+  'payroll.submitted': 'Submitted payroll', 'payroll.returned': 'Returned payroll', 'payroll.funded': 'Confirmed payroll funding',
+  'payroll.exported': 'Exported payouts', 'payroll.payouts_paid': 'Marked payouts Paid', 'payroll.payout_failed': 'Marked payout Failed',
+  'payroll.payouts_updated': 'Updated payout details', 'payroll.paid': 'Payroll paid', 'payroll.closed': 'Closed payroll',
+  'payroll.timesheet_locked': 'Locked timesheet',
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
   'payroll.payslips_generated': 'Generated payslips', 'payroll.payslips_generate_failed': 'Failed passkey attempt',
@@ -500,15 +500,18 @@ const ACTION_LABELS = {
   'compensation.reward.rejected': 'Rejected incentive or bonus' };
 const AUDIT_MODULES = { compensation_proposals: 'Compensation Planning', compensation_rewards: 'Compensation Planning', users: 'User Accounts' };
 
-app.get('/audit-logs', auth, allow('audit.view'), async (_req, res) => {
+// ?entity_id= lists one record's history (a payroll run's activity log) instead of everything.
+app.get('/audit-logs', auth, allow('audit.view'), async (req, res) => {
+  const entityId = text(req.query.entity_id);
   const [{ rows }, users, legacy] = await Promise.all([
-    run(`select * from audit_logs where metadata ? 'description' order by created_at desc limit 2000`),
-    listRows('users'), first('app_data', { key: 'audit:events' })]);
+    entityId ? run(`select * from audit_logs where metadata ? 'description' and entity_id=$1 order by created_at desc limit 500`, [entityId])
+      : run(`select * from audit_logs where metadata ? 'description' order by created_at desc limit 2000`),
+    listRows('users'), entityId ? null : first('app_data', { key: 'audit:events' })]);
   const userById = new Map(users.map(u => [String(u.id), u]));
   const events = rows.map(r => {
     const u = userById.get(String(r.actor_id));
     return { id: String(r.id), timestamp: r.created_at, user: r.actor_name || u?.name || u?.email || 'System', role: ROLE_LABELS[r.actor_role ?? roleKey(u?.role)] ?? '—',
-      action: r.metadata?.label || ACTION_LABELS[r.action] || r.action, module: AUDIT_MODULES[r.entity] ?? r.entity ?? '—', description: r.metadata?.description || '—', ipDevice: r.ip_device || '—' };
+      action: r.metadata?.label || ACTION_LABELS[r.action] || r.action, module: AUDIT_MODULES[r.entity] ?? r.entity ?? '—', description: r.metadata?.description || '—', ipDevice: r.ip_device || '—', entityId: r.entity_id ?? null };
   });
   // Activity recorded in the browser before Logs & Audit moved to the server.
   const older = legacy && !legacy.deleted ? appValue(legacy.value) : [];
@@ -674,7 +677,8 @@ async function checkPayslipPasskey(req, passkey, payrollRun, detail = `Generate 
   return { ...check, wrong: !check.verified && check.reason !== 'not_set' && !wasLocked };
 }
 // Runs inside a transaction holding the same lock as /app-data writes, so a sync cannot overwrite the change.
-async function withPayrollRun(runId, work) {
+// Payslips exist only for a Paid run (every employee paid); runs paid before payout tracking read as Paid too.
+async function withPaidRun(runId, work) {
   const client = await pool.connect();
   try {
     await client.query('begin');
@@ -683,7 +687,7 @@ async function withPayrollRun(runId, work) {
     const runs = data && !data.deleted ? appValue(data.value) : [];
     const payrollRun = Array.isArray(runs) ? runs.find(r => r && String(r.id) === runId) : undefined;
     if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run is not synchronized to the database.');
-    if (payrollRun.status !== 'Approved') throw new HttpError(409, 'PAYROLL_NOT_APPROVED', 'Payslips can be generated only for approved payroll.');
+    if (runStatus(payrollRun) !== 'Paid') throw new HttpError(409, 'PAYROLL_NOT_PAID', runStatus(payrollRun) === 'Closed' ? 'This payroll run is closed.' : 'Payslips are available only after every employee in the run is Paid.');
     const result = await work(client, runs, payrollRun);
     await client.query('commit');
     return { result, payrollRun };
@@ -694,24 +698,15 @@ async function withPayrollRun(runId, work) {
 }
 const logWrongPayslipPasskey = (req, runId, payrollRun, check, action = 'payroll.payslips_generate_failed', doing = 'generating payslips for') => audit(action, req.user.id, 'Payroll', runId,
   { description: `Wrong passkey when ${doing} ${runPeriod(payrollRun)}.${check.reason === 'locked' ? ' Passkey locked for 15 minutes.' : ''}` }, ipDevice(req));
-const refuseGenerated = payrollRun => { if (payrollRun.payslipsGeneratedAt) throw new HttpError(409, 'PAYSLIPS_ALREADY_GENERATED', 'Payslips were already generated for this payroll run.'); };
 const passkeyFailure = check => ({ reason: check.reason, ...(check.locked_until ? { locked_until: check.locked_until } : {}) });
+// Runs paid before payslip generation was recorded separately count as generated when they were paid.
+const payslipsGenerated = payrollRun => Boolean(payrollRun.payslipsGeneratedAt || (payrollRun.paidAt && payrollRun.status === 'Approved'));
 
-// Proceed to Payment, step 1: after the Payment Method is chosen, the passkey is checked before anything is saved.
-app.post('/payroll/payslips/verify-passkey', auth, allow('payroll.release'), async (req, res) => {
-  const body = input(req), runId = required(body.run_id, 'run_id');
-  const { result: check, payrollRun } = await withPayrollRun(runId, (_client, _runs, payrollRun) => { refuseGenerated(payrollRun); return checkPayslipPasskey(req, body.passkey, payrollRun); });
-  if (check.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, check);
-  ok(res, check.verified ? { verified: true } : { verified: false, ...passkeyFailure(check) });
-});
-
-// Step 2: after the payment method is saved on the run (paidAt and paymentMethod), the passkey is checked again and the
-// payslips are marked as generated with that payment method. Once generated, the payment method can no longer change.
+// Generate payslips once the run is Paid, after the user's passkey is verified.
 app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (req, res) => {
   const body = input(req), runId = required(body.run_id, 'run_id');
-  const { result, payrollRun } = await withPayrollRun(runId, async (client, runs, payrollRun) => {
-    refuseGenerated(payrollRun);
-    if (!payrollRun.paidAt || !payrollRun.paymentMethod) throw new HttpError(409, 'PAYMENT_METHOD_REQUIRED', 'Choose the payment method before generating payslips.');
+  const { result, payrollRun } = await withPaidRun(runId, async (client, runs, payrollRun) => {
+    if (payslipsGenerated(payrollRun)) throw new HttpError(409, 'PAYSLIPS_ALREADY_GENERATED', 'Payslips were already generated for this payroll run.');
     const check = await checkPayslipPasskey(req, body.passkey, payrollRun);
     if (!check.verified) return check;
     const generatedAt = new Date().toISOString(), generatedBy = req.user.display_name || req.user.name || req.user.email || 'HR Staff';
@@ -720,55 +715,40 @@ app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (re
     return { verified: true, runs: next };
   });
   if (result.verified) {
-    await audit('payroll.payslips_generated', req.user.id, 'Payroll', runId, { description: `Generated payslips for ${runPeriod(payrollRun)} (${payrollRun.paymentMethod}).` }, ipDevice(req));
+    await audit('payroll.payslips_generated', req.user.id, 'Payroll', runId, { description: `Generated payslips for ${runPeriod(payrollRun)}.` }, ipDevice(req));
     return ok(res, { generated: true, runs: result.runs });
   }
   if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result);
   ok(res, { generated: false, ...passkeyFailure(result) });
 });
 
-// Release to Finance: after the payslips are generated, the user's passkey is verified and the run is marked Released
-// (releasedAt, releasedBy). A released run is locked; it makes the Payroll Summary available to Finance.
-app.post('/payroll/release', auth, allow('payroll.release'), async (req, res) => {
-  const body = input(req), runId = required(body.run_id, 'run_id');
-  const { result, payrollRun } = await withPayrollRun(runId, async (client, runs, payrollRun) => {
-    if (!payrollRun.paidAt) throw new HttpError(409, 'PAYSLIPS_NOT_GENERATED', 'Generate the payslips before releasing this payroll run.');
-    if (payrollRun.releasedAt) throw new HttpError(409, 'PAYROLL_ALREADY_RELEASED', 'This payroll run was already released.');
-    const check = await checkPayslipPasskey(req, body.passkey, payrollRun, `Release ${runPeriod(payrollRun)} to Finance`);
-    if (!check.verified) return check;
-    const releasedAt = new Date().toISOString(), releasedBy = req.user.display_name || req.user.name || req.user.email || 'HR Staff';
-    const next = runs.map(r => r && String(r.id) === runId ? { ...r, releasedAt, releasedBy } : r);
-    await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
-    return { verified: true, runs: next };
-  });
-  if (result.verified) {
-    await audit('payroll.released_to_finance', req.user.id, 'Payroll', runId, { description: `Released payroll for ${runPeriod(payrollRun)} to Finance.` }, ipDevice(req));
-    return ok(res, { released: true, runs: result.runs });
-  }
-  if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result, 'payroll.release_failed', 'releasing to Finance the payroll for');
-  ok(res, { released: false, ...passkeyFailure(result) });
-});
-
 // Release payslips to ESS by department (one department or Release All): the user's passkey is verified first,
-// then each department's release time is saved on the run and the release is logged.
+// then each department's release time is saved on the run and the release is logged. When every department of the
+// run is released, the run is Closed.
 app.post('/payroll/payslips/release', auth, allow('payroll.release'), async (req, res) => {
   const body = input(req), runId = required(body.run_id, 'run_id');
   const departments = Array.isArray(body.departments) ? [...new Set(body.departments.filter(d => typeof d === 'string' && d.trim()).map(d => d.trim().slice(0, 120)))] : [];
   if (!departments.length) throw new HttpError(400, 'VALIDATION_ERROR', 'departments is required');
-  const { result, payrollRun } = await withPayrollRun(runId, async (client, runs, payrollRun) => {
-    if (!payrollRun.paidAt) throw new HttpError(409, 'PAYSLIPS_NOT_GENERATED', 'Generate the payslips before releasing them.');
+  const { result, payrollRun } = await withPaidRun(runId, async (client, runs, payrollRun) => {
+    if (!payslipsGenerated(payrollRun)) throw new HttpError(409, 'PAYSLIPS_NOT_GENERATED', 'Generate the payslips before releasing them.');
     const pending = departments.filter(d => !payrollRun.released?.[d]);
     if (!pending.length) throw new HttpError(409, 'PAYSLIPS_ALREADY_RELEASED', 'These payslips were already released.');
     const check = await checkPayslipPasskey(req, body.passkey, payrollRun, `Release payslips of ${pending.join(', ')} for ${runPeriod(payrollRun)}`);
     if (!check.verified) return check;
-    const at = new Date().toISOString();
-    const next = runs.map(r => r && String(r.id) === runId ? { ...r, released: { ...r.released, ...Object.fromEntries(pending.map(d => [d, at])) } } : r);
+    const at = new Date().toISOString(), released = { ...payrollRun.released, ...Object.fromEntries(pending.map(d => [d, at])) };
+    // The run's departments, as the Payslips page groups them: each employee's department, or Unassigned.
+    const numbers = (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).map(r => String(r?.input?.empId ?? ''));
+    const { rows: staff } = await client.query('select employee_number, department from employees where employee_number = any($1)', [numbers]);
+    const departmentOf = new Map(staff.map(e => [String(e.employee_number), e.department || 'Unassigned']));
+    const closed = numbers.every(n => released[departmentOf.get(n) ?? 'Unassigned']);
+    const next = runs.map(r => r && String(r.id) === runId ? { ...r, released, ...(closed ? { status: 'Closed', closedAt: at } : {}) } : r);
     await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
-    return { verified: true, runs: next, pending };
+    return { verified: true, runs: next, pending, closed };
   });
   if (result.verified) {
     const which = body.all === true ? `all departments (${result.pending.join(', ')})` : result.pending.join(', ');
     await audit('payroll.payslips_released', req.user.id, 'Payroll', runId, { description: `Released payslips of ${which} for ${runPeriod(payrollRun)} to ESS.` }, ipDevice(req));
+    if (result.closed) await audit('payroll.closed', req.user.id, 'Payroll', runId, { description: `Closed payroll for ${runPeriod(payrollRun)}: payslips are released to every department.` }, ipDevice(req));
     return ok(res, { released: true, runs: result.runs });
   }
   if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result, 'payroll.release_failed', 'releasing payslips to ESS for');
@@ -1752,6 +1732,7 @@ async function loadLoanWorkspace() {
   });
   return { loans: formatted, transactions };
 }
+const paidForSettlement = (payrollRun, validateOnly) => (['Paid', 'Closed'].includes(runStatus(payrollRun)) && Boolean(text(payrollRun.paidAt))) || (validateOnly && runStatus(payrollRun) === 'Exported');
 const payrollBucket = (loanType, recordType) => recordType === 'Cash Advance' ? 'cashAdvance' : loanType === 'SSS Loan' ? 'sssLoan' : loanType === 'Pag-IBIG Loan' ? 'pagibigLoan' : 'companyLoan';
 // Government loans have their own payroll fields (govSssLoan, govPagibigLoan). Rows built before that split carried
 // government amounts inside sssLoan and pagibigLoan, so for those rows the government amounts are added back.
@@ -1762,7 +1743,8 @@ async function settlePayroll(payrollRunId, actorId, validateOnly = false) {
   if (!appData || appData.deleted === true) throw new HttpError(409, 'PAYROLL_RUN_NOT_FOUND', 'The approved payroll run is not synchronized to the database.');
   const payrollRun = asArray(appValue(appData.value)).find(r => String(r.id) === payrollRunId);
   if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found in synchronized payroll data.');
-  if (payrollRun.status !== 'Approved' || !text(payrollRun.paidAt)) throw new HttpError(409, 'PAYROLL_NOT_PAID', 'Only an approved payroll run confirmed as paid may update loan balances.');
+  // Balances change only for a Paid run; the checks alone (validate only) also run just before HR marks it Paid.
+  if (!paidForSettlement(payrollRun, validateOnly)) throw new HttpError(409, 'PAYROLL_NOT_PAID', 'Only a payroll run with every employee Paid may update loan balances.');
   const periodStart = loanDate(payrollRun.from, 'payroll.period_start'), periodEnd = loanDate(payrollRun.to, 'payroll.period_end');
   if (periodEnd < periodStart) throw new HttpError(400, 'INVALID_PAYROLL_PERIOD', 'The payroll period end must be on or after its start.');
   const runCreatedAt = required(payrollRun.createdAt, 'payroll.createdAt');
@@ -1993,7 +1975,7 @@ app.post('/government-loans/settle', auth, allow('payroll.release'), async (req,
   if (!appData || appData.deleted === true) throw new HttpError(409, 'PAYROLL_RUN_NOT_FOUND', 'The released payroll run is not synchronized to the database.');
   const payrollRun = asArray(appValue(appData.value)).find(r => String(r.id) === payrollRunId);
   if (!payrollRun) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found in synchronized payroll data.');
-  if (payrollRun.status !== 'Approved' || !text(payrollRun.paidAt)) throw new HttpError(409, 'PAYROLL_NOT_RELEASED', 'Only a released payroll run may reduce government loan balances.');
+  if (!paidForSettlement(payrollRun, validateOnly)) throw new HttpError(409, 'PAYROLL_NOT_PAID', 'Only a payroll run with every employee Paid may reduce government loan balances.');
   const periodStart = loanDate(payrollRun.from, 'payroll.from'), periodEnd = loanDate(payrollRun.to, 'payroll.to');
   const lines = [];
   for (const row of asArray(payrollRun.rows)) {
@@ -2123,8 +2105,8 @@ app.post('/integrations/hr2/attendance', async (req, res) => {
   ok(res, { received: accepted.length, rejected, synced_through: store.syncedThrough, total_records: store.records.length });
 });
 
-// ---- Finance payroll approval (server to server) ----
-// Finance's system reads the payroll runs HR submits and sends back its decision with the shared key in the X-API-Key
+// ---- Finance payroll runs, read-only (server to server) ----
+// Finance's system reads submitted payroll runs with their funding and payout progress, with the shared key in the X-API-Key
 // header (Render env FINANCE_API_KEY, at least 32 characters). See backend-render/FINANCE_PAYROLL_API.md.
 const financeKey = Buffer.from(process.env.FINANCE_API_KEY ?? '');
 const financeAuth = (req, res, next) => {
@@ -2158,38 +2140,17 @@ async function notifyRoles(roles, type, title, message, link) {
 app.get('/integrations/finance/payroll-runs', financeAuth, async (req, res) => {
   const status = text(req.query.status).toLowerCase();
   if (status && !FINANCE_STATUSES.includes(status)) return fail(res, 400, 'VALIDATION_ERROR', `status must be one of ${FINANCE_STATUSES.join(', ')}.`);
-  const runs = (await storedRuns()).filter(run => !status || financeStatus(run) === status).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+  const runs = (await storedRuns()).filter(run => financeStatus(run) && (!status || financeStatus(run) === status)).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
   ok(res, runs.map(runSummary));
 });
 app.get('/integrations/finance/payroll-runs/:id', financeAuth, async (req, res) => {
   const run = (await storedRuns()).find(item => String(item.id) === req.params.id);
-  if (!run) return fail(res, 404, 'PAYROLL_RUN_NOT_FOUND', 'Payroll run not found.');
+  if (!run || !financeStatus(run)) return fail(res, 404, 'PAYROLL_RUN_NOT_FOUND', 'Payroll run not found.');
   ok(res, runDetail(run));
 });
-app.post('/integrations/finance/payroll-runs/:id/decision', financeAuth, async (req, res) => {
-  const client = await pool.connect();
-  let decided;
-  try {
-    await client.query('begin');
-    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:payroll:runs']);
-    const { rows: [row] } = await client.query(`select value, deleted from app_data where key='payroll:runs'`);
-    const runs = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
-    const run = runs.find(item => item && String(item.id) === req.params.id);
-    if (!run) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'Payroll run not found.');
-    const result = applyFinanceDecision(run, input(req), new Date().toISOString());
-    if (result.error) throw new HttpError(result.error.status, result.error.code, result.error.message);
-    decided = result.run;
-    await client.query(`update app_data set value=$1, updated_at=now() where key='payroll:runs'`, [JSON.stringify(runs.map(item => item === run ? decided : item))]);
-    await client.query('commit');
-  } catch (e) {
-    await client.query('rollback').catch(() => undefined);
-    throw e;
-  } finally { client.release(); }
-  const approved = decided.status === 'Approved', label = runPeriod(decided);
-  await audit(approved ? 'payroll.approved' : 'payroll.rejected', null, 'Payroll', decided.id, { description: `${decided.status} payroll for ${label} by ${decided.decidedBy}${approved ? '' : `: ${decided.rejectionReason}`}.` });
-  await notifyRoles(['hr'], approved ? 'payroll_approved' : 'payroll_rejected', approved ? 'Payroll approved by Finance' : 'Payroll rejected by Finance', approved ? `${label} · Ready for payslips` : `${label} · ${decided.rejectionReason}`, `/payroll/review?run=${decided.id}`);
-  ok(res, runSummary(decided));
-});
+// Payroll is approved, returned or rejected by the PBMS Admin; Finance reads runs only.
+app.post('/integrations/finance/payroll-runs/:id/decision', financeAuth, (_req, res) =>
+  fail(res, 410, 'DECISIONS_IN_PBMS', 'Payroll runs are approved in PBMS by the Admin. This API is read-only.'));
 
 // ---- ESS expense claims (server to server) ----
 // Employees submit expense claims from ESS; ESS sends them with the shared key in the X-API-Key header (Render env

@@ -11,6 +11,8 @@
     "claims.view",
     "hmo.view",
     "settings.view",
+    "payroll.approve",
+    "payroll.fund",
     "compensation.approve",
     "hmo.approve",
     "settings.edit",

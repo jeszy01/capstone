@@ -1,5 +1,5 @@
 import type {Employee} from '../../types/domain';
-import {runLabel,runStatusLabel} from './payrollRuns';
+import {isApprovedRun,runLabel,runStatus} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 
 // Monthly and annual payroll reports are built from saved payroll runs. A run belongs to the month of its cutoff end
@@ -36,11 +36,11 @@ export function inPeriod(run:Pick<PayrollRun,'to'>,period:ReportPeriod){return p
 
 export function buildPayrollReport(allRuns:PayrollRun[],period:ReportPeriod,employees:Employee[],includePending=false):PayrollPeriodReport{
  const candidates=allRuns.filter(run=>inPeriod(run,period)&&run.status!=='Rejected');
- const runs=candidates.filter(run=>run.status==='Approved'||(includePending&&run.status==='Pending Approval')).sort((a,b)=>a.to.localeCompare(b.to)||a.from.localeCompare(b.from));
+ const runs=candidates.filter(run=>isApprovedRun(run)||(includePending&&run.status==='Pending Approval')).sort((a,b)=>a.to.localeCompare(b.to)||a.from.localeCompare(b.from));
  const excludedPending=includePending?0:candidates.filter(run=>run.status==='Pending Approval').length;
  const rows=runs.flatMap(run=>run.rows);
  const employeeOf=(row:RunRow)=>employees.find(item=>item.employeeNo===row.input.empId||item.id===row.input.empId);
- const byRun=runs.map(run=>({key:run.id,label:runLabel(run),detail:run.status==='Approved'?(runStatusLabel(run)==='Released'?'Released':run.paidAt?'Paid':'Approved'):'Pending approval',totals:sumRows(run.rows,uniqueEmployees(run.rows))}));
+ const byRun=runs.map(run=>({key:run.id,label:runLabel(run),detail:isApprovedRun(run)?runStatus(run):'Pending approval',totals:sumRows(run.rows,uniqueEmployees(run.rows))}));
  const year=period.kind==='annual'?period.year:period.month.slice(0,4);
  const byMonth=period.kind==='annual'?MONTHS.map((_,i)=>{const month=`${year}-${String(i+1).padStart(2,'0')}`;const monthRows=runs.filter(run=>runMonth(run)===month).flatMap(run=>run.rows);return {key:month,label:MONTHS[i],totals:sumRows(monthRows,uniqueEmployees(monthRows))}}):[];
  const employeeKeys=[...new Set(rows.map(row=>row.input.empId))];
