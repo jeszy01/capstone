@@ -1,6 +1,6 @@
-import {Fragment,useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import {Link,useNavigate,useSearchParams} from 'react-router-dom';
-import {ChevronDown,ChevronRight,Download} from 'lucide-react';
+import {Download} from 'lucide-react';
 import {Button,Card,Empty,Field,Modal,TextInput,button,ghost,input,success} from '../../components/common/ui';
 import type {Employee,PayrollInput} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
@@ -11,8 +11,7 @@ import {recordAudit} from '../audit/auditService';
 import {StatusBadge} from '../../components/common/StatusBadge';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
-import {loadRates,loadRunOptions,payrollSettingsSnapshot} from '../settings/payrollSettings';
-import {buildPayslipBreakdownFromRun} from './payslipMath';
+import {loadRates,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,isThirteenthMonthRun,markPayouts,runLabel,runStatus,settleRunLoans,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
 import {calcRow,computeRunRows,submitBlocked} from './computeRun';
@@ -30,7 +29,6 @@ type EditKey='otherDeductions'|'taxExemptBenefits'|'priorEmployerTaxableCompensa
 const EDIT_LABELS:Record<EditKey,string>={otherDeductions:'Other Deductions',taxExemptBenefits:'Tax-exempt benefits',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
 const PRIOR_KEYS:EditKey[]=['priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
 const EDIT_KEYS:EditKey[]=['otherDeductions','taxExemptBenefits',...PRIOR_KEYS];
-const nf=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const sameInput=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 // The amounts as computed, before any hand-typed change.
 const originalInput=(row:RunRow):PayrollInput=>({...row.input,...Object.fromEntries((row.manualAdjustments??[]).map(change=>[change.field,change.original]))});
@@ -55,13 +53,12 @@ export default function ReviewPayroll(){
 
 function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];onChanged:()=>void}){
  const nav=useNavigate();const user=getCurrentUser();const by=user?.name??'HR Staff';
- const status=runStatus(run),thirteenth=isThirteenthMonthRun(run),title=runLabel(run),options=loadRunOptions();
- const rates=run.settings?.rates??loadRates();
+ const status=runStatus(run),thirteenth=isThirteenthMonthRun(run),title=runLabel(run);
  const[rows,setRows]=useState<RunRow[]>(run.rows);
  useEffect(()=>setRows(run.rows),[run]);
  const[reasons,setReasons]=useState<Record<string,string>>(()=>Object.fromEntries(run.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>[reasonKey(row.input.empId,change.field),change.reason]))));
  const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[settleError,setSettleError]=useState('');
- const[expanded,setExpanded]=useState<string[]>([]),[dialog,setDialog]=useState<Dialog|null>(null),[comment,setComment]=useState(''),[receipt,setReceipt]=useState<File|null>(null);
+ const[dialog,setDialog]=useState<Dialog|null>(null),[comment,setComment]=useState(''),[receipt,setReceipt]=useState<File|null>(null);
  const[failing,setFailing]=useState<{empId:string;name:string;reason:string}|null>(null),[fixing,setFixing]=useState<string|null>(null);
  const deptOf=(empId:string)=>employees.find(employee=>employee.employeeNo===empId)?.department||'Unassigned';
  const staff=async()=>employees.length?employees:employeeService.getAllFromServer();
@@ -180,8 +177,6 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   {canRelease&&status==='Paid'&&generated&&<Link className={button} to="/payroll?tab=payslip">Release payslips</Link>}
  </>;
 
- const editKeys=EDIT_KEYS.filter(key=>key==='otherDeductions'||key==='taxExemptBenefits'||options.showPriorEmployer);
-
  return <div className="space-y-4">
   <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
    <div className="flex items-center gap-3"><button className={ghost} onClick={()=>nav('/payroll')}>Back</button><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">PR-{run.id.slice(0,8).toUpperCase()} · {thirteenth?'13th month pay':'Regular payroll'}</div><div className="mt-1 text-[15px] font-semibold text-[#17345b]">{title}</div><div className="text-[11px] text-slate-500">Pay date {formatDate(run.payDate??run.to)} · Prepared by {run.preparedBy}</div></div><StatusBadge status={status}/></div>
@@ -242,45 +237,6 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   </div>
 
   <PayrollRegister runId={run.id} refresh={checksTick}/>
-
-  {/* The employee table with drill-down, last on the page. */}
-  <div className="no-print">
-   {rows.length>0&&<Card className="min-w-0 !p-0">
-    <div className="border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[15px] font-semibold text-[#17345b]">Employees</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Open a row for the full breakdown{editable?' and to type in amounts':''}. The full Payroll Register is above.</p></div>
-    <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-[13px]">
-     <thead><tr className="border-b border-blue-100 bg-[#f3f8ff] text-[11px] uppercase tracking-wide text-[#536987]"><th className="w-8 px-3 py-3"/><th className="px-3 py-3">Employee</th><th className="px-3 py-3 text-right">Gross</th><th className="px-3 py-3 text-right">Deductions</th><th className="px-3 py-3 text-right">Net</th>{approved&&run.payouts&&<th className="px-3 py-3">Payout</th>}</tr></thead>
-     <tbody>{rows.map(row=>{
-      const open=expanded.includes(row.input.empId),c=row.result,line=payouts[row.input.empId];
-      const breakdown=open?buildPayslipBreakdownFromRun(row):null;
-      return <Fragment key={row.input.empId}>
-       <tr className="cursor-pointer border-b border-slate-100 hover:bg-blue-50/40" onClick={()=>setExpanded(list=>open?list.filter(id=>id!==row.input.empId):[...list,row.input.empId])}>
-        <td className="px-3 py-3 text-slate-400">{open?<ChevronDown size={15}/>:<ChevronRight size={15}/>}</td>
-        <td className="px-3 py-3"><div className="font-semibold text-slate-800">{row.input.name}</div><div className="text-[11px] text-slate-500">{row.input.empId} · {row.position||'—'}{row.manualAdjustments?.length?' · amounts typed in':''}</div></td>
-        <td className="px-3 py-3 text-right tabular-nums">{peso(c.gross)}</td>
-        <td className="px-3 py-3 text-right tabular-nums text-rose-700">{peso(c.deductions)}</td>
-        <td className={`px-3 py-3 text-right font-semibold tabular-nums ${c.net<0?'text-red-700':'text-[#17345b]'}`}>{peso(c.net)}</td>
-        {approved&&run.payouts&&<td className="px-3 py-3">{line?<StatusBadge status={line.status}/>:'—'}</td>}
-       </tr>
-       {open&&breakdown&&<tr className="border-b border-slate-100 bg-slate-50/60"><td/><td colSpan={approved&&run.payouts?5:4} className="px-3 py-4">
-        <div className="grid gap-4 md:grid-cols-2">
-         {([['Earnings',breakdown.earnings,c.gross],['Deductions',breakdown.deductions,c.deductions]] as const).map(([heading,list,total])=><div key={heading} className="rounded-lg border border-slate-200 bg-white"><div className="border-b border-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">{heading}</div>{list.map(item=><div key={item.label} className="flex justify-between px-3 py-1 text-[12px]"><span>{item.label}</span><span className="tabular-nums">{nf(item.amount)}</span></div>)}<div className="flex justify-between border-t border-slate-100 px-3 py-2 text-[12px] font-bold"><span>Total</span><span className="tabular-nums">{nf(total)}</span></div></div>)}
-        </div>
-        {!thirteenth&&<p className="mb-0 mt-3 text-[12px] text-slate-600">Present {numberValue(row.input.daysWorked)} · Absent {numberValue(row.input.absentDays)} · Leave {numberValue(row.input.vlDays)} · Late {numberValue(row.input.lateMin)} min · Undertime {numberValue(row.input.undertimeMin)} min · OT {numberValue(row.input.otHours)} h</p>}
-        {row.manualAdjustments?.length?<ul className="mb-0 mt-2 list-disc pl-5 text-[12px] text-[#17345b]">{row.manualAdjustments.map(change=><li key={change.field}>{change.label}: {peso(change.original)} → {peso(change.amount)} — {change.reason}</li>)}</ul>:null}
-        {editable&&<div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onClick={event=>event.stopPropagation()}>
-         {editKeys.map(key=>{const changed=changes.find(change=>change.empId===row.input.empId&&change.field===key);return <div key={key} className="grid gap-1">
-          <Field label={EDIT_LABELS[key]}><TextInput type="number" min="0" step={key==='priorEmployerPayrollPeriods'?'1':'0.01'} value={String(row.input[key]??0)} onChange={event=>{const value=event.target.value;setRows(list=>list.map(item=>{if(item.input.empId!==row.input.empId)return item;const next={...item,input:{...item.input,[key]:value}};return {...next,result:calcRow(next,run,rates)}}))}}/></Field>
-          {changed&&<input className={`${input} !py-1.5 text-[12px]`} maxLength={200} placeholder="Reason for this amount" value={reasons[reasonKey(row.input.empId,key)]??''} onChange={event=>setReasons(previous=>({...previous,[reasonKey(row.input.empId,key)]:event.target.value}))}/>}
-         </div>})}
-        </div>}
-       </td></tr>}
-      </Fragment>;
-     })}</tbody>
-     <tfoot><tr className="border-t-2 border-slate-200 font-semibold"><td/><td className="px-3 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{peso(totals.gross)}</td><td className="px-3 py-3 text-right tabular-nums">{peso(totals.deductions)}</td><td className="px-3 py-3 text-right tabular-nums">{peso(totals.net)}</td>{approved&&run.payouts&&<td/>}</tr></tfoot>
-    </table></div>
-   </Card>}
-
-  </div>
 
   {dialog==='submit'&&<Modal title="Submit for approval" onClose={()=>{if(!busy)setDialog(null)}}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Pay date',formatDate(run.payDate??run.to)],['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value])=><div key={labelText} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{labelText}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
