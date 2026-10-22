@@ -1,4 +1,4 @@
-import type {PayrollInput,PayrollRates} from '../../types/domain';
+import type {Employee,PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
 import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
@@ -6,11 +6,12 @@ import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherD
 import {fetchAttendance} from '../attendance/attendanceService';
 import {attendanceGaps} from '../attendance/workDays';
 import {finalCutoffBlocked,isFinalTaxRow,isYearEndCutoff,yearToDateHistory} from './taxHistory';
-import {loadAttendanceSchedule,loadHolidays,loadTimeSettings} from '../settings/payrollSettings';
+import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
 import {calculatePayroll} from './payrollCalculator';
-import {BLANK_PAYROLL_INPUT,RUNS_KEY,isThirteenthMonthRun,periodLabel,runStatus} from './payrollRuns';
+import {BLANK_PAYROLL_INPUT,RUNS_KEY,expectStatus,isThirteenthMonthRun,periodLabel,runStatus,updateRun} from './payrollRuns';
+import {payoutLinesFor} from './payouts';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
@@ -117,4 +118,18 @@ export async function submitBlocked(run:PayrollRun,runs:PayrollRun[]):Promise<st
  return to>deadline?`13th month pay for ${year} must be released on or before ${periodLabel(deadline,deadline).split(' - ')[0]}.`
   :releases.some(item=>runStatus(item)==='Pending Approval')?`A 13th month run for ${year} is awaiting approval.`
   :releases.length>=(rules.allowInstallments?rules.installments:1)?`All 13th month releases for ${year} have been submitted.`:'';
+}
+
+const totalsOf=(rows:RunRow[])=>({gross:rows.reduce((t,row)=>t+row.result.gross,0),deductions:rows.reduce((t,row)=>t+row.result.deductions,0),net:rows.reduce((t,row)=>t+row.result.net,0)});
+/**
+ * Process: computes every employee for the run's cutoff with the current rates and saves the rows, totals and payout
+ * lines as a Computed run. A Draft is processed once; re-processing is for a Computed (or Returned) run.
+ */
+export async function processRun(run:RunScope,employees:Employee[]){
+ const rates=loadRates();
+ const built=await computeRunRows(run,rates);
+ if(!built.length)throw new Error(isThirteenthMonthRun(run)?'No eligible employees with 13th month pay due.':'No employees with an assigned salary for this cutoff.');
+ const rows=built.map(row=>({...row,result:calcRow(row,run,rates)}));
+ const people=employees.length?employees:await employeeService.getAllFromServer();
+ return updateRun(run.id,item=>{expectStatus(item,'Draft','Computed','Returned');return {...item,status:'Computed',rows,totals:totalsOf(rows),settings:payrollSettingsSnapshot(item.to),payouts:payoutLinesFor({rows},people)}});
 }

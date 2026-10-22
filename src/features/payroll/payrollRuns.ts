@@ -78,6 +78,11 @@ export async function updateRun(id:string,change:(run:PayrollRun)=>PayrollRun):P
  });
  return runs.find(item=>item.id===id)!;
 }
+/** Deletes a Draft run; the server refuses any other status and logs the delete. */
+export async function deleteRun(id:string){
+ const {data}=await apiClient.delete<{data:{runs:PayrollRun[]}}>(`/payroll/runs/${id}`);
+ write(RUNS_KEY,data.runs);
+}
 /** Refuses a change when the server's copy of the run is no longer in the expected status (another user moved it). */
 export const expectStatus=(run:PayrollRun,...statuses:RunStatus[])=>{
  const status=runStatus(run);

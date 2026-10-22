@@ -15,7 +15,7 @@ export const visibleEmployee = (role, row) => can(role, 'employees.sensitive.vie
   : Object.fromEntries(Object.entries(row).filter(([key]) => !SENSITIVE_EMPLOYEE_FIELDS.includes(key)));
 export const FORBIDDEN_MESSAGE = 'You do not have permission to perform this action.';
 export class AccessError extends Error {
-  constructor(message = FORBIDDEN_MESSAGE) { super(message); this.status = 403; this.code = 'FORBIDDEN'; }
+  constructor(message = FORBIDDEN_MESSAGE, status = 403, code = 'FORBIDDEN') { super(message); this.status = status; this.code = code; }
 }
 
 // ---- Synchronized app data: payroll runs, claims, attendance and payroll settings ----
@@ -148,9 +148,10 @@ async function payrollRunEvents(user, before, after) {
       payoutEvents(old, row, was, log);
       continue;
     }
-    if (!canMove(was, now)) throw forbid(was === now
+    // A status change outside payrollFlow.js TRANSITIONS is a conflict (409); other refusals are 403.
+    if (!canMove(was, now)) throw new AccessError(was === now
       ? (was === 'Pending Approval' ? 'A submitted payroll run cannot be changed. The Admin can return it for changes.' : 'This payroll run cannot be changed.')
-      : `A payroll run cannot move from ${was} to ${now}.`);
+      : `A payroll run cannot move from ${was} to ${now}.`, 409, 'INVALID_TRANSITION');
     if (now === 'Computed') {
       need(user, 'payroll.generate', 'Only HR Staff can compute payroll.');
       checkComputed(row);

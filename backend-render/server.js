@@ -502,7 +502,7 @@ const ACTION_LABELS = {
   'payroll.submitted': 'Submitted payroll', 'payroll.returned': 'Returned payroll', 'payroll.funded': 'Confirmed payroll funding',
   'payroll.exported': 'Exported payouts', 'payroll.payouts_paid': 'Marked payouts Paid', 'payroll.payout_failed': 'Marked payout Failed',
   'payroll.payouts_updated': 'Updated payout details', 'payroll.funding_receipt_replaced': 'Replaced funding receipt', 'payroll.paid': 'Payroll paid', 'payroll.closed': 'Closed payroll',
-  'payroll.timesheet_locked': 'Locked timesheet', 'attendance.hr2_synced': 'Synced HR2 attendance',
+  'payroll.timesheet_locked': 'Locked timesheet', 'payroll.deleted': 'Deleted draft payroll', 'attendance.hr2_synced': 'Synced HR2 attendance',
   'payroll.generated': 'Generated payroll', 'payroll.approved': 'Approved payroll', 'payroll.rejected': 'Rejected payroll',
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
   'payroll.payslips_generated': 'Generated payslips', 'payroll.payslips_generate_failed': 'Failed passkey attempt',
@@ -2174,6 +2174,29 @@ app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) =
     await audit('government_loan.rejected', ctx.userId, 'government_loans', id, { referenceNo: previous.reference_no, remarks });
   } else throw new HttpError(400, 'LOAN_ACTION_NOT_SUPPORTED', 'Action must be update, verify or reject.');
   ok(res, await govLoanWithEmployee(await first('government_loans', { id }) ?? { ...previous, id }));
+});
+
+// Deletes a Draft payroll run (nothing computed yet); any later status is kept for the record.
+app.delete('/payroll/runs/:id', auth, allow('payroll.generate'), async (req, res) => {
+  const client = await pool.connect();
+  let removed, next;
+  try {
+    await client.query('begin');
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:payroll:runs']);
+    const { rows: [data] } = await client.query(`select value, deleted from app_data where key='payroll:runs'`);
+    const runs = data && !data.deleted && Array.isArray(appValue(data.value)) ? appValue(data.value) : [];
+    removed = runs.find(r => r && String(r.id) === req.params.id);
+    if (!removed) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found.');
+    if (runStatus(removed) !== 'Draft') throw new HttpError(409, 'PAYROLL_NOT_DRAFT', `Only a Draft payroll run can be deleted. This run is ${runStatus(removed)}.`);
+    next = runs.filter(r => r !== removed);
+    await client.query(`update app_data set value=$1, updated_at=now(), updated_by=$2 where key='payroll:runs'`, [JSON.stringify(next), req.user.id]);
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  await audit('payroll.deleted', req.user.id, 'Payroll', removed.id, { description: `Deleted the draft payroll for ${runPeriod(removed)}.` }, ipDevice(req));
+  ok(res, { runs: next });
 });
 
 // Sync now on Time & Attendance: reads the HR2 store this server holds (HR2 posts it weekly) and logs the sync.

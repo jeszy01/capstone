@@ -33,8 +33,8 @@ function schedulePush(key:string,write:PendingWrite,delay=400){
   void request.then(()=>{if(sameWrite(pending.get(key),write))pending.delete(key)})
    .catch(cause=>{
     if(!sameWrite(pending.get(key),write))return;
-    // The server refused this change for the signed-in role: drop it and restore the server copy.
-    if((cause as {status?:number}).status===403){pending.delete(key);rawRemove.call(window.localStorage,key);void hydrateFromServer(true);return}
+    // The server refused this change (403 for the signed-in role, 409 for a status change it does not allow): drop it and restore the server copy.
+    if([403,409].includes((cause as {status?:number}).status??0)){pending.delete(key);rawRemove.call(window.localStorage,key);void hydrateFromServer(true);return}
     schedulePush(key,write,2000);
    });
  },delay));

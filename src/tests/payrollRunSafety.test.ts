@@ -39,6 +39,7 @@ describe('payroll run transitions are enforced by the server',()=>{
  });
  it('refuses skipping steps and changing figures while submitting',async()=>{
   await expect(save(hr,[draft()],[pending()])).rejects.toThrow('cannot move from Draft to Pending Approval');
+  await expect(save(hr,[draft()],[pending()])).rejects.toMatchObject({status:409,code:'INVALID_TRANSITION'});
   await expect(save(hr,[computed()],[{...pending(),rows:[row('EMP-1',9999),row('EMP-2',2000)]}])).rejects.toThrow('cannot change its contents');
   await expect(save(hr,[draft()],[computed({payouts:{}})])).rejects.toThrow('pending payout line');
   await expect(save(hr,[draft()],[computed({rows:[{input:{empId:'EMP-1',name:'Ana'},result:{basic:1000,gross:1000,deductions:0,net:900}},row('EMP-2',2000)]})])).rejects.toThrow('do not add up');
