@@ -75,7 +75,7 @@ export default function Finance(){
    <button type="button" className={`${ghost} text-red-700`} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Rejected',run)}>Reject</button>
    <button type="button" className={button} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Approved',run)}>Approve</button>
   </>})}
-  {table('Awaiting funding','Approved payroll. Attach the receipt once the payroll account is funded.',toFund,'No approved payroll is waiting for funding.',run=><button type="button" className={button} onClick={()=>open('fund',run)}>Attach receipt</button>)}
+  {table('Awaiting funding','Approved payroll. Attach the receipt once the payroll account is funded.',toFund,'No approved payroll is waiting for funding.',run=><button type="button" className={button} onClick={()=>open('fund',run)}>Confirm</button>)}
   {table('Funded','Receipts are visible to Admin and Finance only. A receipt can be replaced until payouts are exported.',funded,'No funded payroll yet.',run=><>
    <button type="button" className={ghost} onClick={()=>showReceipt(run,false)}>View receipt</button>
    {runStatus(run)==='Funded'&&<button type="button" className={ghost} onClick={()=>open('replace',run)}>Replace</button>}
