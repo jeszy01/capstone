@@ -215,7 +215,7 @@ function notificationEvents(user, before, after) {
 }
 const CLAIM_DECISIONS = ['Approved', 'Rejected', 'Returned'];
 // Older claim rows use earlier status names; they are compared the way the Claims page reads them.
-const claimApproval = claim => {
+export const claimApproval = claim => {
   const v = claim.approvalStatus ?? claim.status;
   return ['Approved', 'Ready for Claim', 'Sent to Finance'].includes(v) ? 'Approved' : v === 'Rejected' || v === 'Returned' ? v : 'Pending Approval';
 };

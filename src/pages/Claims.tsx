@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {useSearchParams} from 'react-router-dom';
 import {Check,FileText,History,Hourglass,MoreVertical,RotateCcw,ThumbsDown} from 'lucide-react';
 import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,Tabs,ghost,input} from '../components/common/ui';
 import type {Employee} from '../types/domain';
@@ -25,7 +26,10 @@ export default function Claims(){
  const[pending,setPending]=useState<Pending|null>(null),[reason,setReason]=useState(''),[saving,setSaving]=useState(false),[actionError,setActionError]=useState('');
  const[view,setView]=useState<View>('open');
  const financeAuthorized=can('claims.approve');
- const openClaims=claims.filter(isOpen);
+ // ?status=pending (from the Dashboard) shows only claims still pending approval.
+ const[params,setParams]=useSearchParams(),pendingOnly=params.get('status')==='pending';
+ const showAllOpen=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
+ const openClaims=claims.filter(claim=>pendingOnly?claim.approvalStatus==='Pending Approval':isOpen(claim));
  const load=()=>{setLoading(true);setLoadError('');employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))}).catch(cause=>{setClaims(normalizeClaims([]));setLoadError(cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded.')}).finally(()=>setLoading(false))};
  useEffect(()=>{load()},[]);
  // Claim decisions are logged by the server when the claim is saved; the employee sees the status in ESS.
@@ -48,6 +52,7 @@ export default function Claims(){
      <p className="mb-0 mt-1 text-[12px] text-slate-500">{view==='open'?'Claims employees submitted from ESS, waiting for review. Returned claims come back once the employee corrects them.':'Every claim submitted from ESS, with its current status.'}</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
+     {pendingOnly&&view==='open'&&<span className="inline-flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-800">Showing pending approval<button type="button" className="text-blue-700 underline" onClick={showAllOpen}>Show all</button></span>}
      <Tabs label="Claims views" value={view} onChange={setView} tabs={VIEWS} className=""/>
     </div>
    </div>

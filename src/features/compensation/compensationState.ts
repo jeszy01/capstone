@@ -3,7 +3,7 @@ import {loadRates} from '../settings/payrollSettings';
 
 export type SalaryGrade={id:string;code:string;position:string;fixedSalary:number;dailyRate:number;status:'Active'|'Inactive';createdAt:string};
 export type EmployeeCompensation={id:string;employeeId:string;salaryCode:string;position:string;fixedSalary:number;dailyRate:number;effectiveDate:string;employeeName?:string;department?:string};
-export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string;rejectionReason?:string;reviewedBy?:string;salaryCode?:string};
+export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjustment'|'Merit Increase'|'Promotion Increase';previousSalary:number;newSalary:number;adjustmentAmount:number;effectiveDate:string;notes:string;status:'Pending HR Review'|'Approved'|'Rejected';createdAt:string;rejectionReason?:string;reviewedBy?:string;salaryCode?:string;/** The user who proposed it; they never approve it themselves. */createdBy?:string};
 export type RewardFrequency='Per Cutoff'|'Monthly';
 export type RewardStatus='Pending'|'Approved'|'Rejected'|'Active'|'Inactive';
 // Allowances use allowanceType, frequency, effectiveDate and Active/Inactive. Incentives and bonuses use cutoff, notes (reason), taxable and review status.

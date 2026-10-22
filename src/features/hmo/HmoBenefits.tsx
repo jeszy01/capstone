@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Plus, ShieldCheck, Pencil } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { hmoTabs, hmoTabForPath } from "./hmoNavigation";
 import {
   Button,
@@ -50,6 +50,17 @@ export default function HmoBenefits({
   section?: "hmo" | "dependents";
 }) {
   const { pathname } = useLocation();
+  // ?status=pending (from the Dashboard) shows only enrollments and dependents awaiting approval.
+  const [params, setParams] = useSearchParams();
+  const pendingOnly = params.get("status") === "pending";
+  const isPending = (item: { approvalStatus?: string; status: string }) => item.approvalStatus === "Pending" && ["Pending", "Submitted"].includes(item.status);
+  const showAll = () => { const next = new URLSearchParams(params); next.delete("status"); setParams(next, { replace: true }); };
+  const pendingChip = pendingOnly && (
+    <p className="mb-0 mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-800">
+      Showing members awaiting approval
+      <button type="button" className="text-blue-700 underline" onClick={showAll}>Show all</button>
+    </p>
+  );
   const navigate = useNavigate();
   const tab = section === "dependents" ? "dependents" : hmoTabForPath(pathname);
   const [providers, setProviders] = useState<HmoProvider[]>([]),
@@ -206,8 +217,9 @@ export default function HmoBenefits({
                 <PlanList plans={plans} providerFor={providerFor} onOpen={setSelectedPlanId} />
               ))}{" "}
             {tab === "enrollment" && <>
+              {pendingChip}
               <EnrollmentSection
-                enrollments={enrollments}
+                enrollments={pendingOnly ? enrollments.filter(isPending) : enrollments}
                 plans={plans}
                 employeeMap={employeeMap}
                 onChanged={() => void load()}
@@ -215,14 +227,15 @@ export default function HmoBenefits({
               {!enrollmentPlans.length && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">An active Maxicare plan is required before employees can be enrolled.</p>}
               {enrollmentPlans.length > 0 && !availableEnrollmentEmployees.length && <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[12px] text-blue-900">There are no active employees without an open HMO enrollment to select.</p>}
             </>}{" "}
-            {tab === "dependents" && (
+            {tab === "dependents" && (<>
+              {pendingChip}
               <DependentSection
-                dependents={dependents}
+                dependents={pendingOnly ? dependents.filter(isPending) : dependents}
                 enrollments={enrollments}
                 employeeMap={employeeMap}
                 onChanged={() => void load()}
               />
-            )}{" "}
+            </>)}{" "}
             {tab === "history" && (
               <HmoRecordsSection
                 enrollments={enrollments}
