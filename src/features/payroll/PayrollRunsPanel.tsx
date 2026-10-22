@@ -15,7 +15,7 @@ import {cell,flushCard,rowHeader,tableHead} from '../../components/common/tableU
 const HEADINGS=['Period','Schedule','Approval','Payslips','Total Net','Actions'];
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
-/** Payroll Runs: every run with its period, schedule and approval status. A Draft is processed or deleted here; Details opens the run. */
+/** Payroll Runs: every run with its period, schedule and approval status. A Draft is processed here, any run can be deleted, and Details opens the run. */
 export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAmounts:boolean}){
  // ?status=Pending Approval (or a comma list) shows only runs in those statuses, as the Dashboard links do.
  const[params,setParams]=useSearchParams();
@@ -23,7 +23,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
  const statusFilter=(params.get('status')??'').split(',').map(item=>item.trim()).filter(Boolean);
  const clearFilter=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
  const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].filter(run=>!statusFilter.length||statusFilter.includes(runStatus(run))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- const rates=loadRates(),canPrepare=can('payroll.generate');
+ const rates=loadRates(),canPrepare=can('payroll.generate'),canDelete=canPrepare||can('payroll.approve');
  // A run is processed once it has computed rows; until then Payslips and Total Net show "—".
  const processed=(run:PayrollRun)=>runStatus(run)!=='Draft'&&run.rows.length>0;
  const net=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
@@ -37,12 +37,10 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
   finally{setBusy('')}
  };
  const actions=(run:PayrollRun)=>{
-  const details=<Link className={ghost} to={`/payroll/review?run=${run.id}`}>Details</Link>;
-  if(runStatus(run)!=='Draft'||!canPrepare)return details;
   return <>
-   <button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act(`process-${run.id}`,()=>processRun(run,employees))}>{busy===`process-${run.id}`?'Processing…':'Process'}</button>
-   {details}
-   <button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>
+   {runStatus(run)==='Draft'&&canPrepare&&<button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act(`process-${run.id}`,()=>processRun(run,employees))}>{busy===`process-${run.id}`?'Processing…':'Process'}</button>}
+   <Link className={ghost} to={`/payroll/review?run=${run.id}`}>Details</Link>
+   {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}
   </>;
  };
  return <section className="min-w-0">
@@ -59,7 +57,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
       <div className="flex flex-wrap items-center gap-2"><Link className="text-[#17345b] hover:text-blue-700 hover:underline" to={`/payroll/review?run=${run.id}`}>{runLabel(run)}</Link>{isThirteenthMonthRun(run)&&<span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">13th Month</span>}</div>
       <div className="mt-0.5 text-[11px] font-normal text-slate-500">PR-{run.id.slice(0,8).toUpperCase()} · Prepared by {run.preparedBy||'HR'}</div>
      </th>
-     <td className={cell}><div>{schedule(run)}</div><div className="text-[11px] text-slate-500">Pay date {formatDate(run.payDate??run.to)}</div></td>
+     <td className={`${cell} whitespace-nowrap`}><div>{schedule(run)}</div><div className="text-[11px] text-slate-500">Pay date {formatDate(run.payDate??run.to)}</div></td>
      <td className={cell}><StatusBadge status={runStatus(run)}/></td>
      <td className={cell}>{processed(run)?<><div className="tabular-nums">{run.rows.length}</div><div className="text-[11px] text-slate-500">{payslips(run)}</div></>:'—'}</td>
      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{processed(run)?maskValue(showAmounts,peso(net(run))):'—'}</td>
@@ -67,8 +65,9 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
     </tr>)}</tbody>
    </table></div>
   </Card>
-  {deleting&&<Modal title="Delete draft payroll" onClose={()=>{if(!busy)setDeleting(null)}}>
-   <p className="mt-0 text-[13px] text-slate-600">Delete the draft payroll for {runLabel(deleting)}? It has not been processed, so no figures are lost. This cannot be undone.</p>
+  {deleting&&<Modal title="Delete payroll run" onClose={()=>{if(!busy)setDeleting(null)}}>
+   <p className="mt-0 text-[13px] text-slate-600">Delete the {runStatus(deleting)} payroll for {runLabel(deleting)}? {runStatus(deleting)==='Draft'?'It has not been processed, so no figures are lost.':'Its figures, approval, funding receipt, payouts and payslips are removed with it.'} This cannot be undone.</p>
+   {['Paid','Closed'].includes(runStatus(deleting))&&<p className="mb-0 mt-2 rounded-lg bg-amber-50 p-3 text-[12px] text-amber-900">Loan deductions already posted for this run stay in the loan records, and payslips already released to employees are withdrawn.</p>}
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setDeleting(null)}>Cancel</button><button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act('delete',async()=>{await deleteRun(deleting.id);setDeleting(null)})}>{busy==='delete'?'Deleting…':'Delete'}</button></div>
   </Modal>}
