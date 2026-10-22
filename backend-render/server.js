@@ -216,7 +216,10 @@ app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
       `insert into employees(employee_number,first_name,middle_name,last_name,email,position,department,hire_date,employment_status,status,
        phone,address,birth_date,sss_number,philhealth_number,pagibig_number,tin,bank_name,bank_account_number)
        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning *`, empVals(b));
-    res.status(201).json({ data: visibleEmployee(req.user.role, r) });
+    // The salary follows the position's salary grade automatically.
+    const assigned = await tryAutoAssignSalary(r, req.user.id);
+    const { rows: [saved] } = assigned ? await pool.query('select * from employees where id=$1', [r.id]) : { rows: [r] };
+    res.status(201).json({ data: { ...visibleEmployee(req.user.role, saved), salary_assigned: Boolean(assigned) } });
   } catch (e) {
     if (e.code === '23505') return fail(res, 409, 'DUPLICATE', 'Employee number already exists');
     throw e;
@@ -236,7 +239,10 @@ app.put('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
      philhealth_number=$15,pagibig_number=$16,tin=$17,bank_name=$18,bank_account_number=$19 where id=$20 returning id`,
     [...empVals(b), req.params.id]);
   if (!r) return fail(res, 404, 'NOT_FOUND', 'Employee not found');
-  res.json({ data: { id: r.id } });
+  // An employee still without a salary gets the one for their (new) position.
+  const { rows: [saved] } = await pool.query('select * from employees where id=$1', [r.id]);
+  const assigned = await tryAutoAssignSalary(saved, req.user.id);
+  res.json({ data: { id: r.id, salary_assigned: Boolean(assigned) } });
 });
 
 app.delete('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
@@ -1140,6 +1146,21 @@ async function deleteGrade(b, ctx) {
   await audit('compensation.grade.deleted', ctx.userId, 'salary_grades', id, { grade: grade.grade, position: grade.position, monthly_salary: Number(grade.monthly_salary) });
   return { id, deleted: true };
 }
+// A new hire's first salary comes from the active salary grade for their position, effective on the hire date (today
+// if none). Nothing is assigned when the employee already has compensation or no active grade matches the position.
+async function autoAssignSalary(employee, userId) {
+  const position = String(employee?.position ?? '').trim().toLowerCase();
+  if (!employee?.id || !position) return null;
+  if ((await listRows('employee_compensation', { employee_id: employee.id })).length) return null;
+  const grade = (await listRows('salary_grades')).find(r => String(r.position ?? '').trim().toLowerCase() === position && r.status !== 'Inactive');
+  if (!grade) return null;
+  const hired = String(employee.hire_date ?? '').slice(0, 10);
+  const effectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(hired) ? hired : new Date().toISOString().slice(0, 10);
+  return createInitialAssignment({ employee_id: String(employee.id), basic_salary: Number(grade.monthly_salary), effective_date: effectiveDate, salary_code: String(grade.grade ?? '') }, { userId });
+}
+// Never fails the employee save: a salary that cannot be assigned is logged and left for HR.
+const tryAutoAssignSalary = (employee, userId) => autoAssignSalary(employee, userId).catch(e => { console.error('Automatic salary assignment failed:', e.message); return null; });
+
 async function createInitialAssignment(b, ctx) {
   const employeeId = uuid(b.employee_id, 'employee_id');
   const salary = compAmount(b.basic_salary, 'basic_salary');
