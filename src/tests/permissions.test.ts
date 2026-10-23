@@ -13,9 +13,9 @@ describe('role permissions',()=>{
   for(const permission of ['payroll.generate','payroll.release','payroll.approve','payroll.fund','claims.encode','claims.approve','claims.pay','attendance.encode','employees.manage','compensation.manage','hmo.manage','audit.view'] as const)expect(can(permission,'HR Staff')).toBe(true);
   for(const permission of ['compensation.approve','users.manage','settings.edit'] as const)expect(can(permission,'HR Staff')).toBe(false);
  });
- it('gives Payroll Settings to Admin only',()=>{
+ it('shows Payroll Settings to Admin and HR Staff; only Admin edits them',()=>{
   expect(can('settings.view','Admin')).toBe(true);
-  expect(can('settings.view','HR Staff')).toBe(false);
+  expect(can('settings.view','HR Staff')).toBe(true);
   expect(can('settings.edit','HR Staff')).toBe(false);
   expect(can('payroll.view','HR Staff')).toBe(true);
  });
