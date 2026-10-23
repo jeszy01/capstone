@@ -13,7 +13,7 @@ export const modules:NavItem[]=[
   {label:'Adjustments',to:'/compensation/adjustments'},
   {label:'History',to:'/compensation/history'},
  ]},
- {label:'Claims & Reimbursement',to:'/claims-reimbursement',icon:FileText},
+ {label:'Claims',to:'/claims-reimbursement',icon:FileText},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse},
 ];
 export const titles={
@@ -28,7 +28,7 @@ export const titles={
  '/payroll-settings':'Payroll Settings',
  '/hmo-benefits/dependents':'Dependents',
  '/hmo-benefits':'HMO & Benefits',
- '/claims-reimbursement':'Claims & Reimbursement',
- '/claims-reimbursement/claims':'Claims & Reimbursement',
- '/claims-reimbursement/reimbursement':'Claims & Reimbursement',
+ '/claims-reimbursement':'Claims',
+ '/claims-reimbursement/claims':'Claims',
+ '/claims-reimbursement/reimbursement':'Claims',
 } as Record<string,string>;
