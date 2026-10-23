@@ -48,7 +48,9 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
  const pendingFor=new Set(proposals.filter(item=>item.status==='Pending HR Review').map(item=>findCompensationEmployee(employees,item.employeeId)?.id??item.employeeId));
  const query=search.trim().toLowerCase();
  const shownRows=rows.filter(row=>!query||[row.employee.name,row.employee.employeeNo,row.employee.position??'',row.grade?.code??'',row.status].some(value=>value.toLowerCase().includes(query)));
- const shownHistory=[...history].sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||b.recordedAt.localeCompare(a.recordedAt))
+ // History of deleted employees stays on the server (it is append-only); it is not shown once the employee list has loaded.
+ const knownHistory=employees.length?history.filter(item=>findCompensationEmployee(employees,item.employeeId)):history;
+ const shownHistory=[...knownHistory].sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||b.recordedAt.localeCompare(a.recordedAt))
   .filter(item=>!query||[nameOf(item.employeeId),item.type,item.source,item.status??'',item.actorName??'',item.reason??''].some(value=>value.toLowerCase().includes(query)));
  const saveStructure=(next:SalaryGradeBand[],description:string)=>{setGrades(next);saveGrades(next);recordAudit({action:'Updated salary structure',module:'Compensation',description});setEditing(null)};
  const rate=(employeeId:string,rating:number)=>{
@@ -96,17 +98,17 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
    })}</tbody>
   </table></div>}
 
-  {view==='history'&&<div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[13px]">
-   <thead><tr className={theadClass}>{['Employee','Change','Previous','New','Difference','Effective','Recorded by','Status'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${['Previous','New','Difference'].includes(head)?'text-right':''}`}>{head}</th>)}</tr></thead>
-   <tbody>{loading?<MessageRow colSpan={8}>Loading history…</MessageRow>:!shownHistory.length?<MessageRow colSpan={8}>{history.length?'No history matches this search.':'No salary changes recorded yet.'}</MessageRow>:shownHistory.map((item,index)=>{const difference=item.newSalary-item.previousSalary;return <tr key={item.id} className="border-b border-slate-100 last:border-0">
-    <td className="px-5 py-3.5"><div className="flex items-center gap-3"><Avatar name={nameOf(item.employeeId)} index={index}/><span className="font-semibold text-slate-900">{nameOf(item.employeeId)}</span></div></td>
-    <td className="px-5 py-3.5"><div className="font-medium text-slate-800">{item.type}</div>{item.reason&&<div className="mt-0.5 max-w-[240px] text-[12px] text-slate-500">{item.reason.split('\n')[0]}</div>}</td>
-    <td className="px-5 py-3.5 text-right tabular-nums text-slate-600">{peso(item.previousSalary)}</td>
-    <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-slate-900">{peso(item.newSalary)}</td>
-    <td className={`px-5 py-3.5 text-right tabular-nums ${difference>0?'text-emerald-700':difference<0?'text-red-700':'text-slate-500'}`}>{difference>0?'+':''}{peso(difference)}</td>
-    <td className="whitespace-nowrap px-5 py-3.5 text-slate-600">{shortDate(item.effectiveDate)}</td>
-    <td className="px-5 py-3.5 text-slate-600">{item.actorName||'—'}</td>
-    <td className="px-5 py-3.5">{item.status==='Rejected'?<Pill tone="bg-red-50 text-red-700">Rejected</Pill>:item.appliedAt||item.effectiveDate<=today()?<Pill tone="bg-emerald-50 text-emerald-700">Effective</Pill>:<Pill tone="bg-blue-50 text-blue-700">Scheduled</Pill>}</td>
+  {view==='history'&&<div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]">
+   <thead><tr className={theadClass}>{['Employee','Change','Previous','New','Difference','Effective','Recorded by','Status'].map(head=><th key={head} scope="col" className={`px-3 py-2.5 font-semibold ${['Previous','New','Difference'].includes(head)?'text-right':''}`}>{head}</th>)}</tr></thead>
+   <tbody>{loading?<MessageRow colSpan={8}>Loading history…</MessageRow>:!shownHistory.length?<MessageRow colSpan={8}>{knownHistory.length?'No history matches this search.':'No salary changes recorded yet.'}</MessageRow>:shownHistory.map((item,index)=>{const difference=item.newSalary-item.previousSalary;return <tr key={item.id} className="border-b border-slate-100 last:border-0">
+    <td className="px-3 py-2.5"><div className="flex items-center gap-3"><Avatar name={nameOf(item.employeeId)} index={index}/><span className="whitespace-nowrap font-semibold text-slate-900">{nameOf(item.employeeId)}</span></div></td>
+    <td className="px-3 py-2.5"><div className="whitespace-nowrap font-medium text-slate-800">{item.type}</div>{item.reason&&<div className="mt-0.5 max-w-[220px] truncate text-[12px] text-slate-500" title={item.reason}>{item.reason.split('\n')[0]}</div>}</td>
+    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-600">{peso(item.previousSalary)}</td>
+    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{peso(item.newSalary)}</td>
+    <td className={`whitespace-nowrap px-3 py-2.5 text-right tabular-nums ${difference>0?'text-emerald-700':difference<0?'text-red-700':'text-slate-500'}`}>{difference>0?'+':''}{peso(difference)}</td>
+    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{shortDate(item.effectiveDate)}</td>
+    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{item.actorName||'—'}</td>
+    <td className="px-3 py-2.5">{item.status==='Rejected'?<Pill tone="bg-red-50 text-red-700">Rejected</Pill>:item.appliedAt||item.effectiveDate<=today()?<Pill tone="bg-emerald-50 text-emerald-700">Effective</Pill>:<Pill tone="bg-blue-50 text-blue-700">Scheduled</Pill>}</td>
    </tr>})}</tbody>
   </table></div>}
 
