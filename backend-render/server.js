@@ -248,6 +248,7 @@ app.put('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
 
 app.delete('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
   await pool.query('delete from employees where id=$1', [req.params.id]);
+  await removeOrphanHmo();
   res.status(204).end();
 });
 
@@ -479,6 +480,15 @@ await pool.query(`
     create trigger employee_loan_repayment_batches_append_only before update or delete on employee_loan_repayment_batches
       for each row execute function prevent_append_only_mutation();
   exception when duplicate_object then null; end $$;`);
+
+// HMO enrollments carry no foreign key to employees: when an employee is deleted, their enrollments, dependents,
+// utilizations and payroll deductions go too (also cleaned at startup for employees deleted earlier).
+const removeOrphanHmo = () => pool.query(`
+  with orphans as (select id from hmo_enrollments where employee_id not in (select id from employees)),
+    utilizations as (delete from hmo_utilizations where enrollment_id in (select id from orphans)),
+    deductions as (delete from hmo_payroll_deductions where enrollment_id in (select id from orphans) or employee_id not in (select id from employees))
+  delete from hmo_enrollments where id in (select id from orphans)`);
+await removeOrphanHmo();
 
 class HttpError extends Error { constructor(status, code, message) { super(message); this.status = status; this.code = code; } }
 
