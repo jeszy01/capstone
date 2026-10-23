@@ -82,7 +82,7 @@ export default function CompensationPlanning(){
     {tab==='overview'
       ?<section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,caption,icon,tone})=><SummaryCard key={label} label={label} icon={icon} tone={tone} value={ready?compactPeso(value):'—'} caption={ready?caption:loading?'Loading…':'Unavailable'}/>)}</section>
       :tab==='structure'?<SalaryStructurePanel employees={employees} assignments={activeAssignments} history={history} proposals={proposals} loading={loading} daysPerMonth={daysPerMonth} onChanged={load}/>
-      :tab==='allowances'?<AllowancesPanel employees={employees} rewards={bonuses} loading={loading} onChanged={load}/>
+      :tab==='allowances'?<AllowancesPanel employees={employees} rewards={bonuses} assignments={activeAssignments} daysPerMonth={daysPerMonth} loading={loading} onChanged={load}/>
       :<AwardsPanel employees={employees} rewards={bonuses} proposals={proposals} assignments={activeAssignments} loading={loading} onChanged={load}/>}
   </div>;
 }

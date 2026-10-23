@@ -1,5 +1,5 @@
 import {useMemo,useState} from 'react';
-import {CalendarClock,Pencil,Plus,Search,Settings2,Trash2,Users,Wallet,Tags} from 'lucide-react';
+import {CalendarClock,Pencil,Search,Tags,Users,Wallet} from 'lucide-react';
 import {Button,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
@@ -8,151 +8,130 @@ import {can} from '../auth/permissions';
 import {loadRates} from '../settings/payrollSettings';
 import {DE_MINIMIS_LABELS,deMinimisCeilingLabel} from '../payroll/deMinimis';
 import type {DeMinimisCategory} from '../payroll/deMinimis';
-import {allowanceTreatment,loadAllowanceTypes,saveAllowanceTypes} from './allowanceRules';
-import type {AllowanceTaxTreatment,AllowanceType} from './allowanceRules';
+import {allowanceMatrix,loadAllowancePolicy,monthlyAmount,policyTotals,policyTypeFor,saveAllowancePolicy} from './allowancePolicy';
+import type {PolicyTreatment,PolicyType} from './allowancePolicy';
 import {compensationService} from './compensationService';
 import {compactPeso} from './compensationSummary';
 import {findCompensationEmployee,today} from './compensationState';
-import type {BonusIncentive,RewardFrequency} from './compensationState';
+import type {BonusIncentive,EmployeeCompensation} from './compensationState';
+import {loadGrades,placement} from './salaryPlacement';
 import {Avatar,MessageRow,PanelHeader,Segmented,SummaryCard,panelClass,theadClass} from './compensationWidgets';
 
 type View='policy'|'register';
 const VIEWS=[{id:'policy',label:'Policy'},{id:'register',label:'Employee Register'}] as const;
-type Props={employees:Employee[];rewards:BonusIncentive[];loading:boolean;onChanged:()=>Promise<void>};
-type Draft=Omit<BonusIncentive,'id'|'createdAt'>;
+type Props={employees:Employee[];rewards:BonusIncentive[];assignments:EmployeeCompensation[];daysPerMonth:number;loading:boolean;onChanged:()=>Promise<void>};
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
-const treatmentLabel=(treatment:AllowanceTaxTreatment)=>treatment==='taxable'?'Taxable (fixed allowance)':`De minimis · ${DE_MINIMIS_LABELS[treatment]}`;
-const shortDate=(value:string)=>value?new Date(`${value.slice(0,10)}T00:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
-const blankDraft=():Draft=>({employeeId:'',type:'Allowance',amount:0,effectiveDate:today(),notes:'',status:'Active',allowanceType:'',frequency:'Per Cutoff',taxable:true,cutoffStart:'',cutoffEnd:''});
-const active=(item:BonusIncentive,date:string)=>item.status==='Active'&&item.effectiveDate<=date;
+// Short column headings for the register: "Transport Allowance" -> "Transport".
+const shortName=(name:string)=>name.replace(/\s+allowance$/i,'').trim()||name;
 
-export function AllowancesPanel({employees,rewards,loading,onChanged}:Props){
+export function AllowancesPanel({employees,rewards,assignments,daysPerMonth,loading,onChanged}:Props){
  const [view,setView]=useState<View>('register');
  const [search,setSearch]=useState('');
- const [types,setTypes]=useState<AllowanceType[]>(loadAllowanceTypes);
- const [editing,setEditing]=useState<{id?:string;draft:Draft}|null>(null);
- const [deleting,setDeleting]=useState<BonusIncentive|null>(null);
- const [typesOpen,setTypesOpen]=useState(false);
- const [saving,setSaving]=useState(false),[error,setError]=useState('');
+ const [policy,setPolicy]=useState<PolicyType[]>(loadAllowancePolicy);
+ const [editingType,setEditingType]=useState<PolicyType|null>(null);
+ const [assigning,setAssigning]=useState<Employee|null>(null);
  const canManage=can('compensation.manage'),date=today(),periods=loadRates().payPeriodsPerMonth;
+ const grades=useMemo(loadGrades,[]);
  const allowances=useMemo(()=>rewards.filter(item=>item.type==='Allowance'),[rewards]);
- const nameOf=(reference:string)=>findCompensationEmployee(employees,reference)?.name??reference;
- const monthly=(item:BonusIncentive)=>item.frequency==='Per Cutoff'?item.amount*periods:item.amount;
- const current=allowances.filter(item=>active(item,date));
+ const matrix=useMemo(()=>allowanceMatrix(rewards,policy,date,periods),[rewards,policy,date,periods]);
+ const matrixFor=(employee:Employee)=>{const row:Record<string,number>={};for(const [reference,amounts] of matrix)if(findCompensationEmployee(employees,reference)?.id===employee.id)for(const [id,amount] of Object.entries(amounts))row[id]=(row[id]??0)+amount;return row};
+ const totals=policyTotals(matrix,policy);
+ const activeEmployees=useMemo(()=>employees.filter(employee=>employee.status!=='Inactive').sort((a,b)=>a.name.localeCompare(b.name)),[employees]);
  const query=search.trim().toLowerCase();
- const shown=allowances.filter(item=>!query||[nameOf(item.employeeId),item.allowanceType,item.frequency,item.status].some(value=>value.toLowerCase().includes(query)))
-  .sort((a,b)=>nameOf(a.employeeId).localeCompare(nameOf(b.employeeId))||a.allowanceType.localeCompare(b.allowanceType));
+ const shown=activeEmployees.filter(employee=>!query||[employee.name,employee.employeeNo,employee.position??''].some(value=>value.toLowerCase().includes(query)));
+ const gradeLabel=(employee:Employee)=>{
+  const salary=assignments.find(item=>findCompensationEmployee(employees,item.employeeId)?.id===employee.id);
+  const row=placement(employee.position,salary?salary.fixedSalary/daysPerMonth:0,grades,daysPerMonth);
+  return row.grade?`${row.grade.code} · ${row.step?`Step ${row.step}`:'Below step 1'}`:employee.position||'';
+ };
+ const current=allowances.filter(item=>item.status==='Active'&&item.effectiveDate<=date);
  const cards=[
-  {label:'Monthly Allowances',value:compactPeso(current.reduce((sum,item)=>sum+monthly(item),0)),caption:`${current.length} active allowance${current.length===1?'':'s'}`,icon:Wallet,tone:'bg-cyan-50 text-cyan-600'},
-  {label:'Employees Covered',value:String(new Set(current.map(item=>item.employeeId)).size),caption:`of ${employees.filter(employee=>employee.status!=='Inactive').length} active employees`,icon:Users,tone:'bg-indigo-50 text-indigo-600'},
-  {label:'Allowance Types',value:String(types.length),caption:`${types.filter(type=>allowanceTreatment(type.name,types)!=='taxable').length} de minimis`,icon:Tags,tone:'bg-emerald-50 text-emerald-600',captionTone:'bg-emerald-50 text-emerald-700'},
+  {label:'Monthly Allowances',value:compactPeso(current.reduce((sum,item)=>sum+monthlyAmount(item,periods),0)),caption:`${current.length} active allowance${current.length===1?'':'s'}`,icon:Wallet,tone:'bg-cyan-50 text-cyan-600'},
+  {label:'Employees Covered',value:String(new Set(current.map(item=>item.employeeId)).size),caption:`of ${activeEmployees.length} active employees`,icon:Users,tone:'bg-indigo-50 text-indigo-600'},
+  {label:'Allowance Types',value:String(policy.length),caption:`${policy.filter(type=>type.taxTreatment!=='taxable').length} non-taxable`,icon:Tags,tone:'bg-emerald-50 text-emerald-600',captionTone:'bg-emerald-50 text-emerald-700'},
   {label:'Scheduled',value:String(allowances.filter(item=>item.status==='Active'&&item.effectiveDate>date).length),caption:'Start on a later date',icon:CalendarClock,tone:'bg-pink-50 text-pink-600'},
  ];
-
- const run=async(work:()=>Promise<unknown>,fallback:string)=>{
-  if(saving)return false;
-  setSaving(true);setError('');
-  try{await work();await onChanged();return true}catch(cause){setError(errorText(cause,fallback));return false}finally{setSaving(false)}
- };
- const save=(draft:Draft)=>{
-  const id=editing?.id;
-  void run(()=>id?compensationService.updateReward(id,draft):compensationService.createReward(draft),'The allowance could not be saved.').then(done=>{if(done)setEditing(null)});
- };
+ const savePolicy=(next:PolicyType[],type:PolicyType)=>{setPolicy(next);saveAllowancePolicy(next);recordAudit({action:'Updated allowance policy',module:'Compensation',description:`Updated ${type.name} (${type.code}): ${type.taxTreatment==='taxable'?'taxable':'non-taxable'}, default ${peso(type.defaultAmount)}.`});setEditingType(null)};
+ const head=view==='policy'?['Allowance Policy','Standard allowance types, tax treatment and monthly cost']:['Employee Allowance Register','Per-employee monthly amounts by allowance type'];
 
  return <div className="space-y-5">
   <section aria-label="Allowances summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(card=><SummaryCard key={card.label} {...card} value={loading?'—':card.value} caption={loading?'Loading…':card.caption}/>)}</section>
   <section aria-labelledby="allowances-heading" className={panelClass}>
-   <PanelHeader id="allowances-heading" title="Allowances" subtitle={view==='policy'?'Allowance types and how each is taxed in payroll':'Allowances given to each employee; active ones are paid every payroll'}
-    action={canManage&&(view==='policy'
-     ?<Button className="!bg-indigo-600 hover:!bg-indigo-700" onClick={()=>setTypesOpen(true)}><Settings2 size={15}/>Edit Policy</Button>
-     :<Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={loading} onClick={()=>{setError('');setEditing({draft:blankDraft()})}}><Plus size={15}/>Add Allowance</Button>)}/>
+   <PanelHeader id="allowances-heading" title={head[0]} subtitle={head[1]} action={view==='policy'&&canManage&&<span className="rounded-full bg-indigo-50 px-3 py-1 text-[12px] font-semibold text-indigo-700">HR editable</span>}/>
    <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"><Segmented label="Allowances views" options={VIEWS} value={view} onChange={next=>{setView(next);setSearch('')}}/>
-    {view==='register'&&<label className="relative block w-full max-w-xs"><span className="sr-only">Search allowances</span><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" placeholder="Search employee, type or status" value={search} onChange={event=>setSearch(event.target.value)}/></label>}
+    {view==='register'&&<label className="relative block w-full max-w-xs"><span className="sr-only">Search employees</span><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" placeholder="Search employee" value={search} onChange={event=>setSearch(event.target.value)}/></label>}
    </div>
-   {error&&!editing&&!deleting&&<p role="alert" className="mx-6 mb-4 mt-0 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
 
-   {view==='policy'&&<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-[13px]">
-    <thead><tr className={theadClass}>{['Allowance Type','Tax Treatment','Tax-free Ceiling','Employees','Monthly Total'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${head==='Employees'||head==='Monthly Total'?'text-right':''}`}>{head}</th>)}</tr></thead>
-    <tbody>{!types.length?<MessageRow colSpan={5}>No allowance types yet.</MessageRow>:types.map(type=>{
-     const treatment=allowanceTreatment(type.name,types),given=current.filter(item=>item.allowanceType.trim().toLowerCase()===type.name.trim().toLowerCase());
-     return <tr key={type.id} className="border-b border-slate-100 last:border-0">
-      <td className="px-5 py-3.5 font-semibold text-slate-900">{type.name}</td>
-      <td className="px-5 py-3.5"><span className={`inline-block rounded-full px-3 py-1 text-[12px] font-semibold ${treatment==='taxable'?'bg-slate-100 text-slate-700':'bg-emerald-50 text-emerald-700'}`}>{treatmentLabel(treatment)}</span></td>
-      <td className="px-5 py-3.5 text-slate-600">{treatment==='taxable'?'None — taxed as regular pay':deMinimisCeilingLabel(treatment,date)}</td>
-      <td className="px-5 py-3.5 text-right tabular-nums text-slate-700">{new Set(given.map(item=>item.employeeId)).size}</td>
-      <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-slate-900">{peso(given.reduce((sum,item)=>sum+monthly(item),0))}</td>
-     </tr>;
-    })}</tbody>
-   </table><p className="mx-6 my-4 text-[12px] leading-relaxed text-slate-500">De minimis allowances are tax-free up to their BIR ceiling (RR 29-2025); the part above counts toward the ₱90,000 13th month and other benefits exemption. Taxable allowances are taxed as regular pay.</p></div>}
+   {view==='policy'&&<div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left text-[13px]">
+    <thead><tr className={theadClass}>{['Allowance','Tax Treatment','Default','Employees','Monthly Cost','Share',''].map((label,index)=><th key={label||index} scope="col" className={`px-5 py-3 font-semibold ${['Default','Employees','Monthly Cost','Share'].includes(label)?'text-right':''}`}>{label}</th>)}</tr></thead>
+    <tbody>{policy.map(type=>{const total=totals.find(row=>row.id===type.id)!;return <tr key={type.id} className="border-b border-slate-100 last:border-0">
+     <td className="px-5 py-4"><div className="font-semibold text-slate-900">{type.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{type.code} · Fixed monthly</div></td>
+     <td className="px-5 py-4"><span className={`inline-block rounded-full px-3 py-1 text-[12px] font-semibold ${type.taxTreatment==='taxable'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700'}`}>{type.taxTreatment==='taxable'?'Taxable':'Non-taxable'}</span></td>
+     <td className="px-5 py-4 text-right tabular-nums font-semibold text-slate-900">{peso(type.defaultAmount)}</td>
+     <td className="px-5 py-4 text-right tabular-nums text-slate-800">{total.employees}</td>
+     <td className="px-5 py-4 text-right tabular-nums font-bold text-slate-900">{peso(total.monthly)}</td>
+     <td className="px-5 py-4 text-right tabular-nums text-slate-700">{total.share.toFixed(1)}%</td>
+     <td className="px-5 py-4 text-right">{canManage&&<button type="button" className={ghost} onClick={()=>setEditingType(type)}><Pencil size={14}/>Edit</button>}</td>
+    </tr>})}</tbody>
+   </table></div>}
 
-   {view==='register'&&<div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[13px]">
-    <thead><tr className={theadClass}>{['Employee','Allowance Type','Amount','Frequency','Monthly','Taxable','Effective','Status','Action'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${['Amount','Monthly','Action'].includes(head)?'text-right':''}`}>{head}</th>)}</tr></thead>
-    <tbody>{loading?<MessageRow colSpan={9}>Loading allowances…</MessageRow>:!shown.length?<MessageRow colSpan={9}>{allowances.length?'No allowances match this search.':'No allowances yet.'}</MessageRow>:shown.map((item,index)=>{
-     const employee=findCompensationEmployee(employees,item.employeeId),scheduled=item.status==='Active'&&item.effectiveDate>date;
-     return <tr key={item.id} className="border-b border-slate-100 last:border-0">
-      <td className="px-5 py-3.5"><div className="flex items-center gap-3"><Avatar name={nameOf(item.employeeId)} index={index}/><div><div className="font-semibold text-slate-900">{nameOf(item.employeeId)}</div><div className="mt-0.5 text-[12px] text-slate-500">{[employee?.employeeNo,employee?.position].filter(Boolean).join(' · ')}</div></div></div></td>
-      <td className="px-5 py-3.5 font-medium text-slate-800">{item.allowanceType||'—'}</td>
-      <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-slate-900">{peso(item.amount)}</td>
-      <td className="px-5 py-3.5 text-slate-600">{item.frequency}</td>
-      <td className="px-5 py-3.5 text-right tabular-nums text-slate-600">{peso(monthly(item))}</td>
-      <td className="px-5 py-3.5 text-slate-600">{item.taxable?'Yes':'No'}</td>
-      <td className="whitespace-nowrap px-5 py-3.5 text-slate-600">{shortDate(item.effectiveDate)}</td>
-      <td className="px-5 py-3.5"><span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold ${scheduled?'bg-blue-50 text-blue-700':item.status==='Active'?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current"/>{scheduled?'Scheduled':item.status}</span></td>
-      <td className="px-5 py-3.5"><div className="flex justify-end gap-2">{canManage&&<>
-       <button type="button" aria-label={`Edit ${item.allowanceType} allowance of ${nameOf(item.employeeId)}`} title="Edit" disabled={saving} onClick={()=>{setError('');setEditing({id:item.id,draft:{...item}})}} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"><Pencil size={15}/></button>
-       <button type="button" aria-label={`Delete ${item.allowanceType} allowance of ${nameOf(item.employeeId)}`} title="Delete" disabled={saving} onClick={()=>{setError('');setDeleting(item)}} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-red-600 hover:bg-red-50"><Trash2 size={15}/></button>
-      </>}</div></td>
+   {view==='register'&&<div className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-[13px]">
+    <thead><tr className={theadClass}>{['Employee',...policy.map(type=>shortName(type.name)),'Total','Action'].map((label,index)=><th key={`${label}-${index}`} scope="col" className={`px-5 py-3 font-semibold ${index>0?'text-right':''}`}>{label}</th>)}</tr></thead>
+    <tbody>{loading?<MessageRow colSpan={policy.length+3}>Loading allowances…</MessageRow>:!shown.length?<MessageRow colSpan={policy.length+3}>{activeEmployees.length?'No employees match this search.':'No active employees yet.'}</MessageRow>:shown.map((employee,index)=>{
+     const amounts=matrixFor(employee),total=policy.reduce((sum,type)=>sum+(amounts[type.id]??0),0);
+     return <tr key={employee.id} className="border-b border-slate-100 last:border-0 even:bg-slate-50/50">
+      <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={employee.name} index={index}/><div><div className="font-semibold text-slate-900">{employee.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{gradeLabel(employee)}</div></div></div></td>
+      {policy.map(type=><td key={type.id} className={`px-5 py-4 text-right tabular-nums ${amounts[type.id]?'font-semibold text-slate-900':'text-slate-400'}`}>{peso(amounts[type.id]??0)}</td>)}
+      <td className="px-5 py-4 text-right tabular-nums font-bold text-indigo-600">{peso(total)}</td>
+      <td className="px-5 py-4 text-right">{canManage&&<button type="button" onClick={()=>setAssigning(employee)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-50 px-3.5 py-2 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-100"><Pencil size={14}/>Assign</button>}</td>
      </tr>;
     })}</tbody>
    </table></div>}
   </section>
-  {editing&&<AllowanceModal key={editing.id??'new'} editing={Boolean(editing.id)} draft={editing.draft} employees={employees} types={types} error={error} saving={saving} onClose={()=>{if(!saving)setEditing(null)}} onSave={save}/>}
-  {deleting&&<Modal title="Delete allowance?" onClose={()=>{if(!saving)setDeleting(null)}}><p className="mt-0 text-[13px] text-slate-600">Delete the {deleting.allowanceType} allowance ({peso(deleting.amount)}, {deleting.frequency}) of {nameOf(deleting.employeeId)}? Payroll stops paying it.</p>{error&&<p role="alert" className="text-[12px] text-red-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setDeleting(null)}>Cancel</button><Button className="!bg-red-600 hover:!bg-red-700" disabled={saving} onClick={()=>void run(()=>compensationService.deleteReward(deleting.id),'The allowance could not be deleted.').then(done=>{if(done)setDeleting(null)})}>{saving?'Deleting…':'Delete'}</Button></div></Modal>}
-  {typesOpen&&<PolicyModal types={types} inUse={name=>allowances.some(item=>item.allowanceType.trim().toLowerCase()===name.trim().toLowerCase())} onClose={()=>setTypesOpen(false)} onSaved={next=>{setTypes(next);setTypesOpen(false)}}/>}
+  {editingType&&<PolicyTypeModal type={editingType} onClose={()=>setEditingType(null)} onSave={type=>savePolicy(policy.map(item=>item.id===type.id?type:item),type)}/>}
+  {assigning&&<AssignModal employee={assigning} employees={employees} policy={policy} allowances={allowances} amounts={matrixFor(assigning)} onClose={()=>setAssigning(null)} onDone={async()=>{setAssigning(null);await onChanged()}}/>}
  </div>;
 }
 
-function AllowanceModal({editing,draft,employees,types,error,saving,onClose,onSave}:{editing:boolean;draft:Draft;employees:Employee[];types:AllowanceType[];error:string;saving:boolean;onClose:()=>void;onSave:(draft:Draft)=>void}){
- const [form,setForm]=useState({...draft,amount:draft.amount?String(draft.amount):''});
- const value:Draft={...form,amount:numberValue(form.amount),allowanceType:form.allowanceType.trim()};
- const typeOptions=types.some(type=>type.name===draft.allowanceType)||!draft.allowanceType?types.map(type=>type.name):[draft.allowanceType,...types.map(type=>type.name)];
- const valid=Boolean(value.employeeId&&value.allowanceType&&value.amount>0&&value.effectiveDate);
- return <Modal title={editing?'Edit allowance':'Add allowance'} onClose={onClose}><div className="grid gap-4">
-  <Field label="Employee"><select className={input} value={form.employeeId} onChange={event=>setForm({...form,employeeId:event.target.value})}><option value="">Select employee</option>{employees.map(employee=><option key={employee.id} value={employee.id}>{employee.name} · {employee.employeeNo}</option>)}</select></Field>
-  <Field label="Allowance type"><select className={input} value={form.allowanceType} onChange={event=>{const allowanceType=event.target.value;setForm({...form,allowanceType,taxable:allowanceTreatment(allowanceType,types)==='taxable'})}}><option value="">Select allowance type</option>{typeOptions.map(name=><option key={name}>{name}</option>)}</select></Field>
-  <div className="grid gap-4 sm:grid-cols-2"><Field label="Amount (₱)"><TextInput type="number" min="0.01" step="0.01" value={form.amount} onChange={event=>setForm({...form,amount:event.target.value})} placeholder="0.00"/></Field><Field label="Frequency"><select className={input} value={form.frequency} onChange={event=>setForm({...form,frequency:event.target.value as RewardFrequency})}><option>Per Cutoff</option><option>Monthly</option></select></Field></div>
-  <div className="grid gap-4 sm:grid-cols-2"><Field label="Effective date"><TextInput type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></Field><Field label="Status"><select className={input} value={form.status} onChange={event=>setForm({...form,status:event.target.value as Draft['status']})}><option>Active</option><option>Inactive</option></select></Field></div>
-  <Field label="Taxable"><select className={input} value={form.taxable?'Yes':'No'} onChange={event=>setForm({...form,taxable:event.target.value==='Yes'})}><option>Yes</option><option>No</option></select></Field>
-  {!form.taxable&&<p className="m-0 text-[11px] leading-relaxed text-slate-500">Only types set as de minimis in the allowance policy are tax-free, each up to its BIR ceiling. Types set as taxable are taxed as regular pay.</p>}
- </div>{error&&<p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">{error}</p>}<div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={saving||!valid} onClick={()=>onSave(value)}>{saving?'Saving…':'Save'}</Button></div></Modal>;
+function PolicyTypeModal({type,onClose,onSave}:{type:PolicyType;onClose:()=>void;onSave:(type:PolicyType)=>void}){
+ const [form,setForm]=useState({...type,defaultAmount:String(type.defaultAmount||'')});
+ const valid=Boolean(form.name.trim()&&form.code.trim());
+ return <Modal title={`Edit ${type.name}`} onClose={onClose}><div className="grid gap-4">
+  <div className="grid gap-4 sm:grid-cols-2"><Field label="Name"><TextInput value={form.name} maxLength={60} onChange={event=>setForm({...form,name:event.target.value})}/></Field><Field label="Code"><TextInput value={form.code} maxLength={20} onChange={event=>setForm({...form,code:event.target.value})}/></Field></div>
+  <Field label="Tax treatment"><select className={input} value={form.taxTreatment} onChange={event=>setForm({...form,taxTreatment:event.target.value as PolicyTreatment})}><option value="taxable">Taxable</option>{(Object.keys(DE_MINIMIS_LABELS) as DeMinimisCategory[]).map(category=><option key={category} value={category}>Non-taxable: {DE_MINIMIS_LABELS[category]} (up to {deMinimisCeilingLabel(category,today())})</option>)}</select></Field>
+  <Field label="Default (monthly ₱)"><TextInput type="number" min="0" step="0.01" value={form.defaultAmount} onChange={event=>setForm({...form,defaultAmount:event.target.value})}/></Field>
+ </div><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={!valid} onClick={()=>onSave({...form,name:form.name.trim(),code:form.code.trim(),defaultAmount:numberValue(form.defaultAmount)})}>Save</Button></div></Modal>;
 }
 
-function PolicyModal({types,inUse,onClose,onSaved}:{types:AllowanceType[];inUse:(name:string)=>boolean;onClose:()=>void;onSaved:(types:AllowanceType[])=>void}){
- const [rows,setRows]=useState(()=>types.map(type=>({...type})));
- const [error,setError]=useState('');
- const update=(index:number,patch:Partial<AllowanceType>)=>setRows(list=>list.map((row,i)=>i===index?{...row,...patch}:row));
- const removeRow=(index:number)=>{const row=rows[index],saved=types.find(type=>type.id===row.id);if(saved&&inUse(saved.name)){setError(`${saved.name} is given to employees and cannot be removed.`);return}setError('');setRows(list=>list.filter((_,i)=>i!==index))};
- const validate=()=>{
-  const names=rows.map(row=>row.name.trim().toLowerCase());
-  if(names.some(name=>!name))return 'Every allowance type needs a name.';
-  if(new Set(names).size!==names.length)return 'Allowance type names must be unique.';
-  const renamed=types.find(type=>inUse(type.name)&&!rows.some(row=>row.id===type.id&&row.name.trim().toLowerCase()===type.name.trim().toLowerCase()));
-  return renamed?`${renamed.name} is given to employees and cannot be renamed.`:'';
+function AssignModal({employee,employees,policy,allowances,amounts,onClose,onDone}:{employee:Employee;employees:Employee[];policy:PolicyType[];allowances:BonusIncentive[];amounts:Record<string,number>;onClose:()=>void;onDone:()=>Promise<void>}){
+ const date=today(),hasAny=policy.some(type=>(amounts[type.id]??0)>0);
+ // An employee with no allowances yet starts from the policy defaults.
+ const [form,setForm]=useState<Record<string,string>>(()=>Object.fromEntries(policy.map(type=>[type.id,String((hasAny?amounts[type.id]:type.defaultAmount)||'')])));
+ const [effectiveDate,setEffectiveDate]=useState(date);
+ const [saving,setSaving]=useState(false),[error,setError]=useState('');
+ const total=policy.reduce((sum,type)=>sum+numberValue(form[type.id]??''),0);
+ const mine=(type:PolicyType)=>allowances.filter(item=>item.status==='Active'&&findCompensationEmployee(employees,item.employeeId)?.id===employee.id&&policyTypeFor(item.allowanceType,policy)?.id===type.id);
+ const save=async()=>{
+  setSaving(true);setError('');
+  try{
+   for(const type of policy){
+    const amount=numberValue(form[type.id]??''),existing=mine(type),taxable=type.taxTreatment==='taxable';
+    const values={employeeId:employee.id,type:'Allowance' as const,allowanceType:type.name,frequency:'Monthly' as const,taxable,notes:'',cutoffStart:'',cutoffEnd:''};
+    if(amount>0&&!existing.length)await compensationService.createReward({...values,amount,effectiveDate,status:'Active'});
+    for(const [index,item] of existing.entries()){
+     const keep=amount>0&&index===0;
+     if(keep&&Math.abs(monthlyAmount(item,loadRates().payPeriodsPerMonth)-amount)<0.005&&item.allowanceType===type.name&&item.taxable===taxable)continue;
+     // A removed allowance is made inactive, so payroll stops paying it and the record stays.
+     await compensationService.updateReward(item.id,keep?{...values,amount,effectiveDate,status:'Active'}:{...values,amount:item.amount,frequency:item.frequency,effectiveDate:item.effectiveDate,status:'Inactive'});
+    }
+   }
+   recordAudit({action:'Assigned allowances',module:'Compensation',description:`Set ${employee.name}'s allowances: ${policy.map(type=>`${type.name} ${peso(numberValue(form[type.id]??''))}`).join(', ')}.`});
+   await onDone();
+  }catch(cause){setError(errorText(cause,'The allowances could not be saved.'))}finally{setSaving(false)}
  };
- const save=()=>{
-  const problem=validate();setError(problem);if(problem)return;
-  // Each type is saved with an explicit tax treatment (the name-based suggestion until one is chosen).
-  const next=rows.map(row=>({...row,name:row.name.trim(),taxTreatment:allowanceTreatment(row.name,[row])}));
-  saveAllowanceTypes(next);
-  recordAudit({action:'Updated allowance types',module:'Compensation',description:`Saved allowance types: ${next.map(row=>row.name).join(', ')}.`});
-  onSaved(next);
- };
- return <Modal title="Allowance policy" wide onClose={onClose}><div className="grid gap-3">
-  {rows.map((row,index)=><div key={row.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 rounded-xl border border-slate-200 p-3">
-   <div className="grid gap-3 sm:grid-cols-2"><Field label="Name"><TextInput value={row.name} onChange={event=>update(index,{name:event.target.value})}/></Field>
-   <Field label="Tax treatment"><select className={input} value={allowanceTreatment(row.name,[row])} onChange={event=>update(index,{taxTreatment:event.target.value as AllowanceTaxTreatment})}><option value="taxable">Taxable (fixed allowance)</option>{(Object.keys(DE_MINIMIS_LABELS) as DeMinimisCategory[]).map(category=><option key={category} value={category}>De minimis: {DE_MINIMIS_LABELS[category]} (up to {deMinimisCeilingLabel(category,today())})</option>)}</select></Field></div>
-   <button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Remove ${row.name||'allowance type'}`} onClick={()=>removeRow(index)}><Trash2 size={14}/><span className="max-sm:sr-only">Remove</span></button>
-  </div>)}
-  <div><button type="button" className={ghost} onClick={()=>setRows(list=>[...list,{id:crypto.randomUUID(),name:''}])}><Plus size={14}/>Add type</button></div>
- </div>{error&&<p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">{error}</p>}<div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" onClick={save}>Save policy</Button></div></Modal>;
+ return <Modal title={`Assign allowances · ${employee.name}`} onClose={()=>{if(!saving)onClose()}}><div className="grid gap-4">
+  <div className="grid gap-4 sm:grid-cols-2">{policy.map(type=><Field key={type.id} label={`${type.name} (monthly ₱)`}><TextInput type="number" min="0" step="0.01" value={form[type.id]??''} placeholder="0.00" onChange={event=>setForm({...form,[type.id]:event.target.value})}/></Field>)}</div>
+  <Field label="Effective date"><TextInput type="date" value={effectiveDate} onChange={event=>setEffectiveDate(event.target.value)}/></Field>
+  <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-[13px]"><span className="text-slate-600">Total per month</span><b className="tabular-nums text-indigo-600">{peso(total)}</b></div>
+ </div>{error&&<p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">{error}</p>}<div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={saving||!effectiveDate} onClick={()=>void save()}>{saving?'Saving…':'Save'}</Button></div></Modal>;
 }

@@ -3,6 +3,7 @@ import {can} from '../auth/permissions';
 import type {BonusIncentive} from './compensationState';
 import {deMinimisCategory,deMinimisCutoffCeiling} from '../payroll/deMinimis';
 import type {DeMinimisCategory} from '../payroll/deMinimis';
+import {policyTypeFor} from './allowancePolicy';
 
 /** taxTreatment: 'taxable' (a fixed allowance, taxed as regular pay) or the de minimis benefit the type is. */
 export type AllowanceTaxTreatment='taxable'|DeMinimisCategory;
@@ -17,9 +18,9 @@ export const loadAllowanceTypes=():AllowanceType[]=>{
  return saved;
 };
 export const saveAllowanceTypes=(types:AllowanceType[])=>write(ALLOWANCE_TYPES_KEY,types);
-/** The tax treatment of an allowance type: as set in Allowance Types, otherwise suggested from its name. */
+/** The tax treatment of an allowance type: as set in Allowance Types, then the Allowance Policy, otherwise suggested from its name. */
 export const allowanceTreatment=(typeName:string,types:AllowanceType[]=loadAllowanceTypes()):AllowanceTaxTreatment=>
- types.find(type=>type.name.trim().toLowerCase()===typeName.trim().toLowerCase())?.taxTreatment??deMinimisCategory(typeName)??'taxable';
+ types.find(type=>type.name.trim().toLowerCase()===typeName.trim().toLowerCase())?.taxTreatment??policyTypeFor(typeName)?.taxTreatment??deMinimisCategory(typeName)??'taxable';
 
 const round=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
 
