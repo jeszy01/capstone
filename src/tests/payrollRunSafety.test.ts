@@ -28,7 +28,7 @@ describe('payroll run transitions are enforced by the server',()=>{
   expect(await save(hr,[],[draft()])).toEqual([['payroll.created','Payroll','r1',expect.stringContaining('draft payroll')]]);
   await expect(save(hr,[],[draft({preparedById:'someone'})])).rejects.toThrow('Draft prepared by you');
   await expect(save(hr,[],[pending()])).rejects.toThrow('must start as a Draft');
-  await expect(save(admin,[],[draft({preparedById:'u-admin'})])).rejects.toThrow('Only HR Staff');
+  expect((await save(admin,[],[draft({preparedById:'u-admin'})]))[0][0]).toBe('payroll.created');
   expect((await save(hr,[draft()],[computed()]))[0][0]).toBe('payroll.computed');
   expect((await save(hr,[computed()],[computed({rows:[row('EMP-1',1500),row('EMP-2',2000)]})]))[0][0]).toBe('payroll.recomputed');
   expect((await save(hr,[computed()],[pending()]))[0][0]).toBe('payroll.submitted');

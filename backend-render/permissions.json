@@ -17,7 +17,20 @@
     "hmo.approve",
     "settings.edit",
     "users.manage",
-    "audit.view"
+    "audit.view",
+    "employees.manage",
+    "compensation.manage",
+    "hmo.manage",
+    "loans.manage",
+    "claims.encode",
+    "claims.approve",
+    "claims.pay",
+    "attendance.encode",
+    "payroll.generate",
+    "payroll.release",
+    "leave.encode",
+    "leave.approve",
+    "deductions.manage"
   ],
   "hr_staff": [
     "dashboard.view",

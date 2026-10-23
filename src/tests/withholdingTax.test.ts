@@ -49,13 +49,13 @@ describe('retired de minimis ceilings',()=>{
   const {ALLOWANCE_TYPES_KEY,loadAllowanceTypes}=await import('../features/compensation/allowanceRules');
   localStorage.setItem(WITHHOLDING_RULES_KEY,JSON.stringify([{...DEFAULT_WITHHOLDING_RULES,deMinimisEffectiveFrom:'2026-01-06',deMinimisSource:'RR',deMinimisCaps:[{id:'rice',label:'Rice',amount:2500,unit:'monthly'}]}]));
   localStorage.setItem(ALLOWANCE_TYPES_KEY,JSON.stringify([{id:'rice',name:'Rice Subsidy',deMinimisCapId:'rice'}]));
-  // Only an Admin saves cleaned Payroll Settings; only HR Staff save Compensation data.
+  // Only an Admin saves cleaned Payroll Settings; the Admin and HR Staff both save Compensation data.
   localStorage.setItem('session:user',JSON.stringify({id:'admin',employeeId:'USR-0001',name:'Admin',role:'Admin'}));
   expect(loadWithholdingRules()[0]).not.toHaveProperty('deMinimisCaps');
   expect(localStorage.getItem(WITHHOLDING_RULES_KEY)).not.toContain('deMinimis');
   expect(loadWithholdingRules()[0].annualBenefitsExemption).toBe(90000);
   expect(loadAllowanceTypes()).toEqual([{id:'rice',name:'Rice Subsidy'}]);
-  expect(localStorage.getItem(ALLOWANCE_TYPES_KEY)).toContain('deMinimisCapId');
+  expect(localStorage.getItem(ALLOWANCE_TYPES_KEY)).not.toContain('deMinimisCapId');
   localStorage.setItem('session:user',JSON.stringify({id:'hr',employeeId:'USR-0002',name:'HR',role:'HR Staff'}));
   expect(loadAllowanceTypes()).toEqual([{id:'rice',name:'Rice Subsidy'}]);
   expect(localStorage.getItem(ALLOWANCE_TYPES_KEY)).not.toContain('deMinimisCapId');

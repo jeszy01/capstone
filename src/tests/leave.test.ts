@@ -30,10 +30,10 @@ describe('leave',()=>{
   const [row]=computeDeductions({employees:[employee],records,schedule:{start:'08:00',end:'17:00',otMin:30},assignments:[],grades:[],rates:DEFAULT_RATES,from:'2026-10-01',to:'2026-10-15'});
   expect(row.absentDays).toBe(2);
  });
- it('lets HR Staff encode and approve leave and keeps Admin view-only',()=>{
+ it('lets HR Staff and the Admin encode and approve leave',()=>{
   expect(can('leave.view','Admin')).toBe(true);
-  expect(can('leave.encode','Admin')).toBe(false);
-  expect(can('leave.approve','Admin')).toBe(false);
+  expect(can('leave.encode','Admin')).toBe(true);
+  expect(can('leave.approve','Admin')).toBe(true);
   expect(can('leave.encode','HR Staff')).toBe(true);
   expect(can('leave.approve','HR Staff')).toBe(true);
  });

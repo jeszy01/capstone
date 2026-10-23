@@ -30,9 +30,9 @@ describe('payslip release',()=>{
 });
 
 describe('payroll data HR keeps',()=>{
- it('lets HR keep payout details but not the Admin',async()=>{
+ it('lets HR and the Admin keep payout details',async()=>{
   expect(await appDataEvents({id:'u',role:'hr_staff'},'payroll:payouts',null,{'EMP-1':{method:'Cash'}},false)).toEqual([]);
-  await expect(appDataEvents({id:'a',role:'admin'},'payroll:payouts',null,{'EMP-1':{method:'Cash'}},false)).rejects.toThrow();
+  expect(await appDataEvents({id:'a',role:'admin'},'payroll:payouts',null,{'EMP-1':{method:'Cash'}},false)).toEqual([]);
  });
  it('only adds timesheet locks and logs each one',async()=>{
   const lock={id:'l1',from:'2026-10-01',to:'2026-10-15',lockedAt:'x',lockedBy:'HR'};

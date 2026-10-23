@@ -16,8 +16,8 @@ describe('other authorized deductions',()=>{
   expect(otherDeductionsForCutoff([item({endDate:'2026-10-15'})],'e1','2026-10-16','2026-10-31')).toBe(0);
   expect(otherDeductionsForCutoff([item({endDate:'2026-10-16'})],'e1','2026-10-16','2026-10-31')).toBe(250);
  });
- it('lets HR Staff manage them and keeps Admin view-only',()=>{
+ it('lets HR Staff and the Admin manage them',()=>{
   expect(can('deductions.manage','HR Staff')).toBe(true);
-  expect(can('deductions.manage','Admin')).toBe(false);
+  expect(can('deductions.manage','Admin')).toBe(true);
  });
 });
