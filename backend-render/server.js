@@ -11,7 +11,7 @@ import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
-import { GRADE_STRUCTURE_KEY, startingDailyRate } from './gradeStructure.js';
+import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -1180,7 +1180,8 @@ async function autoAssignSalary(employee, userId) {
   const hired = String(employee.hire_date ?? '').slice(0, 10);
   const effectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(hired) ? hired : new Date().toISOString().slice(0, 10);
   const { rows: [saved] } = await pool.query('select value, deleted from app_data where key=$1', [GRADE_STRUCTURE_KEY]);
-  const daily = startingDailyRate(position, saved && !saved.deleted ? appValue(saved.value) : null);
+  const { rows: [positions] } = await pool.query('select value, deleted from app_data where key=$1', [POSITION_GRADES_KEY]);
+  const daily = startingDailyRate(position, saved && !saved.deleted ? appValue(saved.value) : null, positions && !positions.deleted ? appValue(positions.value) : null);
   if (daily) return createInitialAssignment({ employee_id: String(employee.id), basic_salary: roundMoney(daily * await monthlyWorkDays()), effective_date: effectiveDate }, { userId });
   const grade = (await listRows('salary_grades')).find(r => String(r.position ?? '').trim().toLowerCase() === position && r.status !== 'Inactive');
   if (!grade) return null;

@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {defaultGrades,gradeStructure,midpoint,spread,startingDailyRate,stepsFrom} from '../../backend-render/gradeStructure.js';
+import {defaultGrades,gradeStructure,midpoint,positionGradeCode,spread,startingDailyRate,stepsFrom} from '../../backend-render/gradeStructure.js';
 import {gradeHeadcount,placement,promotionTarget} from '../features/compensation/salaryPlacement';
 
 const grades=defaultGrades();
@@ -44,5 +44,17 @@ describe('employee placement',()=>{
  });
  it('counts employees per grade',()=>{
   expect(gradeHeadcount(['Rider','Driver','Dispatcher','Unknown',undefined])).toEqual({G1:1,G2:2});
+ });
+});
+
+describe('position settings',()=>{
+ it('uses HR\'s grade and market rate for a position',()=>{
+  const settings={Rider:{grade:'G2',marketRate:900}};
+  expect(positionGradeCode('rider',settings)).toBe('G2');
+  expect(positionGradeCode('Driver',settings)).toBe('G2');
+  expect(positionGradeCode('Site Engineer',settings)).toBeNull();
+  expect(startingDailyRate('Rider',null,settings)).toBe(850);
+  expect(placement('Rider',900,grades,22,settings)).toMatchObject({grade:{code:'G2'},marketStatus:'At market',marketGap:0});
+  expect(gradeHeadcount(['Rider','Dispatcher'],settings)).toEqual({G2:2});
  });
 });

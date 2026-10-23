@@ -1,19 +1,20 @@
 import {useMemo,useRef,useState} from 'react';
-import {ArrowUp,Pencil,Plus,Search,Trash2,X} from 'lucide-react';
-import {Button,Field,Modal,TextInput,ghost,input,useOverlayFocus} from '../../components/common/ui';
+import {ArrowUp,Search,X} from 'lucide-react';
+import {Button,ghost,input,useOverlayFocus} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
 import {can} from '../auth/permissions';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
-import {STEP_COUNT,midpoint,spread,stepsFrom} from '../../../backend-render/gradeStructure.js';
+import {POSITIONS,positionGrade} from '../../../backend-render/positionCatalog.js';
+import {STEP_COUNT,positionGradeCode} from '../../../backend-render/gradeStructure.js';
 import type {SalaryGradeBand} from '../../../backend-render/gradeStructure.js';
 import {compensationService} from './compensationService';
 import {compactPeso} from './compensationSummary';
 import {findCompensationEmployee,today} from './compensationState';
 import type {CompensationHistory,CompensationProposal,EmployeeCompensation} from './compensationState';
-import {gradeHeadcount,loadGrades,loadRatings,placement,positionsInGrade,promotionTarget,saveGrades,saveRatings} from './salaryPlacement';
-import type {EmployeeRating,MarketStatus,Placement,RangeStatus} from './salaryPlacement';
+import {MARKET_TOLERANCE,loadGrades,loadPositionSettings,loadRatings,placement,promotionTarget,saveGrades,savePositionSettings,saveRatings} from './salaryPlacement';
+import type {EmployeeRating,MarketStatus,Placement,PositionSettings,RangeStatus} from './salaryPlacement';
 import {Avatar,MessageRow,PanelHeader,Segmented,panelClass,theadClass} from './compensationWidgets';
 
 type View='format'|'placement'|'history';
@@ -29,22 +30,31 @@ const shortDate=(value:string)=>value?new Date(`${value.slice(0,10)}T00:00:00`).
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 // Compa-ratio 0.95 to 1.05 is on the midpoint; outside it is shown in amber (below) or red (above).
 const compaTone=(ratio:number)=>ratio<0.95?'bg-amber-50 text-amber-700':ratio>1.05?'bg-red-50 text-red-700':'bg-emerald-50 text-emerald-700';
+const OUTLINE_TONE:Record<string,string>={'Within range':'border-emerald-600 bg-emerald-50 text-emerald-700','At market':'border-emerald-600 bg-emerald-50 text-emerald-700','Below range':'border-amber-500 bg-amber-50 text-amber-700','Below market':'border-amber-500 bg-amber-50 text-amber-700','Above range':'border-blue-600 bg-blue-50 text-blue-700','Above market':'border-blue-600 bg-blue-50 text-blue-700'};
+const OutlinePill=({label}:{label:string})=><span className={`inline-block whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${OUTLINE_TONE[label]??'border-slate-300 text-slate-600'}`}>{label}</span>;
+// Steps run evenly (by percent) from the grade's min to its max.
+const stepsBetween=(min:number,max:number)=>Array.from({length:STEP_COUNT},(_,i)=>Math.round(min*(max/min)**(i/(STEP_COUNT-1))));
+type GradeDraft=Record<string,{min:string;max:string}>;
+type PositionDraft=Record<string,{grade:string;market:string}>;
 
 export function SalaryStructurePanel({employees,assignments,history,proposals,loading,daysPerMonth,onChanged}:Props){
  const [view,setView]=useState<View>('format');
  const [search,setSearch]=useState('');
  const [grades,setGrades]=useState<SalaryGradeBand[]>(loadGrades);
  const [ratings,setRatings]=useState<Record<string,EmployeeRating>>(loadRatings);
- const [editing,setEditing]=useState<SalaryGradeBand|'new'|null>(null);
+ const [settings,setSettings]=useState<PositionSettings>(loadPositionSettings);
+ const gradeDraftOf=(list:SalaryGradeBand[]):GradeDraft=>Object.fromEntries(list.map(grade=>[grade.code,{min:String(grade.steps[0]),max:String(grade.steps[STEP_COUNT-1])}]));
+ const positionDraftOf=(saved:PositionSettings):PositionDraft=>Object.fromEntries(POSITIONS.map(item=>[item.position,{grade:positionGradeCode(item.position,saved)??item.grade,market:saved[item.position]?.marketRate?String(saved[item.position].marketRate):''}]));
+ const [gradeDraft,setGradeDraft]=useState<GradeDraft>(()=>gradeDraftOf(grades));
+ const [positionDraft,setPositionDraft]=useState<PositionDraft>(()=>positionDraftOf(settings));
  const [promoting,setPromoting]=useState<Row|null>(null);
  const canManage=can('compensation.manage');
  const nameOf=(reference:string)=>findCompensationEmployee(employees,reference)?.name??reference;
  const activeEmployees=useMemo(()=>employees.filter(employee=>employee.status!=='Inactive'),[employees]);
- const headcount=useMemo(()=>gradeHeadcount(activeEmployees.map(employee=>employee.position)),[activeEmployees]);
  const rows=useMemo<Row[]>(()=>activeEmployees.map(employee=>{
   const salary=assignments.find(item=>findCompensationEmployee(employees,item.employeeId)?.id===employee.id);
-  return {employee,basic:salary?.fixedSalary??0,...placement(employee.position,salary?salary.fixedSalary/daysPerMonth:0,grades,daysPerMonth)};
- }).sort((a,b)=>a.employee.name.localeCompare(b.employee.name)),[activeEmployees,employees,assignments,grades,daysPerMonth]);
+  return {employee,basic:salary?.fixedSalary??0,...placement(employee.position,salary?salary.fixedSalary/daysPerMonth:0,grades,daysPerMonth,settings)};
+ }).sort((a,b)=>a.employee.name.localeCompare(b.employee.name)),[activeEmployees,employees,assignments,grades,daysPerMonth,settings]);
  const pendingFor=new Set(proposals.filter(item=>item.status==='Pending HR Review').map(item=>findCompensationEmployee(employees,item.employeeId)?.id??item.employeeId));
  const query=search.trim().toLowerCase();
  const shownRows=rows.filter(row=>!query||[row.employee.name,row.employee.employeeNo,row.employee.position??'',row.grade?.code??'',row.status].some(value=>value.toLowerCase().includes(query)));
@@ -52,30 +62,62 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
  const knownHistory=employees.length?history.filter(item=>findCompensationEmployee(employees,item.employeeId)):history;
  const shownHistory=[...knownHistory].sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||b.recordedAt.localeCompare(a.recordedAt))
   .filter(item=>!query||[nameOf(item.employeeId),item.type,item.source,item.status??'',item.actorName??'',item.reason??''].some(value=>value.toLowerCase().includes(query)));
- const saveStructure=(next:SalaryGradeBand[],description:string)=>{setGrades(next);saveGrades(next);recordAudit({action:'Updated salary structure',module:'Compensation',description});setEditing(null)};
+ // Format: each position's daily rate is its employees' average, or the grade's min when nobody holds it.
+ const draftBand=(code:string)=>({min:numberValue(gradeDraft[code]?.min??''),max:numberValue(gradeDraft[code]?.max??'')});
+ const positionRows=POSITIONS.map(item=>{
+  const draft=positionDraft[item.position],grade=grades.find(band=>band.code===draft.grade),{min,max}=draftBand(draft.grade);
+  const rates=rows.filter(row=>row.dailyRate>0&&positionGrade(row.employee.position)?.position===item.position).map(row=>row.dailyRate);
+  const rate=rates.length?Math.round(rates.reduce((sum,value)=>sum+value,0)/rates.length*100)/100:min;
+  const market=numberValue(draft.market)>0?numberValue(draft.market):grade?.marketRate??0;
+  const gap=market>0?Math.round((rate-market)/market*1000)/10:0;
+  return {position:item.position,grade:draft.grade,rate,market,gap,compaRatio:min>0&&max>0?rate/((min+max)/2):0,
+   range:rate<min?'Below range':rate>max?'Above range':'Within range',marketStatus:Math.abs(gap)<=MARKET_TOLERANCE*100?'At market':gap>0?'Above market':'Below market'};
+ });
+ const savedGrade=(position:string,catalog:string)=>positionGradeCode(position,settings)??catalog;
+ const changed=grades.some(grade=>{const {min,max}=draftBand(grade.code);return min!==grade.steps[0]||max!==grade.steps[STEP_COUNT-1]})
+  ||POSITIONS.some(item=>{const draft=positionDraft[item.position];return draft.grade!==savedGrade(item.position,item.grade)||numberValue(draft.market)!==(settings[item.position]?.marketRate??0)});
+ const badGrade=grades.find(grade=>{const {min,max}=draftBand(grade.code);return !(min>0)||max<min});
+ const resetFormat=()=>{setGradeDraft(gradeDraftOf(grades));setPositionDraft(positionDraftOf(settings))};
+ const saveFormat=()=>{
+  if(badGrade)return;
+  const nextGrades=grades.map(grade=>{const {min,max}=draftBand(grade.code);return min===grade.steps[0]&&max===grade.steps[STEP_COUNT-1]?grade:{...grade,steps:stepsBetween(min,max)}});
+  const nextSettings:PositionSettings={};
+  for(const item of POSITIONS){
+   const draft=positionDraft[item.position],market=numberValue(draft.market);
+   if(draft.grade!==item.grade||market>0)nextSettings[item.position]={...(draft.grade!==item.grade?{grade:draft.grade}:{}),...(market>0?{marketRate:market}:{})};
+  }
+  setGrades(nextGrades);saveGrades(nextGrades);setSettings(nextSettings);savePositionSettings(nextSettings);
+  recordAudit({action:'Updated salary structure',module:'Compensation',description:`Grades ${nextGrades.map(grade=>`${grade.code} ${peso(grade.steps[0])}–${peso(grade.steps[STEP_COUNT-1])}`).join(', ')}; positions ${POSITIONS.map(item=>`${item.position} ${positionDraft[item.position].grade}`).join(', ')}.`});
+ };
  const rate=(employeeId:string,rating:number)=>{
   const next={...ratings};
   if(rating)next[employeeId]={rating,ratedAt:today(),ratedBy:getCurrentUser()?.name};else delete next[employeeId];
   setRatings(next);saveRatings(next);
  };
  const searchBox=view!=='format'&&<label className="relative block w-full max-w-xs"><span className="sr-only">Search</span><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" placeholder={view==='placement'?'Search employee, position or grade':'Search employee, type or reviewer'} value={search} onChange={event=>setSearch(event.target.value)}/></label>;
- const headings:Record<View,[string,string]>={format:['Salary Structure Format','Grade · step progression · midpoint · range spread · headcount (daily rates)'],placement:['Employee Placement','Where each employee sits inside their grade band'],history:['Salary History','Every salary change: initial salaries, merit increases, promotions and adjustments']};
+ const headings:Record<View,[string,string]>={format:['Salary Structure','Pay grades set the daily-rate range. Compa-ratio is rate ÷ range midpoint.'],placement:['Employee Placement','Where each employee sits inside their grade band'],history:['Salary History','Every salary change: initial salaries, merit increases, promotions and adjustments']};
 
  return <section aria-labelledby="structure-heading" className={panelClass}>
-  <PanelHeader id="structure-heading" title={headings[view][0]} subtitle={headings[view][1]} action={view==='format'&&canManage&&<Button className="!bg-indigo-600 hover:!bg-indigo-700" onClick={()=>setEditing('new')}><Plus size={15}/>New Grade</Button>}/>
+  <PanelHeader id="structure-heading" title={headings[view][0]} subtitle={headings[view][1]} action={view==='format'&&canManage&&<div className="flex gap-2"><button type="button" className={ghost} disabled={!changed} onClick={resetFormat}>Reset</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={!changed||Boolean(badGrade)} onClick={saveFormat}>Save</Button></div>}/>
   <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"><Segmented label="Salary Structure views" options={VIEWS} value={view} onChange={next=>{setView(next);setSearch('')}}/>{searchBox}</div>
 
   {view==='format'&&<>
+   <div className="grid gap-4 px-6 pb-5 sm:grid-cols-2 lg:grid-cols-3">{grades.map(grade=><div key={grade.code} className="rounded-2xl border border-slate-200 p-4">
+    <div className="text-[12px] text-slate-500">Grade {grade.code} (daily rate)</div>
+    {(['min','max'] as const).map(field=><label key={field} className="mt-2 flex items-center justify-between gap-3 text-[13px] text-slate-800">{field==='min'?'Min':'Max'}<input type="number" min="0" step="1" aria-label={`Grade ${grade.code} ${field}`} disabled={!canManage} className={`${input} max-w-[110px]`} value={gradeDraft[grade.code]?.[field]??''} onChange={event=>setGradeDraft({...gradeDraft,[grade.code]:{...gradeDraft[grade.code],[field]:event.target.value}})}/></label>)}
+   </div>)}</div>
+   {badGrade&&<p role="alert" className="mx-6 mb-4 mt-0 text-[12px] text-red-700">Grade {badGrade.code}: enter a min above 0 and a max at least the min.</p>}
    <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-[13px]">
-    <thead><tr className={theadClass}>{['Grade',...Array.from({length:STEP_COUNT},(_,i)=>`Step ${i+1}`),'Midpoint','Spread','Market','HC',''].map((head,index)=><th key={head||index} scope="col" className={`px-5 py-3 font-semibold ${index>0?'text-right':''}`}>{head}</th>)}</tr></thead>
-    <tbody>{grades.map(grade=><tr key={grade.code} className="border-b border-slate-100 last:border-0">
-     <td className="px-5 py-4"><div className="font-bold text-slate-900">{grade.code}</div><div className="mt-0.5 text-[12px] text-slate-500">{grade.name||'—'}</div></td>
-     {grade.steps.map((step,i)=><td key={i} className="px-5 py-4 text-right tabular-nums font-semibold text-slate-800">{peso(step)}</td>)}
-     <td className="px-5 py-4 text-right tabular-nums font-bold text-slate-900">{peso(midpoint(grade))}</td>
-     <td className="px-5 py-4 text-right tabular-nums text-slate-700">{spread(grade)}%</td>
-     <td className="px-5 py-4 text-right tabular-nums text-slate-700">{peso(grade.marketRate)}</td>
-     <td className="px-5 py-4 text-right tabular-nums text-slate-700">{headcount[grade.code]??0}</td>
-     <td className="px-5 py-4 text-right">{canManage&&<button type="button" className={ghost} onClick={()=>setEditing(grade)}><Pencil size={14}/>Edit</button>}</td>
+    <thead><tr className={theadClass}>{['Position','Grade','Daily Rate','Compa-ratio','Market Rate','Gap','Position in Range','Status'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${['Daily Rate','Compa-ratio','Market Rate','Gap'].includes(head)?'text-right':''}`}>{head}</th>)}</tr></thead>
+    <tbody>{positionRows.map(row=><tr key={row.position} className="border-b border-slate-100 last:border-0">
+     <td className="px-5 py-3 text-slate-900">{row.position}</td>
+     <td className="px-5 py-3">{canManage?<select aria-label={`${row.position} grade`} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px]" value={row.grade} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...positionDraft[row.position],grade:event.target.value}})}>{grades.map(grade=><option key={grade.code} value={grade.code}>{grade.code}</option>)}</select>:<span className="font-semibold">{row.grade}</span>}</td>
+     <td className="px-5 py-3 text-right tabular-nums text-slate-900">{peso(row.rate)}</td>
+     <td className="px-5 py-3 text-right tabular-nums text-slate-800">{row.compaRatio?row.compaRatio.toFixed(2):'—'}</td>
+     <td className="px-5 py-3 text-right">{canManage?<input type="number" min="0" step="1" aria-label={`${row.position} market rate`} className={`${input} ml-auto max-w-[110px]`} placeholder={String(grades.find(grade=>grade.code===row.grade)?.marketRate??'')} value={positionDraft[row.position].market} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...positionDraft[row.position],market:event.target.value}})}/>:<span className="tabular-nums">{peso(row.market)}</span>}</td>
+     <td className="px-5 py-3 text-right tabular-nums text-slate-800">{row.market?`${row.gap.toFixed(1)}%`:'—'}</td>
+     <td className="px-5 py-3"><OutlinePill label={row.range}/></td>
+     <td className="px-5 py-3">{row.market?<OutlinePill label={row.marketStatus}/>:'—'}</td>
     </tr>)}</tbody>
    </table></div>
   </>}
@@ -112,35 +154,8 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
    </tr>})}</tbody>
   </table></div>}
 
-  {editing&&<GradeModal grade={editing==='new'?null:editing} grades={grades} headcount={editing==='new'?0:headcount[editing.code]??0} onClose={()=>setEditing(null)} onSave={(next,description)=>saveStructure(next,description)}/>}
   {promoting&&<PromoteModal row={promoting} grades={grades} daysPerMonth={daysPerMonth} onClose={()=>setPromoting(null)} onDone={async()=>{setPromoting(null);await onChanged()}}/>}
  </section>;
-}
-
-function GradeModal({grade,grades,headcount,onClose,onSave}:{grade:SalaryGradeBand|null;grades:SalaryGradeBand[];headcount:number;onClose:()=>void;onSave:(grades:SalaryGradeBand[],description:string)=>void}){
- const nextCode=`G${grades.reduce((max,item)=>Math.max(max,Number(item.code.replace(/\D/g,''))||0),0)+1}`;
- const top=grades[grades.length-1];
- const [form,setForm]=useState(()=>({code:grade?.code??nextCode,name:grade?.name??'',steps:(grade?.steps??stepsFrom(Math.round((top?.steps[STEP_COUNT-1]??1000)*1.05))).map(String),marketRate:String(grade?.marketRate??''),increment:'5'}));
- const steps=form.steps.map(numberValue);
- const catalogGrade=Boolean(grade&&positionsInGrade(grade.code).length);
- const problem=!form.code.trim()?'Enter a grade code.':!grade&&grades.some(item=>item.code.toLowerCase()===form.code.trim().toLowerCase())?'That grade code already exists.':steps.some(step=>!(step>0))?'Every step needs a daily rate.':steps.some((step,i)=>i>0&&step<steps[i-1])?'Each step must be at least the step before it.':'';
- const value:SalaryGradeBand={code:form.code.trim(),name:form.name.trim(),steps,marketRate:numberValue(form.marketRate)>0?numberValue(form.marketRate):Math.round((steps[0]+steps[STEP_COUNT-1])/2)};
- const save=()=>{if(problem)return;onSave(grade?grades.map(item=>item.code===grade.code?value:item):[...grades,value],`${grade?'Edited':'Added'} grade ${value.code}: steps ${steps.map(step=>peso(step)).join(', ')}; market ${peso(value.marketRate)}.`)};
- return <Modal title={grade?`Edit grade ${grade.code}`:'New grade'} wide onClose={onClose}>
-  <div className="grid gap-4 sm:grid-cols-3">
-   <Field label="Grade code"><TextInput value={form.code} disabled={Boolean(grade)} onChange={event=>setForm({...form,code:event.target.value})}/></Field>
-   <Field label="Name"><TextInput value={form.name} maxLength={60} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Supervisory"/></Field>
-   <Field label="Market rate (daily ₱)"><TextInput type="number" min="0" step="1" value={form.marketRate} onChange={event=>setForm({...form,marketRate:event.target.value})} placeholder={String(Math.round((steps[0]+steps[STEP_COUNT-1])/2)||'')}/></Field>
-  </div>
-  <div className="mt-4 grid gap-3 sm:grid-cols-5">{form.steps.map((step,i)=><Field key={i} label={`Step ${i+1} (daily ₱)`}><TextInput type="number" min="0" step="1" value={step} onChange={event=>setForm({...form,steps:form.steps.map((item,at)=>at===i?event.target.value:item)})}/></Field>)}</div>
-  <div className="mt-3 flex flex-wrap items-end gap-2"><Field label="Fill steps from step 1, % apart"><TextInput type="number" min="0" step="0.5" className="w-28" value={form.increment} onChange={event=>setForm({...form,increment:event.target.value})}/></Field><button type="button" className={ghost} disabled={!(steps[0]>0)} onClick={()=>setForm({...form,steps:stepsFrom(steps[0],numberValue(form.increment)).map(String)})}>Fill steps</button></div>
-  <p className="mb-0 mt-3 text-[12px] text-slate-500">Midpoint {peso((steps[0]+steps[STEP_COUNT-1])/2||0)} · spread {steps[0]>0?Math.round((steps[STEP_COUNT-1]/steps[0]-1)*100):0}% · {headcount} employee{headcount===1?'':'s'}. Changing step 1 changes the starting salary of new hires in this grade; current salaries do not change.</p>
-  {problem&&<p role="alert" className="mb-0 mt-2 text-[12px] text-red-700">{problem}</p>}
-  <div className="mt-6 flex flex-wrap justify-between gap-2">
-   <div>{grade&&!catalogGrade&&headcount===0&&<button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} onClick={()=>onSave(grades.filter(item=>item.code!==grade.code),`Deleted grade ${grade.code}.`)}><Trash2 size={14}/>Delete grade</button>}</div>
-   <div className="flex gap-2"><button type="button" className={ghost} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={Boolean(problem)} onClick={save}>Save grade</Button></div>
-  </div>
- </Modal>;
 }
 
 function PromoteModal({row,grades,daysPerMonth,onClose,onDone}:{row:Row;grades:SalaryGradeBand[];daysPerMonth:number;onClose:()=>void;onDone:()=>Promise<void>}){
