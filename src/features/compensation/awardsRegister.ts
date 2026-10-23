@@ -2,9 +2,9 @@ import {runStatus} from '../../../backend-render/payrollFlow.js';
 import type {PayrollRun} from '../payroll/payrollRuns';
 import type {BonusIncentive,CompensationProposal} from './compensationState';
 
-export type AwardType='Bonus'|'Incentive'|'Merit';
+export type AwardType='Bonus'|'Incentive'|'Merit'|'Promotion';
 export type AwardStatus='Pending'|'Queued for Payroll'|'Paid'|'Applied'|'Scheduled'|'Rejected';
-/** One row of the Bonus, Incentive & Merit Register: an incentive or bonus, or a merit salary increase. */
+/** One row of the Bonus, Incentive & Merit Register: an incentive or bonus, or a merit or promotion salary increase. */
 export type Award={id:string;source:'reward'|'proposal';reference:string;createdAt:string;createdBy?:string;employeeId:string;type:AwardType;
  title:string;description:string;amount:number;period:string;status:AwardStatus;previousSalary:number};
 
@@ -15,7 +15,7 @@ export function splitNotes(notes:string,fallback:string){
  return {title:first.trim()||fallback,description:rest.join('\n').trim()};
 }
 
-const PREFIX:Record<AwardType,string>={Bonus:'BON',Incentive:'INC',Merit:'MER'};
+const PREFIX:Record<AwardType,string>={Bonus:'BON',Incentive:'INC',Merit:'MER',Promotion:'PRO'};
 // An approved incentive or bonus is paid once a regular payroll run covering its cutoff is paid or closed.
 const paidInRun=(reward:BonusIncentive,runs:PayrollRun[])=>runs.some(run=>run.runType!=='thirteenth-month'&&['Paid','Closed'].includes(runStatus(run))&&run.from<=reward.cutoffEnd&&reward.cutoffEnd<=run.to);
 
@@ -27,9 +27,9 @@ export function buildAwards(rewards:BonusIncentive[],proposals:CompensationPropo
    ...splitNotes(item.notes,item.type==='Bonus'?'Bonus':'Incentive'),amount:item.amount,period:(item.cutoffEnd||item.effectiveDate).slice(0,7),previousSalary:0,
    status:(item.status==='Approved'?(paidInRun(item,runs)?'Paid':'Queued for Payroll'):item.status==='Rejected'?'Rejected':'Pending') as AwardStatus,
   })),
-  ...proposals.filter(item=>item.type==='Merit Increase').map(item=>({
-   id:item.id,source:'proposal' as const,createdAt:item.createdAt,createdBy:item.createdBy,employeeId:item.employeeId,type:'Merit' as const,
-   ...splitNotes(item.notes,'Merit increase'),amount:item.newSalary-item.previousSalary,period:item.effectiveDate.slice(0,7),previousSalary:item.previousSalary,
+  ...proposals.filter(item=>item.type==='Merit Increase'||item.type==='Promotion Increase').map(item=>({
+   id:item.id,source:'proposal' as const,createdAt:item.createdAt,createdBy:item.createdBy,employeeId:item.employeeId,type:(item.type==='Merit Increase'?'Merit':'Promotion') as AwardType,
+   ...splitNotes(item.notes,item.type==='Merit Increase'?'Merit increase':'Promotion'),amount:item.newSalary-item.previousSalary,period:item.effectiveDate.slice(0,7),previousSalary:item.previousSalary,
    status:(item.status==='Approved'?(item.effectiveDate<=date?'Applied':'Scheduled'):item.status==='Rejected'?'Rejected':'Pending') as AwardStatus,
   })),
  ];

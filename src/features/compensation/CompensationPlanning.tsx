@@ -81,7 +81,7 @@ export default function CompensationPlanning(){
     {legacyImportWarning&&<div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">{legacyImportWarning}</div>}
     {tab==='overview'
       ?<section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,caption,icon,tone})=><SummaryCard key={label} label={label} icon={icon} tone={tone} value={ready?compactPeso(value):'—'} caption={ready?caption:loading?'Loading…':'Unavailable'}/>)}</section>
-      :tab==='structure'?<SalaryStructurePanel employees={employees} assignments={activeAssignments} history={history} loading={loading} daysPerMonth={daysPerMonth}/>
+      :tab==='structure'?<SalaryStructurePanel employees={employees} assignments={activeAssignments} history={history} proposals={proposals} loading={loading} daysPerMonth={daysPerMonth} onChanged={load}/>
       :tab==='allowances'?<AllowancesPanel employees={employees} rewards={bonuses} loading={loading} onChanged={load}/>
       :<AwardsPanel employees={employees} rewards={bonuses} proposals={proposals} assignments={activeAssignments} loading={loading} onChanged={load}/>}
   </div>;

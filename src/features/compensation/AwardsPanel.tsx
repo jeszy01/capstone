@@ -18,10 +18,10 @@ import type {Award,AwardStatus,AwardType} from './awardsRegister';
 
 type Props={employees:Employee[];rewards:BonusIncentive[];proposals:CompensationProposal[];assignments:EmployeeCompensation[];loading:boolean;onChanged:()=>Promise<void>};
 type Filter='All'|AwardType;
-const FILTERS:Filter[]=['All','Bonus','Incentive','Merit'];
+const FILTERS:Filter[]=['All','Bonus','Incentive','Merit','Promotion'];
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
-const TYPE_TONE:Record<AwardType,string>={Bonus:'bg-violet-50 text-violet-700',Incentive:'bg-emerald-50 text-emerald-700',Merit:'bg-blue-50 text-blue-700'};
+const TYPE_TONE:Record<AwardType,string>={Bonus:'bg-violet-50 text-violet-700',Incentive:'bg-emerald-50 text-emerald-700',Merit:'bg-blue-50 text-blue-700',Promotion:'bg-indigo-50 text-indigo-700'};
 const STATUS_TONE:Record<AwardStatus,string>={Pending:'bg-amber-50 text-amber-700','Queued for Payroll':'bg-blue-50 text-blue-700',Paid:'bg-emerald-50 text-emerald-700',Applied:'bg-emerald-50 text-emerald-700',Scheduled:'bg-blue-50 text-blue-700',Rejected:'bg-red-50 text-red-700'};
 const shortDate=(value:string)=>value?new Date(value).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
 
@@ -70,7 +70,7 @@ export function AwardsPanel({employees,rewards,proposals,assignments,loading,onC
       <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={name} index={index}/><div className="min-w-0"><div className="font-semibold text-slate-900">{name}</div><div className="mt-0.5 text-[12px] text-slate-500">{[employee?.employeeNo,employee?.position].filter(Boolean).join(' · ')}</div></div></div></td>
       <td className="px-5 py-4"><span className={`inline-block rounded-full px-3 py-1 text-[12px] font-semibold ${TYPE_TONE[award.type]}`}>{award.type}</span></td>
       <td className="max-w-[240px] px-5 py-4"><div className="font-semibold text-slate-900">{award.title}</div>{award.description&&<div className="mt-0.5 text-[12px] text-slate-500">{award.description}</div>}</td>
-      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{award.type==='Merit'?`+${peso(award.amount)}/mo`:peso(award.amount)}</td>
+      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{award.source==='proposal'?`+${peso(award.amount)}/mo`:peso(award.amount)}</td>
       <td className="whitespace-nowrap px-5 py-4 text-slate-600">{award.period}</td>
       <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold ${STATUS_TONE[award.status]}`}><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current"/>{award.status}</span></td>
       <td className="px-5 py-4"><div className="flex items-center justify-end gap-2">
@@ -91,7 +91,7 @@ function RejectModal({award,saving,error,onClose,onReject}:{award:Award;saving:b
  const [reason,setReason]=useState('');
  const needsReason=award.source==='proposal';
  return <Modal title={`Reject ${award.reference}?`} onClose={onClose}>
-  <p className="mt-0 text-[13px] text-slate-600">{award.title} · {award.type==='Merit'?`+${peso(award.amount)}/mo`:peso(award.amount)}</p>
+  <p className="mt-0 text-[13px] text-slate-600">{award.title} · {award.source==='proposal'?`+${peso(award.amount)}/mo`:peso(award.amount)}</p>
   {needsReason&&<Field label="Reason for rejection"><textarea className={`${input} min-h-20`} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}/></Field>}
   {error&&<p role="alert" className="text-[12px] text-red-700">{error}</p>}
   <div className="mt-5 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-red-600 hover:!bg-red-700" disabled={saving||(needsReason&&!reason.trim())} onClick={()=>onReject(reason.trim())}>{saving?'Saving…':'Reject'}</Button></div>

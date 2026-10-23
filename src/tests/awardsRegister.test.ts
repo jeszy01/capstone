@@ -28,6 +28,10 @@ describe('bonus, incentive and merit register',()=>{
  it('summarizes pending, queued, paid this year and merit uplift',()=>{
   expect(awardSummary(awards,'2026-10-23')).toEqual({pending:3,requested:28600,queued:85000,queuedCount:1,paid:95000,paidCount:1,merit:1,uplift:8});
  });
+ it('lists promotion increases as promotions',()=>{
+  const [row]=buildAwards([],[{...merit('p1','Pending HR Review','2026-11-01'),type:'Promotion Increase',notes:'Promotion to G2 Step 3'}],[],'2026-10-23');
+  expect(row).toMatchObject({reference:'PRO-2026-001',type:'Promotion',title:'Promotion to G2 Step 3',status:'Pending',amount:1600});
+ });
  it('keeps the title on the first line of the notes',()=>{
   expect(splitNotes('Campaign Incentive\nBrand campaign over-delivered','Incentive')).toEqual({title:'Campaign Incentive',description:'Brand campaign over-delivered'});
   expect(splitNotes('','Bonus')).toEqual({title:'Bonus',description:''});
