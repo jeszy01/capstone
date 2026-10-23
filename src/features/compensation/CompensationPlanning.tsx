@@ -8,20 +8,24 @@ import {loadRates} from '../settings/payrollSettings';
 import {compensationService} from './compensationService';
 import {compactPeso,compensationSummary} from './compensationSummary';
 import {activeCompensations,today} from './compensationState';
-import type {BonusIncentive,CompensationProposal,EmployeeCompensation} from './compensationState';
-import {AwardsPanel,Segmented,SummaryCard} from './AwardsPanel';
+import type {BonusIncentive,CompensationHistory,CompensationProposal,EmployeeCompensation} from './compensationState';
+import {AwardsPanel} from './AwardsPanel';
+import {AllowancesPanel} from './AllowancesPanel';
+import {SalaryStructurePanel} from './SalaryStructurePanel';
+import {Segmented,SummaryCard} from './compensationWidgets';
 
-const TABS=[{id:'overview',label:'Overview'},{id:'awards',label:'Bonuses & Incentives'}] as const;
+const TABS=[{id:'overview',label:'Overview'},{id:'structure',label:'Salary Structure'},{id:'allowances',label:'Allowances'},{id:'awards',label:'Bonuses & Incentives'}] as const;
 type Tab=(typeof TABS)[number]['id'];
 
 // Compensation: the monthly payroll cost summary (Overview) and the bonus, incentive and merit register.
 export default function CompensationPlanning(){
   const [params,setParams]=useSearchParams();
-  const tab:Tab=params.get('tab')==='awards'?'awards':'overview';
+  const tab:Tab=TABS.find(item=>item.id===params.get('tab'))?.id??'overview';
   const setTab=(next:Tab)=>setParams(next==='overview'?{}:{tab:next},{replace:true});
   const [assignments,setAssignments]=useState<EmployeeCompensation[]>([]);
   const [bonuses,setBonuses]=useState<BonusIncentive[]>([]);
   const [proposals,setProposals]=useState<CompensationProposal[]>([]);
+  const [history,setHistory]=useState<CompensationHistory[]>([]);
   const [employees,setEmployees]=useState<Employee[]>([]);
   const [loading,setLoading]=useState(true);
   const [loadError,setLoadError]=useState('');
@@ -43,6 +47,7 @@ export default function CompensationPlanning(){
       setAssignments(data.assignments);
       setBonuses(data.bonuses);
       setProposals(data.proposals);
+      setHistory(data.history);
       setEmployees(people);
       setLegacyImportWarning(data.legacyImportWarning);
       setLoadError('');
@@ -76,6 +81,8 @@ export default function CompensationPlanning(){
     {legacyImportWarning&&<div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">{legacyImportWarning}</div>}
     {tab==='overview'
       ?<section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,caption,icon,tone})=><SummaryCard key={label} label={label} icon={icon} tone={tone} value={ready?compactPeso(value):'—'} caption={ready?caption:loading?'Loading…':'Unavailable'}/>)}</section>
+      :tab==='structure'?<SalaryStructurePanel employees={employees} assignments={activeAssignments} history={history} loading={loading} daysPerMonth={daysPerMonth}/>
+      :tab==='allowances'?<AllowancesPanel employees={employees} rewards={bonuses} loading={loading} onChanged={load}/>
       :<AwardsPanel employees={employees} rewards={bonuses} proposals={proposals} assignments={activeAssignments} loading={loading} onChanged={load}/>}
   </div>;
 }

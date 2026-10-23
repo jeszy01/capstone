@@ -1,5 +1,6 @@
 import {useMemo,useState} from 'react';
 import {ArrowUp,Check,CircleCheck,Clock,Gift,Plus,Trash2,X} from 'lucide-react';
+import {Avatar,Segmented,SummaryCard,panelClass} from './compensationWidgets';
 import {Button,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso,read} from '../../utils/storage';
@@ -20,27 +21,8 @@ type Filter='All'|AwardType;
 const FILTERS:Filter[]=['All','Bonus','Incentive','Merit'];
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
-/** A segmented control: grey track, the selected option on a white pill. */
-export function Segmented<T extends string>({options,value,onChange,label}:{options:ReadonlyArray<{id:T;label:string}>;value:T;onChange:(id:T)=>void;label:string}){
- return <div role="tablist" aria-label={label} className="inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-slate-200/70 bg-slate-100/80 p-1">
-  {options.map(option=><button key={option.id} type="button" role="tab" aria-selected={value===option.id} onClick={()=>onChange(option.id)} className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition ${value===option.id?'bg-white text-indigo-600 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>{option.label}</button>)}
- </div>;
-}
-
-export function SummaryCard({label,value,caption,icon:Icon,tone,captionTone='bg-slate-100 text-slate-600'}:{label:string;value:string;caption:string;icon:typeof Gift;tone:string;captionTone?:string}){
- return <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)]">
-  <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-indigo-50/70"/>
-  <span aria-hidden="true" className={`relative grid h-10 w-10 place-items-center rounded-xl ${tone}`}><Icon size={20}/></span>
-  <div className="relative mt-5 text-[12px] text-slate-500">{label}</div>
-  <div className="relative mt-1 text-[24px] font-bold tracking-tight text-slate-900 tabular-nums">{value}</div>
-  <span className={`relative mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-medium ${captionTone}`}>{caption}</span>
- </div>;
-}
-
 const TYPE_TONE:Record<AwardType,string>={Bonus:'bg-violet-50 text-violet-700',Incentive:'bg-emerald-50 text-emerald-700',Merit:'bg-blue-50 text-blue-700'};
 const STATUS_TONE:Record<AwardStatus,string>={Pending:'bg-amber-50 text-amber-700','Queued for Payroll':'bg-blue-50 text-blue-700',Paid:'bg-emerald-50 text-emerald-700',Applied:'bg-emerald-50 text-emerald-700',Scheduled:'bg-blue-50 text-blue-700',Rejected:'bg-red-50 text-red-700'};
-const AVATAR_TONES=['bg-amber-500','bg-indigo-500','bg-emerald-500','bg-pink-500','bg-cyan-500','bg-violet-500'];
-const initials=(name:string)=>name.split(/\s+/).filter(Boolean).map(part=>part[0]).slice(0,2).join('').toUpperCase()||'?';
 const shortDate=(value:string)=>value?new Date(value).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
 
 export function AwardsPanel({employees,rewards,proposals,assignments,loading,onChanged}:Props){
@@ -72,7 +54,7 @@ export function AwardsPanel({employees,rewards,proposals,assignments,loading,onC
 
  return <div className="space-y-5">
   <section aria-label="Bonuses and incentives summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(card=><SummaryCard key={card.label} {...card} value={loading?'—':card.value} caption={loading?'Loading…':card.caption}/>)}</section>
-  <section aria-labelledby="awards-heading" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.025)]">
+  <section aria-labelledby="awards-heading" className={panelClass}>
    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5">
     <div><h2 id="awards-heading" className="m-0 text-[16px] font-semibold text-slate-900">Bonus, Incentive &amp; Merit Register</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">One-time payouts flow through payroll; merit increases change basic salary</p></div>
     {canManage&&<Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={loading} onClick={()=>{setError('');setCreating(true)}}><Plus size={15}/>New Award</Button>}
@@ -85,7 +67,7 @@ export function AwardsPanel({employees,rewards,proposals,assignments,loading,onC
      const employee=employeeOf(award),name=employee?.name??award.employeeId,mine=award.createdBy===userId;
      return <tr key={award.id} className="border-b border-slate-100 last:border-0 align-middle">
       <td className="px-5 py-4"><div className="font-semibold text-slate-900">{award.reference}</div><div className="mt-0.5 text-[12px] text-slate-500">{shortDate(award.createdAt)}</div></td>
-      <td className="px-5 py-4"><div className="flex items-center gap-3"><span aria-hidden="true" className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[12px] font-bold text-white ${AVATAR_TONES[index%AVATAR_TONES.length]}`}>{initials(name)}</span><div className="min-w-0"><div className="font-semibold text-slate-900">{name}</div><div className="mt-0.5 text-[12px] text-slate-500">{[employee?.employeeNo,employee?.position].filter(Boolean).join(' · ')}</div></div></div></td>
+      <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={name} index={index}/><div className="min-w-0"><div className="font-semibold text-slate-900">{name}</div><div className="mt-0.5 text-[12px] text-slate-500">{[employee?.employeeNo,employee?.position].filter(Boolean).join(' · ')}</div></div></div></td>
       <td className="px-5 py-4"><span className={`inline-block rounded-full px-3 py-1 text-[12px] font-semibold ${TYPE_TONE[award.type]}`}>{award.type}</span></td>
       <td className="max-w-[240px] px-5 py-4"><div className="font-semibold text-slate-900">{award.title}</div>{award.description&&<div className="mt-0.5 text-[12px] text-slate-500">{award.description}</div>}</td>
       <td className="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{award.type==='Merit'?`+${peso(award.amount)}/mo`:peso(award.amount)}</td>
