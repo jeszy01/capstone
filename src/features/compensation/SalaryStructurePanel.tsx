@@ -1,6 +1,6 @@
-import {useMemo,useState} from 'react';
-import {ArrowUp,Pencil,Plus,Search,Trash2} from 'lucide-react';
-import {Button,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
+import {useMemo,useRef,useState} from 'react';
+import {ArrowUp,Pencil,Plus,Search,Trash2,X} from 'lucide-react';
+import {Button,Field,Modal,TextInput,ghost,input,useOverlayFocus} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
 import {can} from '../auth/permissions';
@@ -113,7 +113,7 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
   </table></div>}
 
   {editing&&<GradeModal grade={editing==='new'?null:editing} grades={grades} headcount={editing==='new'?0:headcount[editing.code]??0} onClose={()=>setEditing(null)} onSave={(next,description)=>saveStructure(next,description)}/>}
-  {promoting&&<PromoteModal row={promoting} grades={grades} daysPerMonth={daysPerMonth} rating={ratings[promoting.employee.id]?.rating??0} onClose={()=>setPromoting(null)} onDone={async()=>{setPromoting(null);await onChanged()}}/>}
+  {promoting&&<PromoteModal row={promoting} grades={grades} daysPerMonth={daysPerMonth} onClose={()=>setPromoting(null)} onDone={async()=>{setPromoting(null);await onChanged()}}/>}
  </section>;
 }
 
@@ -143,30 +143,54 @@ function GradeModal({grade,grades,headcount,onClose,onSave}:{grade:SalaryGradeBa
  </Modal>;
 }
 
-function PromoteModal({row,grades,daysPerMonth,rating,onClose,onDone}:{row:Row;grades:SalaryGradeBand[];daysPerMonth:number;rating:number;onClose:()=>void;onDone:()=>Promise<void>}){
+function PromoteModal({row,grades,daysPerMonth,onClose,onDone}:{row:Row;grades:SalaryGradeBand[];daysPerMonth:number;onClose:()=>void;onDone:()=>Promise<void>}){
  const target=promotionTarget(row,grades)!;
- const [effectiveDate,setEffectiveDate]=useState(today());
- const [reason,setReason]=useState('');
+ const panel=useRef<HTMLDivElement>(null);
+ const current=row.basic,monthlyOf=(code:string,step:number)=>Math.round((grades.find(grade=>grade.code===code)?.steps[step-1]??0)*daysPerMonth*100)/100;
+ // A step below the current salary keeps the current rate (bands overlap).
+ const salaryFor=(code:string,step:number)=>String(Math.max(monthlyOf(code,step),current));
+ const [form,setForm]=useState(()=>({grade:target.grade.code,step:target.step,salary:salaryFor(target.grade.code,target.step),effectiveDate:today(),reason:''}));
  const [saving,setSaving]=useState(false),[error,setError]=useState('');
- const current=row.basic,next=Math.round(target.dailyRate*daysPerMonth*100)/100;
+ const close=()=>{if(!saving)onClose()};
+ useOverlayFocus(panel,true,close);
+ const stepRate=monthlyOf(form.grade,form.step),salary=numberValue(form.salary);
+ const choose=(code:string,step:number)=>setForm({...form,grade:code,step,salary:salaryFor(code,step)});
+ const problem=!(salary>0)?'Enter the new basic salary.':salary<=current?`The new basic salary must be higher than the current ${peso(current)}.`:!form.effectiveDate?'Enter the effective date.':!form.reason.trim()?'Enter the reason for the promotion.':'';
  const submit=async()=>{
+  if(problem)return;
   setSaving(true);setError('');
   try{
-   await compensationService.createProposal({employeeId:row.employee.id,type:'Promotion Increase',newSalary:next,effectiveDate,salaryCode:'',
-    notes:[`Promotion to ${target.grade.code} Step ${target.step}`,reason.trim()||(rating?`Rating: ${rating}`:'')].filter(Boolean).join('\n')});
+   await compensationService.createProposal({employeeId:row.employee.id,type:'Promotion Increase',newSalary:salary,effectiveDate:form.effectiveDate,salaryCode:'',notes:`Promotion to ${form.grade} Step ${form.step}\n${form.reason.trim()}`});
    await onDone();
   }catch(cause){setError(errorText(cause,'The promotion could not be submitted.'))}finally{setSaving(false)}
  };
- return <Modal title={`Promote ${row.employee.name}`} onClose={()=>{if(!saving)onClose()}}>
-  <div className="rounded-xl bg-indigo-50/60 p-4 text-[13px]">
-   <div className="flex items-center justify-between gap-3"><span className="text-slate-600">{row.grade?.code} {row.step?`Step ${row.step}`:'Below step 1'}</span><span aria-hidden="true" className="text-slate-400">→</span><b className="text-slate-900">{target.grade.code} Step {target.step}</b></div>
-   <div className="mt-2 flex items-center justify-between gap-3 tabular-nums"><span className="text-slate-600">{peso(current)}/mo</span><span aria-hidden="true" className="text-slate-400">→</span><b className="text-slate-900">{peso(next)}/mo</b></div>
-   <div className="mt-1 text-right text-[12px] font-semibold text-emerald-700">+{peso(next-current)} ({current>0?Math.round((next/current-1)*1000)/10:0}%)</div>
+ const currentLabel=`${row.grade?.code??''} · ${row.step?`Step ${row.step}`:'Below step 1'}`;
+ const label=(text:string)=><span className="block text-[13px] font-semibold text-slate-800">{text} <span className="text-red-500">*</span></span>;
+ return <div className="pbms-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" onClick={close}>
+  <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="promote-title" className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl bg-white shadow-2xl" onClick={event=>event.stopPropagation()}>
+   <div className="flex items-start gap-4 border-b border-slate-100 px-6 py-5">
+    <span aria-hidden="true" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600"><ArrowUp size={20}/></span>
+    <div className="min-w-0 flex-1"><h2 id="promote-title" className="m-0 text-[18px] font-bold text-slate-900">Promote Employee</h2><p className="mb-0 mt-0.5 text-[12px] text-slate-500">{row.employee.name} · currently {currentLabel}</p></div>
+    <button type="button" aria-label="Close" onClick={close} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"><X size={18}/></button>
+   </div>
+   <div className="grid gap-4 overflow-y-auto px-6 py-5">
+    <div className="grid grid-cols-2 gap-4">
+     <label>{label('New grade')}<select className={`${input} mt-1.5`} value={form.grade} onChange={event=>choose(event.target.value,1)}>{grades.map(grade=><option key={grade.code} value={grade.code}>{grade.code} · {grade.name}</option>)}</select></label>
+     <label>{label('New step')}<select className={`${input} mt-1.5`} value={form.step} onChange={event=>choose(form.grade,Number(event.target.value))}>{Array.from({length:STEP_COUNT},(_,i)=><option key={i} value={i+1}>Step {i+1}</option>)}</select></label>
+    </div>
+    <label>{label('New basic salary')}<span className="relative mt-1.5 block"><span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500">₱</span><input className={`${input} pl-8`} type="number" min="0" step="0.01" value={form.salary} onChange={event=>setForm({...form,salary:event.target.value})}/></span>
+     <span className="mt-1.5 block text-[12px] text-slate-500">{stepRate<current?`Kept at current rate ${peso(current)} · ${form.grade} Step ${form.step} starts at ${peso(stepRate)} (band overlap)`:`${form.grade} Step ${form.step} rate ${peso(stepRate)}`}</span></label>
+    <div className="grid grid-cols-2 gap-4">
+     <label>{label('Effective date')}<input className={`${input} mt-1.5`} type="date" value={form.effectiveDate} onChange={event=>setForm({...form,effectiveDate:event.target.value})}/></label>
+     <label><span className="block text-[13px] font-semibold text-slate-800">Current grade</span><input className={`${input} mt-1.5`} value={currentLabel} readOnly/></label>
+    </div>
+    <label>{label('Reason')}<textarea className={`${input} mt-1.5 min-h-20`} maxLength={300} value={form.reason} onChange={event=>setForm({...form,reason:event.target.value})} placeholder="Promotion rationale, review cycle, approval reference…"/></label>
+    {(error||(problem&&salary>0&&salary<=current))&&<p role="alert" className="m-0 text-[12px] text-red-700">{error||problem}</p>}
+   </div>
+   <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
+    <button type="button" className={ghost} disabled={saving} onClick={close}>Cancel</button>
+    <button type="button" disabled={saving||Boolean(problem)} onClick={()=>void submit()} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 px-5 py-2.5 text-[13px] font-semibold text-white shadow-sm hover:from-teal-600 hover:to-cyan-600 disabled:opacity-60"><ArrowUp size={16}/>{saving?'Submitting…':'Confirm Promotion'}</button>
+   </div>
   </div>
-  <div className="mt-4 grid gap-4"><Field label="Effective date"><TextInput type="date" value={effectiveDate} onChange={event=>setEffectiveDate(event.target.value)}/></Field>
-   <Field label="Reason"><textarea className={`${input} min-h-20`} maxLength={300} value={reason} onChange={event=>setReason(event.target.value)} placeholder={rating?`Rating ${rating}`:'Why this promotion is given'}/></Field></div>
-  <p className="mb-0 mt-3 text-[12px] text-slate-500">This sends a promotion increase for Admin approval; the salary changes on the effective date once approved.</p>
-  {error&&<p role="alert" className="mb-0 mt-2 text-[12px] text-red-700">{error}</p>}
-  <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={saving||!effectiveDate} onClick={()=>void submit()}>{saving?'Submitting…':'Submit promotion'}</Button></div>
- </Modal>;
+ </div>;
 }
