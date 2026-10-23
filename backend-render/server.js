@@ -884,25 +884,22 @@ app.post('/payroll/payslips/generate', auth, allow('payroll.release'), async (re
 });
 
 // Release payslips to ESS by department (one department or Release All): the user's passkey is verified first,
-// then each department's release time is saved on the run and the release is logged. When every department of the
-// run is released, the run is Closed.
+// then each employee of those departments gets their payslip in ESS (publishPayslips) and the release is logged.
+// When every employee's payslip is released, the run is Closed.
 app.post('/payroll/payslips/release', auth, allow('payroll.release'), async (req, res) => {
   const body = input(req), runId = required(body.run_id, 'run_id');
   const departments = Array.isArray(body.departments) ? [...new Set(body.departments.filter(d => typeof d === 'string' && d.trim()).map(d => d.trim().slice(0, 120)))] : [];
   if (!departments.length) throw new HttpError(400, 'VALIDATION_ERROR', 'departments is required');
   const { result, payrollRun } = await withPaidRun(runId, async (client, runs, payrollRun) => {
-    if (!payslipsGenerated(payrollRun)) throw new HttpError(409, 'PAYSLIPS_NOT_GENERATED', 'Generate the payslips before releasing them.');
     const pending = departments.filter(d => !payrollRun.released?.[d]);
     if (!pending.length) throw new HttpError(409, 'PAYSLIPS_ALREADY_RELEASED', 'These payslips were already released.');
     const check = await checkPayslipPasskey(req, body.passkey, payrollRun, `Release payslips of ${pending.join(', ')} for ${runPeriod(payrollRun)}`);
     if (!check.verified) return check;
     const at = new Date().toISOString(), released = { ...payrollRun.released, ...Object.fromEntries(pending.map(d => [d, at])) };
-    // The run's departments, as the Payslips page groups them: each employee's department, or Unassigned.
-    const numbers = (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).map(r => String(r?.input?.empId ?? ''));
-    const { rows: staff } = await client.query('select employee_number, department from employees where employee_number = any($1)', [numbers]);
-    const departmentOf = new Map(staff.map(e => [String(e.employee_number), e.department || 'Unassigned']));
-    const closed = numbers.every(n => released[departmentOf.get(n) ?? 'Unassigned']);
-    const next = runs.map(r => r && String(r.id) === runId ? { ...r, released, ...(closed ? { status: 'Closed', closedAt: at } : {}) } : r);
+    const departmentOf = await runDepartments(client, payrollRun);
+    const published = await publishPayslips(client, req, payrollRun, row => pending.includes(departmentOf.get(String(row.input.empId)) ?? 'Unassigned'), at);
+    const closed = published.released === published.total;
+    const next = runs.map(r => r && String(r.id) === runId ? { ...r, released, essReleased: published.essReleased, ...(closed ? { status: 'Closed', closedAt: at } : {}) } : r);
     await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
     return { verified: true, runs: next, pending, closed };
   });
@@ -916,7 +913,7 @@ app.post('/payroll/payslips/release', auth, allow('payroll.release'), async (req
   ok(res, { released: false, ...passkeyFailure(result) });
 });
 
-// ---- Release to ESS (Payroll Runs list) ----
+// ---- Release payslips (Payroll Runs list and the run page) ----
 // Publishes each employee's payslip (their Payroll Register line) to ESS and notifies them there. Only payslips not yet
 // released are sent, so releasing again sends nothing twice. Payslips are released only once every employee is Paid.
 // A Paid run closes when every employee's payslip is released.
@@ -929,28 +926,46 @@ await pool.query(`
     run_id text, created_at timestamptz not null default now(), read_at timestamptz);
   create index if not exists idx_ess_notifications_employee on ess_notifications(lower(employee_no));`);
 const APPROVED_RUN_STATUSES = ['Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
+const payrollRows = payrollRun => (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).filter(r => r?.input?.empId);
+// Each employee's department, as the Payslips page groups them (employee number -> department, or Unassigned).
+async function runDepartments(client, payrollRun) {
+  const numbers = payrollRows(payrollRun).map(r => String(r.input.empId));
+  const { rows: staff } = await client.query('select employee_number, department from employees where employee_number = any($1)', [numbers]);
+  return new Map(staff.map(e => [String(e.employee_number), e.department || 'Unassigned']));
+}
+// Publishes the payslips of the run's employees picked by include that are not in ESS yet, and notifies each employee.
+// Returns who was sent, the run's updated essReleased map, and how many of its employees now have their payslip.
+async function publishPayslips(client, req, payrollRun, include, at) {
+  const runId = String(payrollRun.id), rows = payrollRows(payrollRun);
+  const done = payrollRun.essReleased && typeof payrollRun.essReleased === 'object' ? payrollRun.essReleased : {};
+  const sent = [];
+  for (const row of rows.filter(r => include(r) && !done[String(r.input.empId)])) {
+    const line = registerLine(row);
+    const payslip = { runId, period: runPeriod(payrollRun), from: payrollRun.from, to: payrollRun.to, payDate: payrollRun.payDate ?? payrollRun.to, ...line };
+    const { rowCount } = await client.query('insert into ess_payslips(run_id, employee_no, payslip, released_by) values($1,$2,$3,$4) on conflict do nothing',
+      [runId, line.empId, JSON.stringify(payslip), String(req.user.id)]);
+    if (rowCount) await client.query('insert into ess_notifications(employee_no, title, message, run_id) values($1,$2,$3,$4)',
+      [line.empId, 'Payslip available', `Your payslip for ${runPeriod(payrollRun)} is ready. Net pay ${pesoText(line.net)}.`, runId]);
+    sent.push(line.empId);
+  }
+  const essReleased = { ...done, ...Object.fromEntries(sent.map(no => [no, at])) };
+  return { sent, essReleased, released: rows.filter(r => essReleased[String(r.input.empId)]).length, total: rows.length };
+}
 app.post('/payroll/runs/:id/ess-release', auth, allow('payroll.release'), async (req, res) => {
   const runId = req.params.id, at = new Date().toISOString();
   const { result, payrollRun } = await withLockedRun(runId, async (client, runs, payrollRun) => {
     const status = runStatus(payrollRun);
     if (!['Paid', 'Closed'].includes(status)) throw new HttpError(409, 'RELEASE_NOT_ALLOWED', `Payslips are released to ESS once every employee is Paid. This run is ${status}.`);
-    const rows = (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).filter(r => r?.input?.empId);
-    const done = payrollRun.essReleased && typeof payrollRun.essReleased === 'object' ? payrollRun.essReleased : {};
-    const sent = [];
-    for (const row of rows.filter(r => !done[String(r.input.empId)])) {
-      const line = registerLine(row);
-      const payslip = { runId, period: runPeriod(payrollRun), from: payrollRun.from, to: payrollRun.to, payDate: payrollRun.payDate ?? payrollRun.to, ...line };
-      const { rowCount } = await client.query('insert into ess_payslips(run_id, employee_no, payslip, released_by) values($1,$2,$3,$4) on conflict do nothing',
-        [runId, line.empId, JSON.stringify(payslip), String(req.user.id)]);
-      if (rowCount) await client.query('insert into ess_notifications(employee_no, title, message, run_id) values($1,$2,$3,$4)',
-        [line.empId, 'Payslip available', `Your payslip for ${runPeriod(payrollRun)} is ready. Net pay ${pesoText(line.net)}.`, runId]);
-      sent.push(line.empId);
-    }
-    const essReleased = { ...done, ...Object.fromEntries(sent.map(no => [no, at])) };
-    const released = rows.filter(r => essReleased[String(r.input.empId)]).length, closes = sent.length > 0 && released === rows.length && status === 'Paid';
-    const next = runs.map(r => r && String(r.id) === runId ? { ...r, essReleased, ...(closes ? { status: 'Closed', closedAt: at } : {}) } : r);
+    const departmentOf = await runDepartments(client, payrollRun);
+    const { sent, essReleased, released, total } = await publishPayslips(client, req, payrollRun, () => true, at);
+    const closes = sent.length > 0 && released === total && status === 'Paid';
+    // A department counts as released on the Payslips page once every one of its employees has their payslip.
+    const departmentRows = d => payrollRows(payrollRun).filter(r => (departmentOf.get(String(r.input.empId)) ?? 'Unassigned') === d);
+    const done = [...new Set(payrollRows(payrollRun).map(r => departmentOf.get(String(r.input.empId)) ?? 'Unassigned'))].filter(d => departmentRows(d).every(r => essReleased[String(r.input.empId)]));
+    const releasedDepartments = { ...Object.fromEntries(done.map(d => [d, at])), ...payrollRun.released };
+    const next = runs.map(r => r && String(r.id) === runId ? { ...r, essReleased, released: releasedDepartments, ...(closes ? { status: 'Closed', closedAt: at } : {}) } : r);
     if (sent.length) await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
-    return { sent: sent.length, released, total: rows.length, closes, runs: sent.length ? next : runs };
+    return { sent: sent.length, released, total, closes, runs: sent.length ? next : runs };
   });
   if (result.sent) await audit('payroll.ess_released', req.user.id, 'Payroll', runId, { description: `Released ${result.sent} payslip${result.sent === 1 ? '' : 's'} of ${runPeriod(payrollRun)} to ESS (${result.released} of ${result.total} released).` }, ipDevice(req));
   if (result.closes) await audit('payroll.closed', req.user.id, 'Payroll', runId, { description: `Closed payroll for ${runPeriod(payrollRun)}: every payslip is released to ESS.` }, ipDevice(req));

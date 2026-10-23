@@ -1,5 +1,6 @@
 // The payroll run process, shared by the server's checks (accessRules.js, server.js) and the app.
-// Draft -> Computed -> Pending Approval -> Approved -> Funded -> Exported -> Paid -> Closed, plus Returned and Rejected.
+// Draft -> Review -> Submit to Finance -> Export bank file -> Mark as paid -> Release payslips (PROCESS_STAGES).
+// Statuses: Draft -> Computed -> Pending Approval -> Approved -> Funded -> Exported -> Paid -> Closed, plus Returned and Rejected.
 //   Draft: HR created the run for a cutoff.             Computed: HR computed (or recomputed) its figures.
 //   Pending Approval: HR submitted it.                  Returned: the Admin sent it back with a comment; HR recomputes.
 //   Rejected: the Admin refused it with a comment; it is locked.
@@ -8,8 +9,22 @@
 //   Closed: payslips were released to every department (set by the server).
 
 export const RUN_STATUSES = ['Draft', 'Computed', 'Pending Approval', 'Returned', 'Rejected', 'Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
-/** The main path, in order, for the progress stepper. */
+/** The main path, in order. */
 export const PROCESS_STEPS = ['Draft', 'Computed', 'Pending Approval', 'Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
+/**
+ * The six steps HR follows, each with the statuses it covers: Review (computed, or returned for changes), Submitted to
+ * Finance (awaiting approval, approved, funded), Bank file (exported, awaiting payment results), Paid, Payslips released.
+ */
+export const PROCESS_STAGES = [
+  { id: 'draft', label: 'Draft', statuses: ['Draft'] },
+  { id: 'review', label: 'Review', statuses: ['Computed', 'Returned'] },
+  { id: 'finance', label: 'Submitted to Finance', statuses: ['Pending Approval', 'Rejected', 'Approved', 'Funded'] },
+  { id: 'bank', label: 'Bank file exported', statuses: ['Exported'] },
+  { id: 'paid', label: 'Paid', statuses: ['Paid'] },
+  { id: 'released', label: 'Payslips released', statuses: ['Closed'] },
+];
+/** The index of the stage a status belongs to. */
+export const stageIndex = status => PROCESS_STAGES.findIndex(stage => stage.statuses.includes(status));
 /** Statuses after Admin approval: the figures are final and count in reports, tax history and 13th month pay. */
 export const APPROVED_STATUSES = ['Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
 /** Statuses HR can still compute in. */

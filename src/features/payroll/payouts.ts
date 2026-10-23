@@ -32,20 +32,46 @@ export const payoutAccount=(details:PayoutDetails)=>details.method==='Bank'?[det
 
 const csvCell=(value:unknown)=>`"${String(value??'').replace(/"/g,'""')}"`;
 const money=(value:number)=>(Math.round(value*100)/100).toFixed(2);
-const FILE_NAMES:Record<PayoutMethod,string>={'Bank':'bank-transfer','E-wallet':'e-wallet','Cash':'cash'};
-/** The payout file of one export: a bank CSV, an e-wallet list or a cash list, with each employee's net pay. */
+
+export const BANK_FILE_COMPANY='ARCHON NELL INC.';
+const digits=(value?:string)=>String(value??'').replace(/\D/g,'');
+// Bank upload files take names in plain capitals without punctuation (É -> E, Ñ -> N), at most 40 characters.
+const bankName=(value:string)=>value.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9 .-]/g,' ').replace(/\s+/g,' ').trim().slice(0,40);
+const mmddyyyy=(iso:string)=>`${iso.slice(5,7)}/${iso.slice(8,10)}/${iso.slice(0,4)}`;
+export type BankFileLine={empId:string;name:string;bankName?:string;accountNumber?:string;amount:number};
+/**
+ * A bank payroll credit file in the batch layout banks take for bulk payroll uploads, one record per line:
+ *  H, company, batch reference, credit date (MM/DD/YYYY), record count, total amount, currency
+ *  D, sequence, account number (digits only), account name (capitals), amount, bank, employee no., remarks
+ *  T, record count, total amount, hash total (sum of the account numbers, last 15 digits)
+ * Amounts have two decimals and no thousands separators.
+ */
+export function bankFileRecords(lines:BankFileLine[],{company=BANK_FILE_COMPANY,batch,creditDate,remarks}:{company?:string;batch:string;creditDate:string;remarks:string}){
+ const total=money(lines.reduce((sum,line)=>sum+Math.round(line.amount*100),0)/100);
+ const hash=String(lines.reduce((sum,line)=>sum+BigInt(digits(line.accountNumber)||'0'),0n)%10n**15n);
+ return [
+  ['H',company,batch,mmddyyyy(creditDate),lines.length,total,'PHP'],
+  ...lines.map((line,index)=>['D',index+1,digits(line.accountNumber),bankName(line.name),money(line.amount),line.bankName??'',line.empId,remarks.slice(0,40)]),
+  ['T',lines.length,total,hash],
+ ];
+}
+const FILE_NAMES:Record<PayoutMethod,string>={'Bank':'bank-file','E-wallet':'e-wallet','Cash':'cash'};
+/** The payout file of one export: a bank credit file (bankFileRecords), an e-wallet list or a cash list, with each employee's net pay. */
 export function payoutFile(run:PayrollRun,exportId:string,departmentOf:(empId:string)=>string){
  const entry=(run.exports??[]).find(item=>item.id===exportId);
  if(!entry)throw new Error('Export not found.');
  const rows=run.rows.filter(row=>entry.employees.includes(row.input.empId));
  const reference=`PR-${run.id.slice(0,8).toUpperCase()}`,payDate=run.payDate??run.to;
- const header=entry.method==='Bank'?['Employee No','Employee Name','Bank','Account Number','Amount','Pay Date','Reference']
-  :entry.method==='E-wallet'?['Employee No','Employee Name','Provider','Wallet Number','Amount','Pay Date','Reference']
+ if(entry.method==='Bank'){
+  const batch=`${reference}-${String((run.exports??[]).findIndex(item=>item.id===exportId)+1).padStart(2,'0')}`;
+  const records=bankFileRecords(rows.map(row=>{const line=run.payouts?.[row.input.empId];return {empId:row.input.empId,name:row.input.name,bankName:line?.bankName,accountNumber:line?.accountNumber,amount:row.result.net}}),{batch,creditDate:payDate,remarks:`PAYROLL ${run.from} TO ${run.to}`});
+  return {name:`payroll-${FILE_NAMES.Bank}-${batch}-${payDate}.csv`,csv:records.map(record=>record.map(csvCell).join(',')).join('\r\n'),label:`Bank file · ${runLabel(run)}`};
+ }
+ const header=entry.method==='E-wallet'?['Employee No','Employee Name','Provider','Wallet Number','Amount','Pay Date','Reference']
   :['Employee No','Employee Name','Department','Amount','Pay Date','Received By (signature)'];
  const lines=rows.map(row=>{
   const line=run.payouts?.[row.input.empId],amount=money(row.result.net);
-  return entry.method==='Bank'?[row.input.empId,row.input.name,line?.bankName,line?.accountNumber,amount,payDate,reference]
-   :entry.method==='E-wallet'?[row.input.empId,row.input.name,line?.provider,line?.walletNumber,amount,payDate,reference]
+  return entry.method==='E-wallet'?[row.input.empId,row.input.name,line?.provider,line?.walletNumber,amount,payDate,reference]
    :[row.input.empId,row.input.name,departmentOf(row.input.empId),amount,payDate,''];
  });
  const total=header.map((_,index)=>index===1?`TOTAL (${rows.length} ${rows.length===1?'employee':'employees'})`:index===header.indexOf('Amount')?money(entry.total):'');
@@ -66,6 +92,8 @@ export async function exportPayouts(id:string,method:PayoutMethod,by:string){
   expectStatus(run,'Funded','Exported');
   const employees=run.rows.map(row=>row.input.empId).filter(empId=>run.payouts?.[empId]?.method===method&&run.payouts[empId].status==='Pending');
   if(!employees.length)throw new Error(`No pending ${method} payouts to export.`);
+  const incomplete=employees.filter(empId=>missingPayout(run.payouts![empId]));
+  if(incomplete.length)throw new Error(`Add the ${missingPayout(run.payouts![incomplete[0]])} for ${incomplete.map(empId=>run.rows.find(row=>row.input.empId===empId)?.input.name??empId).join(', ')} before exporting.`);
   const total=run.rows.filter(row=>employees.includes(row.input.empId)).reduce((sum,row)=>sum+row.result.net,0);
   const payouts={...run.payouts};
   for(const empId of employees)payouts[empId]={...payouts[empId],status:'Exported',exportId,updatedAt:at,updatedBy:by};

@@ -11,7 +11,7 @@ import {runStatus} from '../../../backend-render/payrollFlow.js';
 import type {PayoutMethod,PayoutStatus,RunStatus} from '../../../backend-render/payrollFlow.js';
 
 // The process (statuses, allowed changes, pay date) is shared with the server: backend-render/payrollFlow.js.
-export {APPROVED_STATUSES,PAYOUT_METHODS,PREPARING_STATUSES,PROCESS_STEPS,cutoffPayDate,isApprovedRun,runStatus} from '../../../backend-render/payrollFlow.js';
+export {APPROVED_STATUSES,PAYOUT_METHODS,PREPARING_STATUSES,PROCESS_STAGES,PROCESS_STEPS,stageIndex,cutoffPayDate,isApprovedRun,runStatus} from '../../../backend-render/payrollFlow.js';
 export type {PayoutMethod,PayoutStatus,RunStatus} from '../../../backend-render/payrollFlow.js';
 export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:'Loan'|'Cash Advance';loanType:string;amount:number;installmentNumber:number;installmentCount:number};
 // hmoCompany: the company's HMO premium cost for the cutoff (not deducted); missing on runs saved before it was recorded.
@@ -142,11 +142,4 @@ export async function releaseToEss(id:string){
  const {data}=await apiClient.post<Record<string,never>,{data:{sent:number;released:number;total:number;runs:PayrollRun[]}}>(`/payroll/runs/${id}/ess-release`,{});
  write(RUNS_KEY,data.runs);
  return data;
-}
-// Generates a Paid run's payslips after the server verifies the user's passkey; the server also writes Logs & Audit.
-export async function generatePayslips(id:string,passkey:string):Promise<PayslipPasskeyCheck>{
- const {data}=await apiClient.post<{run_id:string;passkey:string},{data:{generated:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;runs?:PayrollRun[]}}>('/payroll/payslips/generate',{run_id:id,passkey});
- if(!data.generated)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until};
- if(data.runs)write(RUNS_KEY,data.runs);
- return {verified:true};
 }

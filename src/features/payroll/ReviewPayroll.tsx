@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {Download} from 'lucide-react';
-import {Button,Card,Empty,Field,Modal,TextInput,button,ghost,input,success} from '../../components/common/ui';
+import {Button,Card,Empty,Field,Modal,TextInput,ghost,input,success} from '../../components/common/ui';
 import type {Employee,PayrollInput} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {getCurrentUser} from '../auth/authService';
@@ -11,7 +11,7 @@ import {recordAudit} from '../audit/auditService';
 import {StatusBadge} from '../../components/common/StatusBadge';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
-import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,generatePayslips,isThirteenthMonthRun,markPayouts,runLabel,runStatus,settleRunLoans,updateRun} from './payrollRuns';
+import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,isThirteenthMonthRun,markPayouts,releaseToEss,runLabel,runStatus,settleRunLoans,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
 import {processRun,submitBlocked} from './computeRun';
 import {loadReviewChecks,lockTimesheet} from './runChecks';
@@ -19,7 +19,6 @@ import {cutoffSynced} from '../attendance/attendanceService';
 import type {RunCheck} from './runChecks';
 import {addPayoutLines,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
 import {PayoutDetailsModal} from './PayoutDetails';
-import {PayslipPasskeyModal} from './PayslipPasskeyModal';
 import {RunStepper} from './RunProgress';
 import {PayrollRegister} from './PayrollRegister';
 
@@ -35,10 +34,10 @@ const totalsOf=(rows:RunRow[])=>({gross:rows.reduce((t,row)=>t+row.result.gross,
 const reasonKey=(empId:string,field:string)=>`${empId}|${field}`;
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 
-const METHOD_FILES:Record<PayoutMethod,string>={'Bank':'Export bank CSV','E-wallet':'Export e-wallet list','Cash':'Export cash list'};
-type Dialog='submit'|'Approved'|'Returned'|'Rejected'|'payslips';
+const METHOD_FILES:Record<PayoutMethod,string>={'Bank':'Export bank file','E-wallet':'Export e-wallet list','Cash':'Export cash list'};
+type Dialog='submit'|'Approved'|'Returned'|'Rejected'|'release';
 
-/** One payroll run, from Draft to Closed: its figures, checks, approval, funding and payouts. */
+/** One payroll run: Draft → Review → Submit to Finance → Export bank file → Mark as paid → Release payslips. */
 export default function ReviewPayroll(){
  const[params]=useSearchParams();const nav=useNavigate();
  const runId=params.get('run')??'';
@@ -95,7 +94,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const pendingOf=(method:PayoutMethod)=>lines.filter(({line})=>line?.method===method&&line.status==='Pending').length;
  const exported=lines.filter(({line})=>line?.status==='Exported');
  const paidCount=lines.filter(({line})=>line?.status==='Paid').length;
- const generated=Boolean(run.payslipsGeneratedAt||(run.status==='Approved'&&run.paidAt));
+ const essSent=run.rows.filter(row=>run.essReleased?.[row.input.empId]).length;
 
  // Runs one action against the server's current copy; the page re-reads the run afterwards.
  const act=async(name:string,work:()=>Promise<void>)=>{
@@ -107,7 +106,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const compute=()=>act('compute',async()=>{
   const saved=await processRun(run,employees);
   setReasons({});
-  setNotice(`Computed ${saved.rows.length} ${saved.rows.length===1?'employee':'employees'}. Review the checks, then submit for approval.`);
+  setNotice(`Computed ${saved.rows.length} ${saved.rows.length===1?'employee':'employees'}. Review the checks, then submit to Finance.`);
  });
  const saveEdits=()=>act('save',async()=>{
   if(missingReason)throw new Error('Give a reason (at least 3 characters) for every amount typed in by hand.');
@@ -141,10 +140,10 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const exportMethod=(method:PayoutMethod)=>act(`export-${method}`,async()=>{
   const {run:saved,exportId}=await exportPayouts(run.id,method,by);
   const file=payoutFile(saved,exportId,deptOf);downloadCsv(file.name,file.csv);
-  setNotice(`${file.label} exported. Mark each employee Paid or Failed once the payment result is known.`);
+  setNotice(`${file.label} downloaded. Upload it to the bank, then mark each employee Paid or Failed once the payment result is known.`);
  });
  const mark=(list:Array<{empId:string;status:'Paid'|'Failed';reason?:string}>)=>act('mark',async()=>{
-  try{const saved=await markPayouts(run.id,list,by);if(runStatus(saved)==='Paid')setNotice('Every employee is Paid. Generate the payslips next.')}
+  try{const saved=await markPayouts(run.id,list,by);if(runStatus(saved)==='Paid')setNotice('Every employee is Paid. Release the payslips next.')}
   catch(cause){
    // The run was saved as Paid but posting its loan deductions failed: it can be retried.
    const now=read<PayrollRun[]>(RUNS_KEY,[]).find(item=>item.id===run.id);
@@ -153,6 +152,10 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   }
   setFailing(null);
  });
+ const release=()=>act('release',async()=>{
+  const result=await releaseToEss(run.id);setDialog(null);
+  setNotice(result.sent?`Released ${result.sent} ${result.sent===1?'payslip':'payslips'} to ESS (${result.released} of ${result.total}). Each employee is notified.`:'Every payslip of this run is already released.');
+ });
  const retrySettle=()=>act('settle',async()=>{await settleRunLoans(run);setSettleError('');setNotice('Loan deductions posted.')});
 
  const primary=(name:string,labelText:string,onClick:()=>void,disabled=false)=><Button disabled={Boolean(busy)||disabled} onClick={onClick}>{busy===name?'Working…':labelText}</Button>;
@@ -160,10 +163,10 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   {status!=='Draft'&&<button className={ghost} onClick={()=>window.print()}>Print register</button>}
   {canGenerate&&['Draft','Computed','Returned'].includes(status)&&(status==='Draft'?primary('compute','Review',()=>void compute()):<button className={ghost} disabled={Boolean(busy)} onClick={()=>void compute()}>{busy==='compute'?'Recomputing…':'Recompute'}</button>)}
   {editable&&dirty&&<button className={success} disabled={Boolean(busy)} onClick={()=>void saveEdits()}>{busy==='save'?'Saving…':'Save changes'}</button>}
-  {canGenerate&&status==='Computed'&&primary('submit','Submit for approval',()=>{setError('');setDialog('submit')},dirty)}
+  {canGenerate&&status==='Computed'&&primary('submit','Submit to Finance',()=>{setError('');setDialog('submit')},dirty)}
   {canApprove&&status==='Pending Approval'&&<><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Rejected')}}>Reject</button><button className={ghost} disabled={Boolean(busy)||ownRun} onClick={()=>{setComment('');setDialog('Returned')}}>Return</button>{primary('decide','Approve',()=>setDialog('Approved'),ownRun)}</>}
-  {canRelease&&status==='Paid'&&!generated&&primary('payslips','Generate payslips',()=>setDialog('payslips'))}
-  {canRelease&&status==='Paid'&&generated&&<Link className={button} to="/payroll?tab=payslip">Release payslips</Link>}
+  {canRelease&&status==='Paid'&&primary('release',`Release payslips (${essSent}/${run.rows.length})`,()=>{setError('');setDialog('release')})}
+  {status==='Closed'&&<Link className={ghost} to={`/payroll?tab=payslip&run=${run.id}`}>Payslips</Link>}
  </>;
 
  return <div className="space-y-4">
@@ -222,9 +225,9 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
 
   {status!=='Draft'&&<PayrollRegister runId={run.id} refresh={checksTick}/>}
 
-  {dialog==='submit'&&<Modal title="Submit for approval" onClose={()=>{if(!busy)setDialog(null)}}>
+  {dialog==='submit'&&<Modal title="Submit to Finance" onClose={()=>{if(!busy)setDialog(null)}}>
    <dl className="grid gap-3 text-[13px]">{[[thirteenth?'Release':'Cutoff',title],['Pay date',formatDate(run.payDate??run.to)],['Employees',String(rows.length)],['Gross pay',peso(totals.gross)],['Deductions',peso(totals.deductions)],['Net pay',peso(totals.net)]].map(([labelText,value])=><div key={labelText} className="flex justify-between gap-3"><dt className="text-[#6b7794]">{labelText}</dt><dd className="m-0 font-semibold">{value}</dd></div>)}</dl>
-   {flagged>0&&<p className="mb-0 mt-4 rounded-lg bg-amber-50 p-3 text-[12px] text-amber-900">{flagged} {flagged===1?'check needs':'checks need'} review. You can still submit; the Admin sees the same checks.</p>}
+   {flagged>0&&<p className="mb-0 mt-4 rounded-lg bg-amber-50 p-3 text-[12px] text-amber-900">{flagged} {flagged===1?'check needs':'checks need'} review. You can still submit; Finance sees the same checks.</p>}
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('submit','Submit',()=>void submit())}</div>
   </Modal>}
@@ -234,7 +237,11 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('decide',dialog==='Approved'?'Approve':dialog==='Returned'?'Return':'Reject',()=>void decide(dialog),dialog!=='Approved'&&comment.trim().length<3)}</div>
   </Modal>}
-  {dialog==='payslips'&&<PayslipPasskeyModal title="Generate payslips" verify={passkey=>generatePayslips(run.id,passkey)} onClose={()=>setDialog(null)} onVerified={()=>{setDialog(null);setNotice('Payslips generated. Release them to ESS by department.');onChanged()}}/>}
+  {dialog==='release'&&<Modal title="Release payslips" onClose={()=>{if(!busy)setDialog(null)}}>
+   <p className="mt-0 text-[13px] text-slate-600">Publish the payslips of {title} to each employee's ESS Payslips page? {run.rows.length-essSent} of {run.rows.length} {run.rows.length===1?'payslip is':'payslips are'} not released yet; only those are sent, and each employee is notified. The run closes once every payslip is released.</p>
+   {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
+   <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={Boolean(busy)} onClick={()=>setDialog(null)}>Cancel</button>{primary('release','Release',()=>void release())}</div>
+  </Modal>}
   {failing&&<Modal title={`Payout failed · ${failing.name}`} onClose={()=>{if(!busy)setFailing(null)}}>
    <Field label="Reason (required)"><TextInput autoFocus maxLength={200} placeholder="e.g. Account closed, wrong account number" value={failing.reason} onChange={event=>setFailing({...failing,reason:event.target.value})}/></Field>
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}

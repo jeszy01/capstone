@@ -50,7 +50,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
    return <>
     <Link className={ghost} to={`/payroll?tab=payslip&run=${run.id}`}>Payslips</Link>
     {total>0&&sent===total?<StatusBadge status="Released"/>
-     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Available once every employee is Paid.'} onClick={()=>{setError('');setReleasing(run)}}>Release to ESS ({sent}/{total})</button>}
+     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Available once every employee is Paid.'} onClick={()=>{setError('');setReleasing(run)}}>Release payslips ({sent}/{total})</button>}
     {details}
    </>;
   }
@@ -86,7 +86,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
     </tr>)}</tbody>
    </table></div>
   </Card>
-  {releasing&&<Modal title="Release payslips to ESS" onClose={()=>{if(!busy)setReleasing(null)}}>
+  {releasing&&<Modal title="Release payslips" onClose={()=>{if(!busy)setReleasing(null)}}>
    <p className="mt-0 text-[13px] text-slate-600">Publish the payslips for {runLabel(releasing)} to each employee's ESS Payslips page? {releasing.rows.length-essCount(releasing)} of {releasing.rows.length} {releasing.rows.length===1?'payslip is':'payslips are'} not released yet; only those are sent, and each employee is notified in ESS.</p>
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setReleasing(null)}>Cancel</button><button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act('release',async()=>{const result=await releaseToEss(releasing.id);setReleasing(null);setNotice(result.sent?`Released ${result.sent} ${result.sent===1?'payslip':'payslips'} to ESS (${result.released}/${result.total}).`:'Every payslip of this run is already in ESS; nothing was sent.')})}>{busy==='release'?'Releasing…':'Release'}</button></div>

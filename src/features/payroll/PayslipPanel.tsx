@@ -17,8 +17,8 @@ const th='px-4 py-3';
 const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500';
 
 export function PayslipPanel({employees}:{employees:Employee[]}){
- // Payslips exist for Paid runs once generated with the passkey; runs paid before that count as generated when paid.
- const generatedAt=(r:PayrollRun)=>r.payslipsGeneratedAt??(r.status==='Approved'?r.paidAt:undefined);
+ // Payslips exist once a run is Paid (every employee paid); the date shown is when it was paid.
+ const generatedAt=(r:PayrollRun)=>r.payslipsGeneratedAt??r.paidAt;
  const[tick,setTick]=useState(0),[confirm,setConfirm]=useState<string[]|null>(null);
  // ?run=<id> (the Payslips button on Payroll Runs) opens that run's departments, even before it is Paid.
  const linked=useSearchParams()[0].get('run')??'';
