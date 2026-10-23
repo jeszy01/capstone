@@ -4,7 +4,8 @@ import type {BonusIncentive} from './compensationState';
 
 /** taxTreatment: 'taxable', or the de minimis benefit the allowance is (tax-free up to its BIR ceiling). */
 export type PolicyTreatment='taxable'|DeMinimisCategory;
-export type PolicyType={id:string;name:string;code:string;taxTreatment:PolicyTreatment;defaultAmount:number};
+/** allEmployees: every active employee gets the type at defaultAmount a month; otherwise amounts are set per employee (Custom). */
+export type PolicyType={id:string;name:string;code:string;taxTreatment:PolicyTreatment;defaultAmount:number;allEmployees?:boolean};
 export const ALLOWANCE_POLICY_KEY='compensation:allowance-policy';
 
 const DEFAULT_POLICY:PolicyType[]=[

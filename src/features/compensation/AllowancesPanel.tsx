@@ -88,6 +88,7 @@ export function AllowancesPanel({employees,rewards,assignments,daysPerMonth,load
     })}</tbody>
    </table></div>}
   </section>
+  <CoverageTable key={policy.map(type=>`${type.id}:${type.defaultAmount}:${Boolean(type.allEmployees)}`).join('|')} policy={policy} employees={employees} activeEmployees={activeEmployees} allowances={allowances} canManage={canManage} onSaved={async next=>{setPolicy(next);saveAllowancePolicy(next);await onChanged()}}/>
   {editingType&&<PolicyTypeModal type={editingType} onClose={()=>setEditingType(null)} onSave={type=>savePolicy(policy.map(item=>item.id===type.id?type:item),type)}/>}
   {assigning&&<AssignModal employee={assigning} employees={employees} policy={policy} allowances={allowances} amounts={matrixFor(assigning)} onClose={()=>setAssigning(null)} onDone={async()=>{setAssigning(null);await onChanged()}}/>}
  </div>;
@@ -103,6 +104,51 @@ function PolicyTypeModal({type,onClose,onSave}:{type:PolicyType;onClose:()=>void
  </div><div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={!valid} onClick={()=>onSave({...form,name:form.name.trim(),code:form.code.trim(),defaultAmount:numberValue(form.defaultAmount)})}>Save</Button></div></Modal>;
 }
 
+/** Sets an employee's monthly amount for one allowance type: creates, updates or (amount 0) deactivates their records. */
+async function setAllowance(employee:Employee,type:PolicyType,amount:number,effectiveDate:string,employees:Employee[],allowances:BonusIncentive[],policy:PolicyType[]){
+ const existing=allowances.filter(item=>item.status==='Active'&&findCompensationEmployee(employees,item.employeeId)?.id===employee.id&&policyTypeFor(item.allowanceType,policy)?.id===type.id);
+ const taxable=type.taxTreatment==='taxable';
+ const values={employeeId:employee.id,type:'Allowance' as const,allowanceType:type.name,frequency:'Monthly' as const,taxable,notes:'',cutoffStart:'',cutoffEnd:''};
+ if(amount>0&&!existing.length)await compensationService.createReward({...values,amount,effectiveDate,status:'Active'});
+ for(const [index,item] of existing.entries()){
+  const keep=amount>0&&index===0;
+  if(keep&&Math.abs(monthlyAmount(item,loadRates().payPeriodsPerMonth)-amount)<0.005&&item.allowanceType===type.name&&item.taxable===taxable)continue;
+  // A removed allowance is made inactive, so payroll stops paying it and the record stays.
+  await compensationService.updateReward(item.id,keep?{...values,amount,effectiveDate,status:'Active'}:{...values,amount:item.amount,frequency:item.frequency,effectiveDate:item.effectiveDate,status:'Inactive'});
+ }
+}
+
+/** Allowance Type · Monthly · All employees: a ticked type is given to every active employee at its monthly amount; unticked is Custom (set with Assign). */
+function CoverageTable({policy,employees,activeEmployees,allowances,canManage,onSaved}:{policy:PolicyType[];employees:Employee[];activeEmployees:Employee[];allowances:BonusIncentive[];canManage:boolean;onSaved:(policy:PolicyType[])=>Promise<void>}){
+ const initial=()=>Object.fromEntries(policy.map(type=>[type.id,{monthly:String(type.defaultAmount||''),all:Boolean(type.allEmployees)}]));
+ const [form,setForm]=useState<Record<string,{monthly:string;all:boolean}>>(initial);
+ const [saving,setSaving]=useState(false),[error,setError]=useState('');
+ const changed=policy.some(type=>numberValue(form[type.id].monthly)!==type.defaultAmount||form[type.id].all!==Boolean(type.allEmployees));
+ const allTicked=policy.every(type=>form[type.id].all);
+ const save=async()=>{
+  setSaving(true);setError('');
+  try{
+   const next=policy.map(type=>({...type,defaultAmount:numberValue(form[type.id].monthly),allEmployees:form[type.id].all}));
+   const date=today();
+   for(const type of next.filter(item=>item.allEmployees))for(const employee of activeEmployees)await setAllowance(employee,type,type.defaultAmount,date,employees,allowances,next);
+   recordAudit({action:'Updated allowance coverage',module:'Compensation',description:next.map(type=>`${type.name} ${peso(type.defaultAmount)} (${type.allEmployees?'all employees':'custom'})`).join(', ')+'.'});
+   await onSaved(next);
+  }catch(cause){setError(errorText(cause,'The allowance coverage could not be saved.'))}finally{setSaving(false)}
+ };
+ return <section aria-labelledby="allowance-coverage-heading" className={panelClass}>
+  <PanelHeader id="allowance-coverage-heading" title="Allowance Coverage" subtitle="Monthly amount per allowance type, for all employees or custom"/>
+  <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-[13px]">
+   <thead><tr className={theadClass}><th scope="col" className="px-5 py-3 font-semibold">Allowance Type</th><th scope="col" className="px-5 py-3 text-right font-semibold">Monthly</th><th scope="col" className="px-5 py-3 font-semibold"><label className="inline-flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-indigo-600" disabled={!canManage||saving} checked={allTicked} onChange={event=>setForm(Object.fromEntries(policy.map(type=>[type.id,{...form[type.id],all:event.target.checked}])))}/>All Employees</label></th></tr></thead>
+   <tbody>{policy.map(type=><tr key={type.id} className="border-b border-slate-100 last:border-0">
+    <td className="px-5 py-3 font-semibold text-slate-900">{type.name}</td>
+    <td className="px-5 py-3 text-right">{canManage?<input aria-label={`${type.name} monthly`} type="number" min="0" step="0.01" placeholder="0.00" disabled={saving} className={`${input} ml-auto max-w-[160px] text-right tabular-nums`} value={form[type.id].monthly} onChange={event=>setForm({...form,[type.id]:{...form[type.id],monthly:event.target.value}})}/>:<span className="tabular-nums font-semibold text-slate-900">{peso(type.defaultAmount)}</span>}</td>
+    <td className="px-5 py-3"><label className="inline-flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-indigo-600" disabled={!canManage||saving} checked={form[type.id].all} onChange={event=>setForm({...form,[type.id]:{...form[type.id],all:event.target.checked}})}/><span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${form[type.id].all?'bg-indigo-50 text-indigo-700':'bg-slate-100 text-slate-600'}`}>{form[type.id].all?'All employees':'Custom'}</span></label></td>
+   </tr>)}</tbody>
+  </table></div>
+  {canManage&&<div className="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-3">{error&&<p role="alert" className="m-0 mr-auto text-[12px] text-red-700">{error}</p>}<button type="button" className={ghost} disabled={!changed||saving} onClick={()=>setForm(initial())}>Reset</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={!changed||saving} onClick={()=>void save()}>{saving?'Saving…':'Save'}</Button></div>}
+ </section>;
+}
+
 function AssignModal({employee,employees,policy,allowances,amounts,onClose,onDone}:{employee:Employee;employees:Employee[];policy:PolicyType[];allowances:BonusIncentive[];amounts:Record<string,number>;onClose:()=>void;onDone:()=>Promise<void>}){
  const date=today(),hasAny=policy.some(type=>(amounts[type.id]??0)>0);
  // An employee with no allowances yet starts from the policy defaults.
@@ -110,21 +156,10 @@ function AssignModal({employee,employees,policy,allowances,amounts,onClose,onDon
  const [effectiveDate,setEffectiveDate]=useState(date);
  const [saving,setSaving]=useState(false),[error,setError]=useState('');
  const total=policy.reduce((sum,type)=>sum+numberValue(form[type.id]??''),0);
- const mine=(type:PolicyType)=>allowances.filter(item=>item.status==='Active'&&findCompensationEmployee(employees,item.employeeId)?.id===employee.id&&policyTypeFor(item.allowanceType,policy)?.id===type.id);
  const save=async()=>{
   setSaving(true);setError('');
   try{
-   for(const type of policy){
-    const amount=numberValue(form[type.id]??''),existing=mine(type),taxable=type.taxTreatment==='taxable';
-    const values={employeeId:employee.id,type:'Allowance' as const,allowanceType:type.name,frequency:'Monthly' as const,taxable,notes:'',cutoffStart:'',cutoffEnd:''};
-    if(amount>0&&!existing.length)await compensationService.createReward({...values,amount,effectiveDate,status:'Active'});
-    for(const [index,item] of existing.entries()){
-     const keep=amount>0&&index===0;
-     if(keep&&Math.abs(monthlyAmount(item,loadRates().payPeriodsPerMonth)-amount)<0.005&&item.allowanceType===type.name&&item.taxable===taxable)continue;
-     // A removed allowance is made inactive, so payroll stops paying it and the record stays.
-     await compensationService.updateReward(item.id,keep?{...values,amount,effectiveDate,status:'Active'}:{...values,amount:item.amount,frequency:item.frequency,effectiveDate:item.effectiveDate,status:'Inactive'});
-    }
-   }
+   for(const type of policy)await setAllowance(employee,type,numberValue(form[type.id]??''),effectiveDate,employees,allowances,policy);
    recordAudit({action:'Assigned allowances',module:'Compensation',description:`Set ${employee.name}'s allowances: ${policy.map(type=>`${type.name} ${peso(numberValue(form[type.id]??''))}`).join(', ')}.`});
    await onDone();
   }catch(cause){setError(errorText(cause,'The allowances could not be saved.'))}finally{setSaving(false)}
