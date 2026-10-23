@@ -13,7 +13,7 @@ import {
   LoadingState,
   Modal,
   PageHeader,
-  Tabs,
+  Segmented,
   RevealToggle,
   TextInput,
   ghost,
@@ -177,9 +177,10 @@ export default function HmoBenefits({
         }
       />{" "}
       {section === "hmo" && (
-        <Tabs
+        <div className="mt-5">
+        <Segmented
           label="HMO & Benefits sections"
-          tabs={hmoTabs}
+          options={hmoTabs}
           value={tab}
           onChange={(id) =>
             navigate(
@@ -189,6 +190,7 @@ export default function HmoBenefits({
           idPrefix="hmo-tab"
           panelId="hmo-panel"
         />
+        </div>
       )}{" "}
       <div
         id="hmo-panel"

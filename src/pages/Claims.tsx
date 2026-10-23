@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Check,FileText,MoreVertical,RotateCcw,ThumbsDown} from 'lucide-react';
-import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,ghost,input} from '../components/common/ui';
+import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,Segmented,ghost,input} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {can} from '../features/auth/permissions';
@@ -54,9 +54,7 @@ export default function Claims(){
   <Card className={flushCard}>
    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-50 px-5 py-4">
     <span className="text-[12px] font-medium text-slate-500">{list.length} {list.length===1?'claim':'claims'}</span>
-    <div role="tablist" aria-label="Filter claims by status" className="inline-flex flex-wrap gap-1 rounded-xl border border-slate-200/70 bg-slate-100/80 p-1">
-     {FILTERS.map(item=><button key={item.id} type="button" role="tab" id={`claims-filter-${item.id}`} aria-selected={filter===item.id} aria-controls="claims-list" onClick={()=>setFilter(item.id)} className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition ${filter===item.id?'bg-white text-indigo-600 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>{item.label}</button>)}
-    </div>
+    <Segmented label="Filter claims by status" options={FILTERS} value={filter} onChange={setFilter} idPrefix="claims-filter" panelId="claims-list"/>
    </div>
    <section id="claims-list" role="tabpanel" aria-labelledby={`claims-filter-${filter}`} className="min-w-0">
     {loading?<LoadingState>Loading claims…</LoadingState>:<ClaimsTable claims={list} employees={employees} financeAuthorized={financeAuthorized} onUpdate={(id,patch)=>void update(id,patch)} onReject={claim=>openPending('reject',claim)} onReturn={claim=>openPending('return',claim)} onView={setSelected}/>}

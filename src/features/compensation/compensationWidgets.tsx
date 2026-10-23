@@ -1,12 +1,7 @@
 import type {ReactNode} from 'react';
 import type {LucideIcon} from 'lucide-react';
 
-/** A segmented control: grey track, the selected option on a white pill. */
-export function Segmented<T extends string>({options,value,onChange,label}:{options:ReadonlyArray<{id:T;label:string}>;value:T;onChange:(id:T)=>void;label:string}){
- return <div role="tablist" aria-label={label} className="inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-slate-200/70 bg-slate-100/80 p-1">
-  {options.map(option=><button key={option.id} type="button" role="tab" aria-selected={value===option.id} onClick={()=>onChange(option.id)} className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition ${value===option.id?'bg-white text-indigo-600 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>{option.label}</button>)}
- </div>;
-}
+export {Segmented} from '../../components/common/ui';
 
 export function SummaryCard({label,value,caption,icon:Icon,tone,captionTone='bg-slate-100 text-slate-600'}:{label:string;value:string;caption:string;icon:LucideIcon;tone:string;captionTone?:string}){
  return <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)]">
