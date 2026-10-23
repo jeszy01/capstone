@@ -11,7 +11,7 @@ import {findCompensationEmployee} from './compensationState';
 import type {CompensationHistory,CompensationProposal,EmployeeCompensation} from './compensationState';
 import {gradeHeadcount,loadGrades,loadPositionSettings,placement,saveGrades} from './salaryPlacement';
 import type {RangeStatus} from './salaryPlacement';
-import {Avatar,MessageRow,PanelHeader,panelClass,theadClass} from './compensationWidgets';
+import {Avatar,MessageRow,PanelHeader,Segmented,panelClass,theadClass} from './compensationWidgets';
 
 type Props={employees:Employee[];assignments:EmployeeCompensation[];history:CompensationHistory[];proposals:CompensationProposal[];loading:boolean;daysPerMonth:number;onChanged:()=>Promise<void>};
 
@@ -22,10 +22,13 @@ const STATUS:Record<RangeStatus,[string,string]>={
  'No grade':['No grade','bg-slate-100 text-slate-600'],
  'No salary':['No salary','bg-red-50 text-red-700'],
 };
+type View='grades'|'employees';
+const VIEWS=[{id:'grades',label:'Pay Grades'},{id:'employees',label:'Employees'}] as const;
 const steps=Array.from({length:STEP_COUNT},(_,i)=>i+1);
 
 /** Salary Structure: daily rate per grade and step (Philippine market-based), and each employee's grade and step. */
 export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth}:Props){
+ const [view,setView]=useState<View>('grades');
  const [grades,setGrades]=useState<SalaryGradeBand[]>(loadGrades);
  const [editing,setEditing]=useState<SalaryGradeBand|'new'|null>(null);
  const canManage=can('compensation.manage');
@@ -43,10 +46,13 @@ export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth
   setEditing(null);
  };
 
- return <div className="space-y-6">
-  <section aria-labelledby="grades-heading" className={panelClass}>
-   <PanelHeader id="grades-heading" title="Pay Grades" subtitle="Daily rate for each grade and step, based on Philippine market rates (never below the NCR minimum wage)" action={canManage&&<Button className="!bg-indigo-600 hover:!bg-indigo-700" onClick={()=>setEditing('new')}><Plus size={15}/>New Grade</Button>}/>
-   <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]">
+ const headings:Record<View,[string,string]>={grades:['Pay Grades','Daily rate for each grade and step, based on Philippine market rates (never below the NCR minimum wage)'],employees:['Employees','Which grade and step each employee is on right now']};
+
+ return <section aria-labelledby="structure-heading" className={panelClass}>
+  <PanelHeader id="structure-heading" title={headings[view][0]} subtitle={headings[view][1]} action={view==='grades'&&canManage&&<Button className="!bg-indigo-600 hover:!bg-indigo-700" onClick={()=>setEditing('new')}><Plus size={15}/>New Grade</Button>}/>
+  <div className="px-6 py-4"><Segmented label="Salary Structure views" options={VIEWS} value={view} onChange={setView}/></div>
+
+  {view==='grades'&&<div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]">
     <thead><tr className={theadClass}>{['Salary Grade',...steps.map(step=>`Step ${step}`),'Employees',''].map((head,i)=><th key={head||i} scope="col" className={`px-5 py-3 font-semibold ${head==='Salary Grade'?'':'text-right'}`}>{head}</th>)}</tr></thead>
     <tbody>{grades.map(grade=><tr key={grade.code} className="border-b border-slate-100 last:border-0">
      <td className="px-5 py-3"><div className="font-bold text-slate-900">{grade.code}</div>{grade.name&&<div className="mt-0.5 text-[12px] text-slate-500">{grade.name}</div>}<div className="mt-0.5 text-[12px] font-medium text-indigo-600">{peso(grade.steps[0])} – {peso(grade.steps[STEP_COUNT-1])}</div></td>
@@ -54,12 +60,9 @@ export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth
      <td className="px-5 py-3 text-right tabular-nums text-slate-800">{headcount[grade.code]??0}</td>
      <td className="px-5 py-3 text-right">{canManage&&<button type="button" className={ghost} onClick={()=>setEditing(grade)}><Pencil size={14}/>Edit</button>}</td>
     </tr>)}</tbody>
-   </table></div>
-  </section>
+   </table></div>}
 
-  <section aria-labelledby="placement-heading" className={panelClass}>
-   <PanelHeader id="placement-heading" title="Employees" subtitle="Which grade and step each employee is on right now"/>
-   <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-[13px]">
+  {view==='employees'&&<div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-[13px]">
     <thead><tr className={theadClass}>{['Employee','Grade & Step','Daily Rate','Status'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${head==='Daily Rate'?'text-right':''}`}>{head}</th>)}</tr></thead>
     <tbody>{loading?<MessageRow colSpan={4}>Loading employees…</MessageRow>:!rows.length?<MessageRow colSpan={4}>No active employees yet.</MessageRow>:rows.map((row,index)=>{const[label,tone]=STATUS[row.status];return <tr key={row.employee.id} className="border-b border-slate-100 last:border-0">
      <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={row.employee.name} index={index}/><div><div className="font-semibold text-slate-900">{row.employee.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.employee.position||'—'}</div></div></div></td>
@@ -67,11 +70,10 @@ export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth
      <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-slate-900">{row.dailyRate?peso(row.dailyRate):'—'}</td>
      <td className="px-5 py-3"><span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold ${tone}`}><span className="h-1.5 w-1.5 rounded-full bg-current"/>{label}</span></td>
     </tr>})}</tbody>
-   </table></div>
-  </section>
+   </table></div>}
 
   {editing&&<GradeModal grade={editing==='new'?null:editing} taken={grades.map(grade=>grade.code)} onClose={()=>setEditing(null)} onSave={grade=>save(grade,editing==='new')}/>}
- </div>;
+ </section>;
 }
 
 function GradeModal({grade,taken,onClose,onSave}:{grade:SalaryGradeBand|null;taken:string[];onClose:()=>void;onSave:(grade:SalaryGradeBand)=>void}){
