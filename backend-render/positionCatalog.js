@@ -1,11 +1,12 @@
 // The company's positions, their departments and salary grades. Shared by the frontend (Employee form, Salary
 // Structure) and the server (a new hire's first salary).
+// Each grade's daily range spans its positions' market rates, 5% either side, never below the NCR minimum wage.
 export const PAY_GRADES = [
-  { code: 'G1', dailyRate: 755 },
-  { code: 'G2', dailyRate: 850 },
-  { code: 'G3', dailyRate: 1000 },
-  { code: 'G4', dailyRate: 1250 },
-  { code: 'G5', dailyRate: 1600 },
+  { code: 'G1', dailyRate: 755, maxRate: 845 },
+  { code: 'G2', dailyRate: 755, maxRate: 1015 },
+  { code: 'G3', dailyRate: 790, maxRate: 1075 },
+  { code: 'G4', dailyRate: 1030, maxRate: 1540 },
+  { code: 'G5', dailyRate: 1960, maxRate: 2365 },
 ];
 
 // marketRate: the daily market rate, from Indeed Philippines average monthly salaries (October 2026) divided by 22 working

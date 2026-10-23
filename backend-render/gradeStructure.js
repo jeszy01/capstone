@@ -2,7 +2,8 @@
 // salary). Rates are daily. HR edits the grades in Compensation; they are saved under GRADE_STRUCTURE_KEY in app data.
 import { PAY_GRADES, positionGrade } from './positionCatalog.js';
 
-export const GRADE_STRUCTURE_KEY = 'compensation:grade-steps';
+// v2: grades re-based on market rates; the earlier grades (compensation:grade-steps) are no longer read.
+export const GRADE_STRUCTURE_KEY = 'compensation:grade-steps-v2';
 // HR's per-position changes to the catalog: { [catalog position]: { grade?, marketRate? } }.
 export const POSITION_GRADES_KEY = 'compensation:position-grades';
 export const STEP_COUNT = 5;
@@ -13,10 +14,15 @@ export function stepsFrom(start, increment = 5) {
   return Array.from({ length: STEP_COUNT }, (_, i) => Math.round(start * (1 + increment / 100) ** i));
 }
 
-/** The grades before HR edits them: the position catalog's rates as step 1, steps 5% apart, market rate at midpoint. */
+/** Five steps from min to max, the same percent apart, in whole pesos. */
+export function stepsBetween(min, max) {
+  return Array.from({ length: STEP_COUNT }, (_, i) => Math.round(min * (max / min) ** (i / (STEP_COUNT - 1))));
+}
+
+/** The grades before HR edits them: the catalog's range per grade, steps evenly between, market rate at midpoint. */
 export function defaultGrades() {
   return PAY_GRADES.map(grade => {
-    const steps = stepsFrom(grade.dailyRate);
+    const steps = stepsBetween(grade.dailyRate, grade.maxRate);
     return { code: grade.code, name: DEFAULT_NAMES[grade.code] ?? '', steps, marketRate: Math.round((steps[0] + steps[STEP_COUNT - 1]) / 2) };
   });
 }
@@ -43,10 +49,20 @@ export function positionGradeCode(position, overrides) {
   return typeof saved === 'string' && saved.trim() ? saved.trim() : entry.grade;
 }
 
-/** A new hire's daily rate: step 1 of their position's grade, or null when the position has no grade. */
+/** A position's daily market rate: HR's saved rate, else the catalog's researched rate. Null outside the catalog. */
+export function positionMarketRate(position, overrides) {
+  const entry = positionGrade(position);
+  if (!entry) return null;
+  const saved = overrides && typeof overrides === 'object' ? Number(overrides[entry.position]?.marketRate) : 0;
+  return saved > 0 ? saved : entry.marketRate;
+}
+
+/** A new hire's daily rate: their position's market rate, kept inside its grade's range; null when the position has no grade. */
 export function startingDailyRate(position, saved, overrides) {
   const entry = positionGrade(position);
   if (!entry) return null;
   const structure = gradeStructure(saved), code = positionGradeCode(position, overrides);
-  return (structure.find(g => g.code === code) ?? structure.find(g => g.code === entry.grade))?.steps[0] ?? entry.dailyRate;
+  const grade = structure.find(g => g.code === code) ?? structure.find(g => g.code === entry.grade);
+  if (!grade) return positionMarketRate(position, overrides);
+  return Math.min(grade.steps[STEP_COUNT - 1], Math.max(grade.steps[0], positionMarketRate(position, overrides)));
 }

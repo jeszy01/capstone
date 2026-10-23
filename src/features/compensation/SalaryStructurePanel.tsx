@@ -6,8 +6,8 @@ import {numberValue,peso} from '../../utils/storage';
 import {can} from '../auth/permissions';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
-import {POSITIONS,positionGrade} from '../../../backend-render/positionCatalog.js';
-import {STEP_COUNT,positionGradeCode} from '../../../backend-render/gradeStructure.js';
+import {POSITIONS} from '../../../backend-render/positionCatalog.js';
+import {STEP_COUNT,positionGradeCode,stepsBetween} from '../../../backend-render/gradeStructure.js';
 import type {SalaryGradeBand} from '../../../backend-render/gradeStructure.js';
 import {compensationService} from './compensationService';
 import {compactPeso} from './compensationSummary';
@@ -32,8 +32,6 @@ const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.m
 const compaTone=(ratio:number)=>ratio<0.95?'bg-amber-50 text-amber-700':ratio>1.05?'bg-red-50 text-red-700':'bg-emerald-50 text-emerald-700';
 const OUTLINE_TONE:Record<string,string>={'Within range':'border-emerald-600 bg-emerald-50 text-emerald-700','At market':'border-emerald-600 bg-emerald-50 text-emerald-700','Below range':'border-amber-500 bg-amber-50 text-amber-700','Below market':'border-amber-500 bg-amber-50 text-amber-700','Above range':'border-blue-600 bg-blue-50 text-blue-700','Above market':'border-blue-600 bg-blue-50 text-blue-700'};
 const OutlinePill=({label}:{label:string})=><span className={`inline-block whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${OUTLINE_TONE[label]??'border-slate-300 text-slate-600'}`}>{label}</span>;
-// Steps run evenly (by percent) from the grade's min to its max.
-const stepsBetween=(min:number,max:number)=>Array.from({length:STEP_COUNT},(_,i)=>Math.round(min*(max/min)**(i/(STEP_COUNT-1))));
 type GradeDraft=Record<string,{min:string;max:string}>;
 type PositionDraft=Record<string,{grade:string;market:string}>;
 
@@ -62,13 +60,13 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
  const knownHistory=employees.length?history.filter(item=>findCompensationEmployee(employees,item.employeeId)):history;
  const shownHistory=[...knownHistory].sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||b.recordedAt.localeCompare(a.recordedAt))
   .filter(item=>!query||[nameOf(item.employeeId),item.type,item.source,item.status??'',item.actorName??'',item.reason??''].some(value=>value.toLowerCase().includes(query)));
- // Format: each position's daily rate is its employees' average, or the grade's min when nobody holds it.
+ // Format: a position's daily rate is its market rate kept inside its grade's range (a new hire's starting rate).
+ // Employees' actual rates are compared with the market in Placement.
  const draftBand=(code:string)=>({min:numberValue(gradeDraft[code]?.min??''),max:numberValue(gradeDraft[code]?.max??'')});
  const positionRows=POSITIONS.map(item=>{
   const draft=positionDraft[item.position],grade=grades.find(band=>band.code===draft.grade),{min,max}=draftBand(draft.grade);
-  const rates=rows.filter(row=>row.dailyRate>0&&positionGrade(row.employee.position)?.position===item.position).map(row=>row.dailyRate);
-  const rate=rates.length?Math.round(rates.reduce((sum,value)=>sum+value,0)/rates.length*100)/100:min;
   const market=numberValue(draft.market)>0?numberValue(draft.market):item.marketRate||(grade?.marketRate??0);
+  const rate=min>0&&max>=min?Math.min(max,Math.max(min,market)):market;
   const gap=market>0?Math.round((rate-market)/market*1000)/10:0;
   return {position:item.position,grade:draft.grade,rate,market,gap,compaRatio:min>0&&max>0?rate/((min+max)/2):0,
    range:rate<min?'Below range':rate>max?'Above range':'Within range',marketStatus:Math.abs(gap)<=MARKET_TOLERANCE*100?'At market':gap>0?'Above market':'Below market'};
