@@ -6,13 +6,14 @@ import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {loadRates} from '../settings/payrollSettings';
 import {compensationService} from './compensationService';
-import {compactPeso,compensationSummary} from './compensationSummary';
-import {activeCompensations,today} from './compensationState';
+import {peso} from '../../utils/storage';
+import {compactPeso,compensationRows,compensationSummary} from './compensationSummary';
+import {activeCompensations,findCompensationEmployee,today} from './compensationState';
 import type {BonusIncentive,CompensationHistory,CompensationProposal,EmployeeCompensation} from './compensationState';
 import {AwardsPanel} from './AwardsPanel';
 import {AllowancesPanel} from './AllowancesPanel';
 import {SalaryStructurePanel} from './SalaryStructurePanel';
-import {Segmented,SummaryCard} from './compensationWidgets';
+import {Avatar,MessageRow,PanelHeader,Segmented,SummaryCard,panelClass,theadClass} from './compensationWidgets';
 
 const TABS=[{id:'overview',label:'Overview'},{id:'structure',label:'Salary Structure'},{id:'allowances',label:'Allowances'},{id:'awards',label:'Bonuses & Incentives'}] as const;
 type Tab=(typeof TABS)[number]['id'];
@@ -62,6 +63,7 @@ export default function CompensationPlanning(){
   const activeAssignments=useMemo(()=>activeCompensations(assignments,date),[assignments,date]);
   // daysPerMonth re-reads the Payroll Settings rates when they change.
   const summary=useMemo(()=>compensationSummary(activeAssignments,bonuses,date,loadRates()),[activeAssignments,bonuses,date,daysPerMonth]);
+  const rows=useMemo(()=>compensationRows(activeAssignments,bonuses,date,loadRates()).map(row=>{const employee=findCompensationEmployee(employees,row.employeeId);return {...row,name:employee?.name??row.employeeId,position:employee?.position??''}}).sort((a,b)=>a.name.localeCompare(b.name)),[activeAssignments,bonuses,date,daysPerMonth,employees]);
   const ready=!loading&&!loadError;
   const cards=[
     {label:'Monthly Basic Payroll',value:summary.basic,caption:`${summary.employees} active employee${summary.employees===1?'':'s'}`,icon:Wallet,tone:'bg-indigo-50 text-indigo-600'},
@@ -80,7 +82,22 @@ export default function CompensationPlanning(){
     {loadError&&<ErrorAlert title="Compensation records are unavailable." onRetry={()=>void load()}>{loadError}</ErrorAlert>}
     {legacyImportWarning&&<div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">{legacyImportWarning}</div>}
     {tab==='overview'
-      ?<section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,caption,icon,tone})=><SummaryCard key={label} label={label} icon={icon} tone={tone} value={ready?compactPeso(value):'—'} caption={ready?caption:loading?'Loading…':'Unavailable'}/>)}</section>
+      ?<>
+        <section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,caption,icon,tone})=><SummaryCard key={label} label={label} icon={icon} tone={tone} value={ready?compactPeso(value):'—'} caption={ready?caption:loading?'Loading…':'Unavailable'}/>)}</section>
+        <section aria-labelledby="compensation-summary-heading" className={panelClass}>
+          <PanelHeader id="compensation-summary-heading" title="Compensation Summary" subtitle="Monthly basic pay, allowances, gross pay and total cost per employee"/>
+          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-[13px]">
+            <thead><tr className={theadClass}>{['Employee','Basic Pay','Allowances','Gross Pay','Employer Cost'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${head==='Employee'?'':'text-right'}`}>{head}</th>)}</tr></thead>
+            <tbody>{loading?<MessageRow colSpan={5}>Loading compensation…</MessageRow>:!rows.length?<MessageRow colSpan={5}>No active salaries yet.</MessageRow>:rows.map((row,index)=><tr key={row.employeeId} className="border-b border-slate-100 last:border-0">
+              <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={row.name} index={index}/><div><div className="font-semibold text-slate-900">{row.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.position||'—'}</div></div></div></td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-slate-800">{peso(row.basic)}</td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-slate-800">{peso(row.allowance)}</td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-semibold text-slate-900">{peso(row.gross)}</td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-slate-900">{peso(row.employerCost)}</td>
+            </tr>)}</tbody>
+          </table></div>
+        </section>
+      </>
       :tab==='structure'?<SalaryStructurePanel employees={employees} assignments={activeAssignments} history={history} proposals={proposals} loading={loading} daysPerMonth={daysPerMonth} onChanged={load}/>
       :tab==='allowances'?<AllowancesPanel employees={employees} rewards={bonuses} assignments={activeAssignments} daysPerMonth={daysPerMonth} loading={loading} onChanged={load}/>
       :<AwardsPanel employees={employees} rewards={bonuses} proposals={proposals} assignments={activeAssignments} loading={loading} onChanged={load}/>}

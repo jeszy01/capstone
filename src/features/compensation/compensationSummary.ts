@@ -24,6 +24,16 @@ export function compensationSummary(assignments:EmployeeCompensation[],rewards:B
  };
 }
 
+/** The same monthly figures per employee: basic pay, allowances, gross pay (basic + allowances) and employer cost. */
+export function compensationRows(assignments:EmployeeCompensation[],rewards:BonusIncentive[],date:string,rates:PayrollRates){
+ return assignments.map(item=>{
+  const allowance=activeAllowances(rewards,[item.employeeId],date).reduce((sum,entry)=>sum+(entry.frequency==='Per Cutoff'?entry.amount*rates.payPeriodsPerMonth:entry.amount),0);
+  const shares=employerShares(item.fixedSalary/rates.daysPerMonth,rates);
+  const statutory=(shares.employerSss+shares.employerPhil+shares.employerPagibig)*rates.payPeriodsPerMonth;
+  return {employeeId:item.employeeId,basic:round(item.fixedSalary),allowance:round(allowance),gross:round(item.fixedSalary+allowance),employerCost:round(item.fixedSalary+allowance+statutory)};
+ });
+}
+
 /** ₱712.0K, ₱1.2M, ₱850: a peso amount shortened for summary cards. */
 export function compactPeso(value:number){
  const abs=Math.abs(value);
