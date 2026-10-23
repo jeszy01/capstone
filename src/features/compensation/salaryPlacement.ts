@@ -62,7 +62,6 @@ export const positionsInGrade=(code:string)=>POSITIONS.filter(item=>item.grade==
 
 // ---- Performance ratings, kept per employee in app data; HR sets them in Employee Placement ----
 export const RATINGS_KEY='compensation:ratings';
-export const RATING_LABELS=['','Poor','Needs Improvement','Satisfactory','Very Satisfactory','Outstanding'] as const;
 export type EmployeeRating={rating:number;ratedAt:string;ratedBy?:string};
 export const loadRatings=()=>read<Record<string,EmployeeRating>>(RATINGS_KEY,{});
 export const saveRatings=(ratings:Record<string,EmployeeRating>)=>write(RATINGS_KEY,ratings);

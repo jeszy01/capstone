@@ -1,5 +1,5 @@
 import {useMemo,useState} from 'react';
-import {ArrowUp,Pencil,Plus,Search,Star,Trash2} from 'lucide-react';
+import {ArrowUp,Pencil,Plus,Search,Trash2} from 'lucide-react';
 import {Button,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
@@ -12,7 +12,7 @@ import {compensationService} from './compensationService';
 import {compactPeso} from './compensationSummary';
 import {findCompensationEmployee,today} from './compensationState';
 import type {CompensationHistory,CompensationProposal,EmployeeCompensation} from './compensationState';
-import {RATING_LABELS,gradeHeadcount,loadGrades,loadRatings,placement,positionsInGrade,promotionTarget,saveGrades,saveRatings} from './salaryPlacement';
+import {gradeHeadcount,loadGrades,loadRatings,placement,positionsInGrade,promotionTarget,saveGrades,saveRatings} from './salaryPlacement';
 import type {EmployeeRating,MarketStatus,Placement,RangeStatus} from './salaryPlacement';
 import {Avatar,MessageRow,PanelHeader,Segmented,panelClass,theadClass} from './compensationWidgets';
 
@@ -78,21 +78,20 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
    </table></div>
   </>}
 
-  {view==='placement'&&<div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-left text-[13px]">
-   <thead><tr className={theadClass}>{['Employee','Grade','Basic','Band','Compa-ratio','Market Rate','Position in Range','Rating','Action'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${['Basic','Band','Compa-ratio','Market Rate','Action'].includes(head)?'text-right':''}`}>{head}</th>)}</tr></thead>
+  {view==='placement'&&<div className="overflow-x-auto"><table className="w-full min-w-[1020px] text-left text-[13px]">
+   <thead><tr className={theadClass}>{['Employee','Grade','Basic','Band','Compa-ratio','Market Rate','Position in Range','Rating','Action'].map(head=><th key={head} scope="col" className={`px-3 py-2.5 font-semibold ${['Basic','Band','Compa-ratio','Market Rate','Action'].includes(head)?'text-right':head==='Rating'?'text-center':''}`}>{head}</th>)}</tr></thead>
    <tbody>{loading?<MessageRow colSpan={9}>Loading placements…</MessageRow>:!shownRows.length?<MessageRow colSpan={9}>{rows.length?'No employees match this search.':'No active employees yet.'}</MessageRow>:shownRows.map((row,index)=>{
     const rating=ratings[row.employee.id]?.rating??0,target=promotionTarget(row,grades),pending=pendingFor.has(row.employee.id);
     return <tr key={row.employee.id} className="border-b border-slate-100 last:border-0">
-     <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.employee.name} index={index}/><div><div className="font-semibold text-slate-900">{row.employee.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.employee.position||'—'}</div></div></div></td>
-     <td className="px-5 py-4">{row.grade?<><div className="font-bold text-slate-900">{row.grade.code}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.step?`Step ${row.step}`:'Below step 1'}</div></>:<span className="text-slate-500">No grade</span>}</td>
-     <td className="px-5 py-4 text-right tabular-nums font-bold text-slate-900">{row.dailyRate?peso(row.dailyRate*daysPerMonth):'—'}</td>
-     <td className="whitespace-nowrap px-5 py-4 text-right tabular-nums text-slate-700">{row.grade?`${compactPeso(row.bandMin)} – ${compactPeso(row.bandMax)}`:'—'}</td>
-     <td className="px-5 py-4 text-right">{row.compaRatio?<span className={`inline-block rounded-lg px-2.5 py-1 text-[12px] font-bold tabular-nums ${compaTone(row.compaRatio)}`}>{row.compaRatio.toFixed(2)}</span>:'—'}</td>
-     <td className="whitespace-nowrap px-5 py-4 text-right">{row.marketStatus?<><div className="tabular-nums font-semibold text-slate-800">{compactPeso(row.marketRate)}</div><div className={`mt-0.5 text-[12px] font-medium ${MARKET_TONE[row.marketStatus]}`}>{row.marketStatus==='At market'?'At market':`${row.marketStatus} (${row.marketGap>0?'+':''}${row.marketGap}%)`}</div></>:'—'}</td>
-     <td className="px-5 py-4"><div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div className={`h-full rounded-full ${BAR_TONE[row.status]}`} style={{width:`${row.status==='Below band'?4:Math.max(4,row.rangePosition*100)}%`}}/></div><div className={`mt-1 text-[12px] font-medium ${RANGE_TONE[row.status]}`}>{row.status}</div></td>
-     <td className="px-5 py-4"><div className="flex items-center gap-0.5" aria-label={rating?`${rating} of 5: ${RATING_LABELS[rating]}`:'Not rated'}>{[1,2,3,4,5].map(value=><Star key={value} size={14} className={value<=rating?'fill-amber-400 text-amber-400':'text-slate-300'}/>)}</div>
-      {canManage?<select aria-label={`Rating for ${row.employee.name}`} className="mt-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600" value={rating} onChange={event=>rate(row.employee.id,Number(event.target.value))}><option value={0}>Not rated</option>{[5,4,3,2,1].map(value=><option key={value} value={value}>{value} · {RATING_LABELS[value]}</option>)}</select>:<div className="mt-1 text-[11px] text-slate-500">{rating?RATING_LABELS[rating]:'Not rated'}</div>}</td>
-     <td className="px-5 py-4 text-right">{canManage&&target&&(pending?<span className="text-[12px] font-medium text-amber-700">Change pending</span>:<button type="button" onClick={()=>setPromoting(row)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-50 px-3.5 py-2 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-100"><ArrowUp size={15}/>Promote</button>)}</td>
+     <td className="px-3 py-2.5"><div className="flex items-center gap-3"><Avatar name={row.employee.name} index={index}/><div><div className="font-semibold text-slate-900">{row.employee.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.employee.position||'—'}</div></div></div></td>
+     <td className="px-3 py-2.5">{row.grade?<><div className="font-bold text-slate-900">{row.grade.code}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.step?`Step ${row.step}`:'Below step 1'}</div></>:<span className="text-slate-500">No grade</span>}</td>
+     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-900">{row.dailyRate?peso(row.dailyRate*daysPerMonth):'—'}</td>
+     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{row.grade?`${compactPeso(row.bandMin)} – ${compactPeso(row.bandMax)}`:'—'}</td>
+     <td className="px-3 py-2.5 text-right">{row.compaRatio?<span className={`inline-block rounded-lg px-2.5 py-1 text-[12px] font-bold tabular-nums ${compaTone(row.compaRatio)}`}>{row.compaRatio.toFixed(2)}</span>:'—'}</td>
+     <td className="whitespace-nowrap px-3 py-2.5 text-right">{row.marketStatus?<><div className="tabular-nums font-semibold text-slate-800">{compactPeso(row.marketRate)}</div><div className={`mt-0.5 text-[12px] font-medium ${MARKET_TONE[row.marketStatus]}`}>{row.marketStatus==='At market'?'At market':`${row.marketStatus} (${row.marketGap>0?'+':''}${row.marketGap}%)`}</div></>:'—'}</td>
+     <td className="px-3 py-2.5"><div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div className={`h-full rounded-full ${BAR_TONE[row.status]}`} style={{width:`${row.status==='Below band'?4:Math.max(4,row.rangePosition*100)}%`}}/></div><div className={`mt-1 text-[12px] font-medium ${RANGE_TONE[row.status]}`}>{row.status}</div></td>
+     <td className="px-3 py-2.5 text-center">{canManage?<select aria-label={`Rating for ${row.employee.name}`} className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[12px] tabular-nums text-slate-700" value={rating} onChange={event=>rate(row.employee.id,Number(event.target.value))}><option value={0}>—</option>{[5,4,3,2,1].map(value=><option key={value} value={value}>{value}</option>)}</select>:<span className="tabular-nums font-semibold text-slate-800">{rating||'—'}</span>}</td>
+     <td className="px-3 py-2.5 text-right">{canManage&&target&&(pending?<span className="text-[12px] font-medium text-amber-700">Change pending</span>:<button type="button" onClick={()=>setPromoting(row)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-50 px-3 py-1.5 text-[12px] font-semibold text-indigo-700 hover:bg-indigo-100"><ArrowUp size={15}/>Promote</button>)}</td>
     </tr>;
    })}</tbody>
   </table></div>}
@@ -152,7 +151,7 @@ function PromoteModal({row,grades,daysPerMonth,rating,onClose,onDone}:{row:Row;g
   setSaving(true);setError('');
   try{
    await compensationService.createProposal({employeeId:row.employee.id,type:'Promotion Increase',newSalary:next,effectiveDate,salaryCode:'',
-    notes:[`Promotion to ${target.grade.code} Step ${target.step}`,reason.trim()||(rating?`Rating: ${RATING_LABELS[rating]}`:'')].filter(Boolean).join('\n')});
+    notes:[`Promotion to ${target.grade.code} Step ${target.step}`,reason.trim()||(rating?`Rating: ${rating}`:'')].filter(Boolean).join('\n')});
    await onDone();
   }catch(cause){setError(errorText(cause,'The promotion could not be submitted.'))}finally{setSaving(false)}
  };
@@ -163,7 +162,7 @@ function PromoteModal({row,grades,daysPerMonth,rating,onClose,onDone}:{row:Row;g
    <div className="mt-1 text-right text-[12px] font-semibold text-emerald-700">+{peso(next-current)} ({current>0?Math.round((next/current-1)*1000)/10:0}%)</div>
   </div>
   <div className="mt-4 grid gap-4"><Field label="Effective date"><TextInput type="date" value={effectiveDate} onChange={event=>setEffectiveDate(event.target.value)}/></Field>
-   <Field label="Reason"><textarea className={`${input} min-h-20`} maxLength={300} value={reason} onChange={event=>setReason(event.target.value)} placeholder={rating?`Rated ${RATING_LABELS[rating]}`:'Why this promotion is given'}/></Field></div>
+   <Field label="Reason"><textarea className={`${input} min-h-20`} maxLength={300} value={reason} onChange={event=>setReason(event.target.value)} placeholder={rating?`Rating ${rating}`:'Why this promotion is given'}/></Field></div>
   <p className="mb-0 mt-3 text-[12px] text-slate-500">This sends a promotion increase for Admin approval; the salary changes on the effective date once approved.</p>
   {error&&<p role="alert" className="mb-0 mt-2 text-[12px] text-red-700">{error}</p>}
   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={saving||!effectiveDate} onClick={()=>void submit()}>{saving?'Submitting…':'Submit promotion'}</Button></div>
