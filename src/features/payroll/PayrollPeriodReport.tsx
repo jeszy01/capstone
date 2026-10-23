@@ -1,7 +1,7 @@
 import {useMemo,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {CalendarDays,CalendarRange,FileText,Printer,X} from 'lucide-react';
-import {Button,Card,Tabs,ghost,input,maskValue,useOverlayFocus} from '../../components/common/ui';
+import {Button,Card,Segmented,ghost,input,maskValue,useOverlayFocus} from '../../components/common/ui';
 import {localToday} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {peso} from '../../utils/storage';
@@ -45,7 +45,7 @@ export function PayrollPeriodReport({runs,employees,showAmounts=false}:{runs:Pay
    <Button disabled={!canPreview} title={!report.runs.length?'No payroll runs in this period.':showAmounts?undefined:'Show amounts to preview the report.'} onClick={()=>setPreviewing(true)}><FileText size={15}/>Preview &amp; Print Report</Button>
   </div>
   <div className="mt-4 flex flex-wrap items-end gap-3">
-   <Tabs label="Report period" value={kind} onChange={setKind} tabs={KINDS} className=""/>
+   <Segmented label="Report period" value={kind} onChange={setKind} options={KINDS}/>
    {kind==='monthly'
     ?<label className="block text-[12px] font-semibold text-slate-600">Month<input type="month" className={`${input} mt-1.5 !w-auto`} value={month} max={today.slice(0,7)} onChange={e=>e.target.value&&setMonth(e.target.value)}/></label>
     :<label className="block text-[12px] font-semibold text-slate-600">Year<select className={`${input} mt-1.5 !w-auto`} value={year} onChange={e=>setYear(e.target.value)}>{years.map(item=><option key={item}>{item}</option>)}</select></label>}
