@@ -1,6 +1,6 @@
-import {positionGrade} from '../../../backend-render/positionCatalog.js';
-import {GRADE_STRUCTURE_KEY,POSITION_GRADES_KEY,STEP_COUNT,gradeStructure,midpoint,positionGradeCode} from '../../../backend-render/gradeStructure.js';
-import type {SalaryGradeBand} from '../../../backend-render/gradeStructure.js';
+import {POSITIONS,positionGrade} from '../../../backend-render/positionCatalog.js';
+import {GRADE_STRUCTURE_KEY,POSITION_GRADES_KEY,STEP_COUNT,gradeStructure,midpoint,positionGradeCode,positionMarketRate,resolvePosition} from '../../../backend-render/gradeStructure.js';
+import type {ResolvedPosition,SalaryGradeBand} from '../../../backend-render/gradeStructure.js';
 import {read,write} from '../../utils/storage';
 
 export type RangeStatus='Below band'|'Within band'|'Above band'|'No grade'|'No salary';
@@ -11,7 +11,10 @@ export type Placement={grade:SalaryGradeBand|null;step:number;dailyRate:number;b
 export const loadGrades=():SalaryGradeBand[]=>gradeStructure(read<unknown>(GRADE_STRUCTURE_KEY,null));
 export const saveGrades=(grades:SalaryGradeBand[])=>write(GRADE_STRUCTURE_KEY,grades);
 /** HR's per-position grade and market rate (daily), keyed by catalog position. */
-export type PositionSettings=Record<string,{grade?:string;marketRate?:number}>;
+export type PositionSettings=Record<string,{grade?:string;marketRate?:number;department?:string}>;
+/** Catalog positions with HR's changes, then the positions HR added. */
+export const allPositions=(settings:PositionSettings)=>[...POSITIONS.map(item=>item.position),...Object.keys(settings).filter(name=>settings[name]?.department&&!positionGrade(name))]
+ .map(name=>resolvePosition(name,settings)).filter((item):item is ResolvedPosition=>Boolean(item));
 export const loadPositionSettings=()=>read<PositionSettings>(POSITION_GRADES_KEY,{});
 export const savePositionSettings=(settings:PositionSettings)=>write(POSITION_GRADES_KEY,settings);
 const round=(value:number,places=2)=>Math.round(value*10**places)/10**places;
@@ -26,8 +29,7 @@ export const MARKET_TOLERANCE=0.02;
 export function placement(position:string|undefined,dailyRate:number,grades:SalaryGradeBand[],daysPerMonth:number,settings:PositionSettings=loadPositionSettings()):Placement{
  const code=positionGradeCode(position,settings),grade=code?grades.find(item=>item.code===code)??null:null;
  // Market rate: HR's rate for the position, else the catalog's researched rate, else the grade's.
- const entry=positionGrade(position),ownMarket=settings[entry?.position??'']?.marketRate;
- const market=grade?(ownMarket&&ownMarket>0?ownMarket:entry?.marketRate||grade.marketRate):0;
+ const market=grade?positionMarketRate(position,settings)||grade.marketRate:0;
  const rate=round(dailyRate);
  const empty={grade,step:0,dailyRate:rate,bandMin:0,bandMax:0,compaRatio:0,marketRate:0,marketGap:0,marketStatus:null,rangePosition:0};
  if(!grade)return {...empty,status:rate>0?'No grade':'No salary'};

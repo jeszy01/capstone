@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
-import {defaultGrades,gradeStructure,midpoint,positionGradeCode,positionMarketRate,spread,startingDailyRate,stepsBetween,stepsFrom} from '../../backend-render/gradeStructure.js';
-import {gradeHeadcount,placement,promotionTarget} from '../features/compensation/salaryPlacement';
+import {defaultGrades,gradeStructure,midpoint,positionGradeCode,positionMarketRate,resolvePosition,spread,startingDailyRate,stepsBetween,stepsFrom} from '../../backend-render/gradeStructure.js';
+import {allPositions,gradeHeadcount,placement,promotionTarget} from '../features/compensation/salaryPlacement';
 
 const grades=defaultGrades();
 
@@ -62,5 +62,16 @@ describe('position settings',()=>{
   expect(startingDailyRate('Rider',null,settings)).toBe(900);
   expect(placement('Rider',900,grades,22,settings)).toMatchObject({grade:{code:'G2'},marketStatus:'At market',marketGap:0});
   expect(gradeHeadcount(['Rider','Dispatcher'],settings)).toEqual({G2:2});
+ });
+});
+
+describe('positions HR adds',()=>{
+ it('resolves an added position by name with its department, grade and market rate',()=>{
+  const settings={'Inventory Clerk':{department:'Supply Chain',grade:'G2',marketRate:800},Rider:{marketRate:820}};
+  expect(resolvePosition(' inventory clerk ',settings)).toMatchObject({position:'Inventory Clerk',department:'Supply Chain',grade:'G2',marketRate:800,custom:true});
+  expect(startingDailyRate('Inventory Clerk',null,settings)).toBe(800);
+  expect(allPositions(settings).map(item=>item.position)).toContain('Inventory Clerk');
+  expect(allPositions(settings).filter(item=>item.position==='Rider')).toHaveLength(1);
+  expect(resolvePosition('Unknown',settings)).toBeNull();
  });
 });

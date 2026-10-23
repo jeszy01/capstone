@@ -1,19 +1,19 @@
 import {useMemo,useRef,useState} from 'react';
-import {ArrowUp,Search,X} from 'lucide-react';
-import {Button,ghost,input,useOverlayFocus} from '../../components/common/ui';
+import {ArrowUp,Plus,Search,X} from 'lucide-react';
+import {Button,Field,Modal,TextInput,ghost,input,useOverlayFocus} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {numberValue,peso} from '../../utils/storage';
 import {can} from '../auth/permissions';
 import {getCurrentUser} from '../auth/authService';
 import {recordAudit} from '../audit/auditService';
-import {POSITIONS} from '../../../backend-render/positionCatalog.js';
-import {STEP_COUNT,positionGradeCode,stepsBetween} from '../../../backend-render/gradeStructure.js';
+import {DEPARTMENTS,positionGrade} from '../../../backend-render/positionCatalog.js';
+import {STEP_COUNT,resolvePosition,stepsBetween} from '../../../backend-render/gradeStructure.js';
 import type {SalaryGradeBand} from '../../../backend-render/gradeStructure.js';
 import {compensationService} from './compensationService';
 import {compactPeso} from './compensationSummary';
 import {findCompensationEmployee,today} from './compensationState';
 import type {CompensationHistory,CompensationProposal,EmployeeCompensation} from './compensationState';
-import {MARKET_TOLERANCE,loadGrades,loadPositionSettings,loadRatings,placement,promotionTarget,saveGrades,savePositionSettings,saveRatings} from './salaryPlacement';
+import {MARKET_TOLERANCE,allPositions,loadGrades,loadPositionSettings,loadRatings,placement,promotionTarget,saveGrades,savePositionSettings,saveRatings} from './salaryPlacement';
 import type {EmployeeRating,MarketStatus,Placement,PositionSettings,RangeStatus} from './salaryPlacement';
 import {Avatar,MessageRow,PanelHeader,Segmented,panelClass,theadClass} from './compensationWidgets';
 
@@ -42,9 +42,10 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
  const [ratings,setRatings]=useState<Record<string,EmployeeRating>>(loadRatings);
  const [settings,setSettings]=useState<PositionSettings>(loadPositionSettings);
  const gradeDraftOf=(list:SalaryGradeBand[]):GradeDraft=>Object.fromEntries(list.map(grade=>[grade.code,{min:String(grade.steps[0]),max:String(grade.steps[STEP_COUNT-1])}]));
- const positionDraftOf=(saved:PositionSettings):PositionDraft=>Object.fromEntries(POSITIONS.map(item=>[item.position,{grade:positionGradeCode(item.position,saved)??item.grade,market:saved[item.position]?.marketRate?String(saved[item.position].marketRate):''}]));
+ const positionDraftOf=(saved:PositionSettings):PositionDraft=>Object.fromEntries(allPositions(saved).map(item=>[item.position,{grade:item.grade,market:saved[item.position]?.marketRate?String(saved[item.position].marketRate):''}]));
  const [gradeDraft,setGradeDraft]=useState<GradeDraft>(()=>gradeDraftOf(grades));
  const [positionDraft,setPositionDraft]=useState<PositionDraft>(()=>positionDraftOf(settings));
+ const [adding,setAdding]=useState(false);
  const [promoting,setPromoting]=useState<Row|null>(null);
  const canManage=can('compensation.manage');
  const nameOf=(reference:string)=>findCompensationEmployee(employees,reference)?.name??reference;
@@ -63,29 +64,42 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
  // Format: a position's daily rate is its market rate kept inside its grade's range (a new hire's starting rate).
  // Employees' actual rates are compared with the market in Placement.
  const draftBand=(code:string)=>({min:numberValue(gradeDraft[code]?.min??''),max:numberValue(gradeDraft[code]?.max??'')});
- const positionRows=POSITIONS.map(item=>{
-  const draft=positionDraft[item.position],grade=grades.find(band=>band.code===draft.grade),{min,max}=draftBand(draft.grade);
-  const market=numberValue(draft.market)>0?numberValue(draft.market):item.marketRate||(grade?.marketRate??0);
+ // The researched rate a blank Market Rate falls back to (HR-added positions have only their own rate).
+ const defaultMarket=(name:string,grade?:SalaryGradeBand)=>positionGrade(name)?.marketRate||(grade?.marketRate??0);
+ const positionRows=allPositions(settings).map(item=>{
+  const draft=positionDraft[item.position]??{grade:item.grade,market:''},grade=grades.find(band=>band.code===draft.grade),{min,max}=draftBand(draft.grade);
+  const market=numberValue(draft.market)>0?numberValue(draft.market):defaultMarket(item.position,grade);
   const rate=min>0&&max>=min?Math.min(max,Math.max(min,market)):market;
   const gap=market>0?Math.round((rate-market)/market*1000)/10:0;
-  return {position:item.position,grade:draft.grade,rate,market,gap,compaRatio:min>0&&max>0?rate/((min+max)/2):0,
+  return {position:item.position,draft,grade:draft.grade,rate,market,gap,compaRatio:min>0&&max>0?rate/((min+max)/2):0,
    range:rate<min?'Below range':rate>max?'Above range':'Within range',marketStatus:Math.abs(gap)<=MARKET_TOLERANCE*100?'At market':gap>0?'Above market':'Below market'};
  });
- const savedGrade=(position:string,catalog:string)=>positionGradeCode(position,settings)??catalog;
- const changed=grades.some(grade=>{const {min,max}=draftBand(grade.code);return min!==grade.steps[0]||max!==grade.steps[STEP_COUNT-1]})
-  ||POSITIONS.some(item=>{const draft=positionDraft[item.position];return draft.grade!==savedGrade(item.position,item.grade)||numberValue(draft.market)!==(settings[item.position]?.marketRate??0)});
  const badGrade=grades.find(grade=>{const {min,max}=draftBand(grade.code);return !(min>0)||max<min});
- const resetFormat=()=>{setGradeDraft(gradeDraftOf(grades));setPositionDraft(positionDraftOf(settings))};
- const saveFormat=()=>{
-  if(badGrade)return;
-  const nextGrades=grades.map(grade=>{const {min,max}=draftBand(grade.code);return min===grade.steps[0]&&max===grade.steps[STEP_COUNT-1]?grade:{...grade,steps:stepsBetween(min,max)}});
-  const nextSettings:PositionSettings={};
-  for(const item of POSITIONS){
-   const draft=positionDraft[item.position],market=numberValue(draft.market);
-   if(draft.grade!==item.grade||market>0)nextSettings[item.position]={...(draft.grade!==item.grade?{grade:draft.grade}:{}),...(market>0?{marketRate:market}:{})};
-  }
-  setGrades(nextGrades);saveGrades(nextGrades);setSettings(nextSettings);savePositionSettings(nextSettings);
-  recordAudit({action:'Updated salary structure',module:'Compensation',description:`Grades ${nextGrades.map(grade=>`${grade.code} ${peso(grade.steps[0])}–${peso(grade.steps[STEP_COUNT-1])}`).join(', ')}; positions ${POSITIONS.map(item=>`${item.position} ${positionDraft[item.position].grade}`).join(', ')}.`});
+ // Edits save on their own: a grade's Min/Max and a Market Rate when the field is left, a Grade when it is picked.
+ const commitGrade=(code:string)=>{
+  const grade=grades.find(item=>item.code===code),{min,max}=draftBand(code);
+  if(!grade||!(min>0)||max<min||(min===grade.steps[0]&&max===grade.steps[STEP_COUNT-1]))return;
+  const next=grades.map(item=>item.code===code?{...item,steps:stepsBetween(min,max)}:item);
+  setGrades(next);saveGrades(next);
+  recordAudit({action:'Updated salary structure',module:'Compensation',description:`Grade ${code} daily range ${peso(min)}–${peso(max)}.`});
+ };
+ const commitPosition=(name:string,draft:{grade:string;market:string})=>{
+  const current=resolvePosition(name,settings);
+  if(!current)return;
+  const market=numberValue(draft.market),own=settings[name]??{};
+  const entry=current.custom?{...own,grade:draft.grade,...(market>0?{marketRate:market}:{})}:{...(draft.grade!==current.catalogGrade?{grade:draft.grade}:{}),...(market>0?{marketRate:market}:{})};
+  if(entry.grade===own.grade&&entry.marketRate===own.marketRate)return;
+  const next={...settings};
+  if(Object.keys(entry).length)next[name]=entry;else delete next[name];
+  setSettings(next);savePositionSettings(next);
+  recordAudit({action:'Updated salary structure',module:'Compensation',description:`${name}: grade ${draft.grade}, market rate ${market>0?peso(market):'researched rate'}.`});
+ };
+ const addPosition=(position:{name:string;department:string;grade:string;marketRate:number})=>{
+  const next={...settings,[position.name]:{department:position.department,grade:position.grade,marketRate:position.marketRate}};
+  setSettings(next);savePositionSettings(next);
+  setPositionDraft({...positionDraft,[position.name]:{grade:position.grade,market:String(position.marketRate)}});
+  recordAudit({action:'Added position',module:'Compensation',description:`Added ${position.name} (${position.department}), grade ${position.grade}, market rate ${peso(position.marketRate)}.`});
+  setAdding(false);
  };
  const rate=(employeeId:string,rating:number)=>{
   const next={...ratings};
@@ -96,23 +110,23 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
  const headings:Record<View,[string,string]>={format:['Salary Structure','Pay grades set the daily-rate range. Compa-ratio is rate ÷ range midpoint.'],placement:['Employee Placement','Where each employee sits inside their grade band'],history:['Salary History','Every salary change: initial salaries, merit increases, promotions and adjustments']};
 
  return <section aria-labelledby="structure-heading" className={panelClass}>
-  <PanelHeader id="structure-heading" title={headings[view][0]} subtitle={headings[view][1]} action={view==='format'&&canManage&&<div className="flex gap-2"><button type="button" className={ghost} disabled={!changed} onClick={resetFormat}>Reset</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={!changed||Boolean(badGrade)} onClick={saveFormat}>Save</Button></div>}/>
+  <PanelHeader id="structure-heading" title={headings[view][0]} subtitle={headings[view][1]} action={view==='format'&&canManage&&<Button className="!bg-indigo-600 hover:!bg-indigo-700" onClick={()=>setAdding(true)}><Plus size={15}/>Add</Button>}/>
   <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"><Segmented label="Salary Structure views" options={VIEWS} value={view} onChange={next=>{setView(next);setSearch('')}}/>{searchBox}</div>
 
   {view==='format'&&<>
    <div className="grid gap-4 px-6 pb-5 sm:grid-cols-2 lg:grid-cols-3">{grades.map(grade=><div key={grade.code} className="rounded-2xl border border-slate-200 p-4">
     <div className="text-[12px] text-slate-500">Grade {grade.code} (daily rate)</div>
-    {(['min','max'] as const).map(field=><label key={field} className="mt-2 flex items-center justify-between gap-3 text-[13px] text-slate-800">{field==='min'?'Min':'Max'}<input type="number" min="0" step="1" aria-label={`Grade ${grade.code} ${field}`} disabled={!canManage} className={`${input} max-w-[110px]`} value={gradeDraft[grade.code]?.[field]??''} onChange={event=>setGradeDraft({...gradeDraft,[grade.code]:{...gradeDraft[grade.code],[field]:event.target.value}})}/></label>)}
+    {(['min','max'] as const).map(field=><label key={field} className="mt-2 flex items-center justify-between gap-3 text-[13px] text-slate-800">{field==='min'?'Min':'Max'}<input type="number" min="0" step="1" aria-label={`Grade ${grade.code} ${field}`} disabled={!canManage} className={`${input} max-w-[110px]`} value={gradeDraft[grade.code]?.[field]??''} onChange={event=>setGradeDraft({...gradeDraft,[grade.code]:{...gradeDraft[grade.code],[field]:event.target.value}})} onBlur={()=>commitGrade(grade.code)}/></label>)}
    </div>)}</div>
    {badGrade&&<p role="alert" className="mx-6 mb-4 mt-0 text-[12px] text-red-700">Grade {badGrade.code}: enter a min above 0 and a max at least the min.</p>}
    <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-[13px]">
     <thead><tr className={theadClass}>{['Position','Grade','Daily Rate','Compa-ratio','Market Rate','Gap','Position in Range','Status'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${['Daily Rate','Compa-ratio','Market Rate','Gap'].includes(head)?'text-right':''}`}>{head}</th>)}</tr></thead>
     <tbody>{positionRows.map(row=><tr key={row.position} className="border-b border-slate-100 last:border-0">
      <td className="px-5 py-3 text-slate-900">{row.position}</td>
-     <td className="px-5 py-3">{canManage?<select aria-label={`${row.position} grade`} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px]" value={row.grade} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...positionDraft[row.position],grade:event.target.value}})}>{grades.map(grade=><option key={grade.code} value={grade.code}>{grade.code}</option>)}</select>:<span className="font-semibold">{row.grade}</span>}</td>
+     <td className="px-5 py-3">{canManage?<select aria-label={`${row.position} grade`} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px]" value={row.grade} onChange={event=>{const draft={...row.draft,grade:event.target.value};setPositionDraft({...positionDraft,[row.position]:draft});commitPosition(row.position,draft)}}>{grades.map(grade=><option key={grade.code} value={grade.code}>{grade.code}</option>)}</select>:<span className="font-semibold">{row.grade}</span>}</td>
      <td className="px-5 py-3 text-right tabular-nums text-slate-900">{peso(row.rate)}</td>
      <td className="px-5 py-3 text-right tabular-nums text-slate-800">{row.compaRatio?row.compaRatio.toFixed(2):'—'}</td>
-     <td className="px-5 py-3 text-right">{canManage?<input type="number" min="0" step="1" aria-label={`${row.position} market rate`} className={`${input} ml-auto max-w-[110px]`} placeholder={String(POSITIONS.find(item=>item.position===row.position)?.marketRate||(grades.find(grade=>grade.code===row.grade)?.marketRate??''))} value={positionDraft[row.position].market} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...positionDraft[row.position],market:event.target.value}})}/>:<span className="tabular-nums">{peso(row.market)}</span>}</td>
+     <td className="px-5 py-3 text-right">{canManage?<input type="number" min="0" step="1" aria-label={`${row.position} market rate`} className={`${input} ml-auto max-w-[110px]`} placeholder={String(defaultMarket(row.position,grades.find(grade=>grade.code===row.grade))||'')} value={row.draft.market} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...row.draft,market:event.target.value}})} onBlur={()=>commitPosition(row.position,row.draft)}/>:<span className="tabular-nums">{peso(row.market)}</span>}</td>
      <td className="px-5 py-3 text-right tabular-nums text-slate-800">{row.market?`${row.gap.toFixed(1)}%`:'—'}</td>
      <td className="px-5 py-3"><OutlinePill label={row.range}/></td>
      <td className="px-5 py-3">{row.market?<OutlinePill label={row.marketStatus}/>:'—'}</td>
@@ -152,8 +166,23 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
    </tr>})}</tbody>
   </table></div>}
 
+  {adding&&<AddPositionModal grades={grades} taken={allPositions(settings).map(item=>item.position)} departments={[...new Set([...DEPARTMENTS,...allPositions(settings).map(item=>item.department)])].sort((a,b)=>a.localeCompare(b))} onClose={()=>setAdding(false)} onAdd={addPosition}/>}
   {promoting&&<PromoteModal row={promoting} grades={grades} daysPerMonth={daysPerMonth} onClose={()=>setPromoting(null)} onDone={async()=>{setPromoting(null);await onChanged()}}/>}
  </section>;
+}
+
+function AddPositionModal({grades,taken,departments,onClose,onAdd}:{grades:SalaryGradeBand[];taken:string[];departments:string[];onClose:()=>void;onAdd:(position:{name:string;department:string;grade:string;marketRate:number})=>void}){
+ const [form,setForm]=useState({name:'',department:'',grade:grades[0]?.code??'',marketRate:''});
+ const name=form.name.trim(),marketRate=numberValue(form.marketRate);
+ const problem=!name?'Enter the position.':taken.some(item=>item.toLowerCase()===name.toLowerCase())||positionGrade(name)?'That position already exists.':!form.department.trim()?'Enter the department.':!(marketRate>0)?'Enter the daily market rate.':'';
+ return <Modal title="Add position" onClose={onClose}><div className="grid gap-4">
+  <Field label="Position"><TextInput value={form.name} maxLength={60} placeholder="Inventory Clerk" onChange={event=>setForm({...form,name:event.target.value})}/></Field>
+  <Field label="Department"><TextInput list="add-position-departments" value={form.department} maxLength={60} placeholder="Select department" onChange={event=>setForm({...form,department:event.target.value})}/><datalist id="add-position-departments">{departments.map(item=><option key={item} value={item}/>)}</datalist></Field>
+  <div className="grid gap-4 sm:grid-cols-2">
+   <Field label="Grade"><select className={input} value={form.grade} onChange={event=>setForm({...form,grade:event.target.value})}>{grades.map(grade=><option key={grade.code} value={grade.code}>{grade.code}{grade.name?` · ${grade.name}`:''}</option>)}</select></Field>
+   <Field label="Market rate (daily ₱)"><TextInput type="number" min="0" step="1" value={form.marketRate} onChange={event=>setForm({...form,marketRate:event.target.value})}/></Field>
+  </div>
+ </div>{problem&&(form.name||form.marketRate)&&<p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">{problem}</p>}<div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={Boolean(problem)} onClick={()=>onAdd({name,department:form.department.trim(),grade:form.grade,marketRate})}>Add</Button></div></Modal>;
 }
 
 function PromoteModal({row,grades,daysPerMonth,onClose,onDone}:{row:Row;grades:SalaryGradeBand[];daysPerMonth:number;onClose:()=>void;onDone:()=>Promise<void>}){
