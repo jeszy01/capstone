@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
-import {Check,FileText,History,Hourglass,MoreVertical,RotateCcw,ThumbsDown} from 'lucide-react';
-import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,Tabs,ghost,input} from '../components/common/ui';
+import {Check,FileText,MoreVertical,RotateCcw,ThumbsDown} from 'lucide-react';
+import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,ghost,input} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {can} from '../features/auth/permissions';
@@ -11,10 +11,17 @@ import type {ClaimReview,ExpenseClaim} from '../features/claims/claimsTypes';
 import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
 
-type View='open'|'history';
-const VIEWS=[{id:'open',label:'Awaiting Review',shortLabel:'Awaiting',icon:Hourglass},{id:'history',label:'History / Report',shortLabel:'History',icon:History}] as const;
 // Returned claims stay open: Finance can still approve them once corrected.
 const isOpen=(claim:ExpenseClaim)=>claim.approvalStatus==='Pending Approval'||claim.approvalStatus==='Returned';
+const isPaid=(claim:ExpenseClaim)=>claim.paymentStatus==='Paid'||claim.paymentStatus==='Included in Payroll';
+const FILTERS=[
+ {id:'all',label:'All',match:()=>true},
+ {id:'pending',label:'Pending',match:isOpen},
+ {id:'approved',label:'Approved',match:(claim:ExpenseClaim)=>claim.approvalStatus==='Approved'&&!isPaid(claim)},
+ {id:'paid',label:'Paid',match:isPaid},
+ {id:'rejected',label:'Rejected',match:(claim:ExpenseClaim)=>claim.approvalStatus==='Rejected'},
+] as const;
+type Filter=(typeof FILTERS)[number]['id'];
 // Returning or rejecting a claim needs a reason; the employee sees it in ESS.
 type Pending={kind:'reject'|'return';claim:ExpenseClaim};
 
@@ -24,12 +31,12 @@ export default function Claims(){
  const[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
  const[selected,setSelected]=useState<ExpenseClaim|null>(null);
  const[pending,setPending]=useState<Pending|null>(null),[reason,setReason]=useState(''),[saving,setSaving]=useState(false),[actionError,setActionError]=useState('');
- const[view,setView]=useState<View>('open');
  const financeAuthorized=can('claims.approve');
- // ?status=pending (from the Dashboard) shows only claims still pending approval.
- const[params,setParams]=useSearchParams(),pendingOnly=params.get('status')==='pending';
- const showAllOpen=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
- const openClaims=claims.filter(claim=>pendingOnly?claim.approvalStatus==='Pending Approval':isOpen(claim));
+ // ?status=pending (from the Dashboard) opens on Pending.
+ const[params]=useSearchParams();
+ const[filter,setFilter]=useState<Filter>(params.get('status')==='pending'?'pending':'all');
+ const match=FILTERS.find(item=>item.id===filter)?.match??(()=>true);
+ const list=claims.filter(match).sort((a,b)=>b.date.localeCompare(a.date)||b.claimNumber.localeCompare(a.claimNumber));
  const load=()=>{setLoading(true);setLoadError('');employeeService.getAll().then(items=>{setEmployees(items);setClaims(normalizeClaims(items))}).catch(cause=>{setClaims(normalizeClaims([]));setLoadError(cause instanceof Error&&cause.message?cause.message:'Employee records could not be loaded.')}).finally(()=>setLoading(false))};
  useEffect(()=>{load()},[]);
  // Claim decisions are logged by the server when the claim is saved; the employee sees the status in ESS.
@@ -41,25 +48,18 @@ export default function Claims(){
  };
  const openPending=(kind:Pending['kind'],claim:ExpenseClaim)=>{setReason('');setPending({kind,claim})};
  const confirmPending=async()=>{if(!pending||reason.trim().length<3)return;setSaving(true);const done=await update(pending.claim.id,{approvalStatus:pending.kind==='reject'?'Rejected':'Returned',notes:reason.trim()});setSaving(false);if(done)setPending(null)};
- const list=view==='open'?openClaims:claims;
  return <div className="claims-page space-y-5">
   {loadError&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{loadError} Employee names may show as IDs until this loads.</ErrorAlert>}
   {actionError&&<ErrorAlert title="The claim was not updated." onRetry={load}>{actionError}</ErrorAlert>}
   <Card className={flushCard}>
    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-50 px-5 py-4">
-    <div className="min-w-0">
-     <h2 className="m-0 flex flex-wrap items-center gap-2 text-[15px] font-semibold text-[#17345b]">{view==='open'?'Claims awaiting review':'Claims history'}<span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{list.length} {list.length===1?'claim':'claims'}</span></h2>
-     <p className="mb-0 mt-1 text-[12px] text-slate-500">{view==='open'?'Claims employees submitted from ESS, waiting for review. Returned claims come back once the employee corrects them.':'Every claim submitted from ESS, with its current status.'}</p>
-    </div>
-    <div className="flex flex-wrap items-center gap-2">
-     {pendingOnly&&view==='open'&&<span className="inline-flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-800">Showing pending approval<button type="button" className="text-blue-700 underline" onClick={showAllOpen}>Show all</button></span>}
-     <Tabs label="Claims views" value={view} onChange={setView} tabs={VIEWS} className=""/>
+    <span className="text-[12px] font-medium text-slate-500">{list.length} {list.length===1?'claim':'claims'}</span>
+    <div role="tablist" aria-label="Filter claims by status" className="inline-flex flex-wrap gap-1 rounded-xl border border-slate-200/70 bg-slate-100/80 p-1">
+     {FILTERS.map(item=><button key={item.id} type="button" role="tab" id={`claims-filter-${item.id}`} aria-selected={filter===item.id} aria-controls="claims-list" onClick={()=>setFilter(item.id)} className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition ${filter===item.id?'bg-white text-indigo-600 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>{item.label}</button>)}
     </div>
    </div>
-   <section role="tabpanel" aria-label={view==='open'?'Claims awaiting review':'Claims history'} className="min-w-0">
-    {loading?<LoadingState>Loading claims…</LoadingState>:view==='open'
-     ?<ClaimsTable claims={openClaims} employees={employees} financeAuthorized={financeAuthorized} onUpdate={(id,patch)=>void update(id,patch)} onReject={claim=>openPending('reject',claim)} onReturn={claim=>openPending('return',claim)} onView={setSelected}/>
-     :<ClaimsReport claims={claims} employees={employees} onView={setSelected}/>}
+   <section id="claims-list" role="tabpanel" aria-labelledby={`claims-filter-${filter}`} className="min-w-0">
+    {loading?<LoadingState>Loading claims…</LoadingState>:<ClaimsTable claims={list} employees={employees} financeAuthorized={financeAuthorized} onUpdate={(id,patch)=>void update(id,patch)} onReject={claim=>openPending('reject',claim)} onReturn={claim=>openPending('return',claim)} onView={setSelected}/>}
    </section>
   </Card>
   {selected&&<DetailsModal claim={selected} employees={employees} onClose={()=>setSelected(null)}/>}
@@ -72,16 +72,17 @@ export default function Claims(){
 }
 
 function ClaimsTable({claims,employees,financeAuthorized,onUpdate,onReject,onReturn,onView}:{claims:ExpenseClaim[];employees:Employee[];financeAuthorized:boolean;onUpdate:(id:string,patch:ClaimReview)=>void;onReject:(claim:ExpenseClaim)=>void;onReturn:(claim:ExpenseClaim)=>void;onView:(claim:ExpenseClaim)=>void}){
- return <div role="region" aria-label="Claims awaiting review table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[880px] text-left text-[13px]"><caption className="sr-only">Claims awaiting review, including claim number, employee, type, date, amount, status, and available actions.</caption>
-  <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Actions'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
-  <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No claims are waiting for review.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
+ return <div role="region" aria-label="Claims table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[900px] text-left text-[13px]"><caption className="sr-only">Claims with claim number, employee, type, date, amount, status, receipt, and available actions. Open a claim to read its business purpose.</caption>
+  <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Receipt','Actions'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
+  <tbody>{claims.length===0?<tr><td colSpan={8}><Empty>No claims with this status.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
    <th scope="row" className={rowHeader}>{claim.claimNumber}</th>
    <td className={cell}><EmployeeCell employees={employees} claim={claim}/></td>
    <td className={`${cell} whitespace-nowrap text-slate-700`}>{claim.claimType}</td>
    <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.date)}</td>
    <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
    <td className={cell}><ClaimStatusBadge claim={claim}/>{claim.approvalStatus==='Returned'&&claim.notes&&<div className="mt-1 max-w-[220px] text-[11px] text-amber-700">{claim.notes}</div>}</td>
-   <td className={cell}><ClaimActions claim={claim} financeAuthorized={financeAuthorized} onUpdate={onUpdate} onReject={onReject} onReturn={onReturn} onView={onView}/></td>
+   <td className={`${cell} whitespace-nowrap`}>{claim.receiptName?<span className="text-slate-600" title={claim.receiptName}>Attached</span>:<span className="font-medium text-red-700">Missing</span>}</td>
+   <td className={cell}>{isOpen(claim)?<ClaimActions claim={claim} financeAuthorized={financeAuthorized} onUpdate={onUpdate} onReject={onReject} onReturn={onReturn} onView={onView}/>:<button className={ghost} onClick={()=>onView(claim)}>View</button>}</td>
   </tr>)}</tbody></table></div>;
 }
 
@@ -109,22 +110,6 @@ function ClaimActions({claim,financeAuthorized,onUpdate,onReject,onReturn,onView
    <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] font-medium text-red-700 hover:bg-red-50" onClick={pick(()=>onReject(claim))}><ThumbsDown size={14}/>Reject</button>
   </div>}
  </div>;
-}
-
-function ClaimsReport({claims,employees,onView}:{claims:ExpenseClaim[];employees:Employee[];onView:(claim:ExpenseClaim)=>void}){
- const sorted=[...claims].sort((a,b)=>b.date.localeCompare(a.date)||b.claimNumber.localeCompare(a.claimNumber));
- return <div role="region" aria-label="Claims history table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[900px] text-left text-[13px]"><caption className="sr-only">Claims history with employee, type, date, amount, status, receipt, and available actions. Open a claim to read its business purpose.</caption>
-  <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Receipt','Actions'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
-  <tbody>{sorted.length===0?<tr><td colSpan={8}><Empty>No claim history yet.</Empty></td></tr>:sorted.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
-   <th scope="row" className={rowHeader}>{claim.claimNumber}</th>
-   <td className={cell}><EmployeeCell employees={employees} claim={claim}/></td>
-   <td className={`${cell} whitespace-nowrap text-slate-700`}>{claim.claimType}</td>
-   <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.date)}</td>
-   <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
-   <td className={cell}><ClaimStatusBadge claim={claim}/></td>
-   <td className={`${cell} whitespace-nowrap`}>{claim.receiptName?<span className="text-slate-600" title={claim.receiptName}>Attached</span>:<span className="font-medium text-red-700">Missing</span>}</td>
-   <td className={cell}><div className="flex flex-nowrap items-center gap-2"><button className={ghost} onClick={()=>onView(claim)}>View</button></div></td>
-  </tr>)}</tbody></table></div>;
 }
 
 function Detail({label,children}:{label:string;children:React.ReactNode}){return <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt><dd className="m-0 mt-1 text-[13px] text-slate-800">{children}</dd></div>}
