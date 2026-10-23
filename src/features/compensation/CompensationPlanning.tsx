@@ -1,16 +1,28 @@
 import {useCallback,useEffect,useMemo,useState} from 'react';
+import {useSearchParams} from 'react-router-dom';
 import {Gift,RefreshCw,ShieldCheck,TrendingUp,Wallet} from 'lucide-react';
 import {ErrorAlert,PageHeader,ghost} from '../../components/common/ui';
+import type {Employee} from '../../types/domain';
+import {employeeService} from '../employees/employeeService';
 import {loadRates} from '../settings/payrollSettings';
 import {compensationService} from './compensationService';
 import {compactPeso,compensationSummary} from './compensationSummary';
 import {activeCompensations,today} from './compensationState';
-import type {BonusIncentive,EmployeeCompensation} from './compensationState';
+import type {BonusIncentive,CompensationProposal,EmployeeCompensation} from './compensationState';
+import {AwardsPanel,Segmented,SummaryCard} from './AwardsPanel';
 
-// Compensation: the monthly payroll cost summary from the salaries and allowances in effect today.
+const TABS=[{id:'overview',label:'Overview'},{id:'awards',label:'Bonuses & Incentives'}] as const;
+type Tab=(typeof TABS)[number]['id'];
+
+// Compensation: the monthly payroll cost summary (Overview) and the bonus, incentive and merit register.
 export default function CompensationPlanning(){
+  const [params,setParams]=useSearchParams();
+  const tab:Tab=params.get('tab')==='awards'?'awards':'overview';
+  const setTab=(next:Tab)=>setParams(next==='overview'?{}:{tab:next},{replace:true});
   const [assignments,setAssignments]=useState<EmployeeCompensation[]>([]);
   const [bonuses,setBonuses]=useState<BonusIncentive[]>([]);
+  const [proposals,setProposals]=useState<CompensationProposal[]>([]);
+  const [employees,setEmployees]=useState<Employee[]>([]);
   const [loading,setLoading]=useState(true);
   const [loadError,setLoadError]=useState('');
   const [legacyImportWarning,setLegacyImportWarning]=useState('');
@@ -27,9 +39,11 @@ export default function CompensationPlanning(){
   const load=useCallback(async()=>{
     setLoading(true);
     try{
-      const data=await compensationService.load();
+      const [data,people]=await Promise.all([compensationService.load(),employeeService.getAll().catch(()=>[] as Employee[])]);
       setAssignments(data.assignments);
       setBonuses(data.bonuses);
+      setProposals(data.proposals);
+      setEmployees(people);
       setLegacyImportWarning(data.legacyImportWarning);
       setLoadError('');
     }catch(cause){
@@ -54,17 +68,14 @@ export default function CompensationPlanning(){
   return <div className="space-y-5">
     <PageHeader
       title="Compensation"
-      description="Salaries, allowances and cost"
+      description="Salaries, allowances, bonuses and cost"
       actions={<button type="button" className={ghost} aria-label="Refresh compensation records" disabled={loading} onClick={()=>void load()}><RefreshCw size={15} className={loading?'animate-spin':''}/>Refresh</button>}
     />
+    <Segmented label="Compensation sections" options={TABS} value={tab} onChange={setTab}/>
     {loadError&&<ErrorAlert title="Compensation records are unavailable." onRetry={()=>void load()}>{loadError}</ErrorAlert>}
     {legacyImportWarning&&<div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">{legacyImportWarning}</div>}
-    <section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,caption,icon:Icon,tone})=><div key={label} className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)]">
-      <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-indigo-50/70"/>
-      <span aria-hidden="true" className={`relative grid h-10 w-10 place-items-center rounded-xl ${tone}`}><Icon size={20}/></span>
-      <div className="relative mt-5 text-[12px] text-slate-500">{label}</div>
-      <div className="relative mt-1 text-[24px] font-bold tracking-tight text-slate-900 tabular-nums">{ready?compactPeso(value):'—'}</div>
-      <span className="relative mt-3 inline-block rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">{ready?caption:loading?'Loading…':'Unavailable'}</span>
-    </div>)}</section>
+    {tab==='overview'
+      ?<section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,caption,icon,tone})=><SummaryCard key={label} label={label} icon={icon} tone={tone} value={ready?compactPeso(value):'—'} caption={ready?caption:loading?'Loading…':'Unavailable'}/>)}</section>
+      :<AwardsPanel employees={employees} rewards={bonuses} proposals={proposals} assignments={activeAssignments} loading={loading} onChanged={load}/>}
   </div>;
 }

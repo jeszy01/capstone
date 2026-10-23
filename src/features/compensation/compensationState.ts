@@ -7,7 +7,7 @@ export type CompensationProposal={id:string;employeeId:string;type:'Salary Adjus
 export type RewardFrequency='Per Cutoff'|'Monthly';
 export type RewardStatus='Pending'|'Approved'|'Rejected'|'Active'|'Inactive';
 // Allowances use allowanceType, frequency, effectiveDate and Active/Inactive. Incentives and bonuses use cutoff, notes (reason), taxable and review status.
-export type BonusIncentive={id:string;employeeId:string;type:'Allowance'|'Bonus'|'Incentive';amount:number;effectiveDate:string;notes:string;status:RewardStatus;createdAt:string;allowanceType:string;frequency:RewardFrequency;taxable:boolean;cutoffStart:string;cutoffEnd:string};
+export type BonusIncentive={id:string;employeeId:string;type:'Allowance'|'Bonus'|'Incentive';amount:number;effectiveDate:string;notes:string;status:RewardStatus;createdAt:string;allowanceType:string;frequency:RewardFrequency;taxable:boolean;cutoffStart:string;cutoffEnd:string;/** The user who entered it; they never approve it themselves. */createdBy?:string};
 export const isBonusReward=(reward:Pick<BonusIncentive,'type'>)=>reward.type==='Bonus'||reward.type==='Incentive';
 export type CompensationHistory={id:string;employeeId:string;source:string;type:string;previousSalary:number;newSalary:number;adjustmentAmount?:number;reason?:string;effectiveDate:string;status?:string;recordedAt:string;appliedAt?:string;assignmentId?:string;proposalId?:string;actorName?:string};
 
