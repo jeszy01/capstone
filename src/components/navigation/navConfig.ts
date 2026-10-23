@@ -11,7 +11,6 @@ export const modules:NavItem[]=[
  {label:'Compensation',to:'/compensation/salary-structure',icon:BarChart3,children:[
   {label:'Salary Structure',to:'/compensation/salary-structure'},
   {label:'Adjustments',to:'/compensation/adjustments'},
-  {label:'History',to:'/compensation/history'},
  ]},
  {label:'Claims',to:'/claims-reimbursement',icon:FileText},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse},

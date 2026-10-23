@@ -47,13 +47,12 @@ import {
 } from './compensationState';
 import type {
   BonusIncentive,
-  CompensationHistory,
   CompensationProposal,
   EmployeeCompensation,
   SalaryGrade,
 } from './compensationState';
 
-type Section='salary-structure'|'adjustments'|'history';
+type Section='salary-structure'|'adjustments';
 const adjustmentTabs=[{id:'salary',label:'Salary Adjustments',shortLabel:'Salary',icon:TrendingUp},{id:'allowances',label:'Allowances',shortLabel:'Allowances',icon:Wallet},{id:'incentives',label:'Incentives & Bonuses',shortLabel:'Incentives',icon:Gift}] as const;
 type AdjustmentsTab=(typeof adjustmentTabs)[number]['id'];
 type Details={title:string;fields:Array<[string,string]>};
@@ -75,7 +74,6 @@ export default function CompensationPlanning({section}:{section:Section}){
   const [grades,setGrades]=useState<SalaryGrade[]>([]);
   const [assignments,setAssignments]=useState<EmployeeCompensation[]>([]);
   const [proposals,setProposals]=useState<CompensationProposal[]>([]);
-  const [history,setHistory]=useState<CompensationHistory[]>([]);
   const [bonuses,setBonuses]=useState<BonusIncentive[]>([]);
   const [modal,setModal]=useState<ModalName>(null);
   const [proposalEmployeeId,setProposalEmployeeId]=useState('');
@@ -121,7 +119,6 @@ export default function CompensationPlanning({section}:{section:Section}){
       setGrades(data.grades);
       setAssignments(data.assignments);
       setProposals(data.proposals);
-      setHistory(data.history);
       setBonuses(data.bonuses);
       setLegacyImportWarning(data.legacyImportWarning);
       setLoadError('');
@@ -172,8 +169,7 @@ export default function CompensationPlanning({section}:{section:Section}){
   const pendingOnly=params.get('status')==='pending',mineOnly=params.get('mine')==='1',userId=getCurrentUser()?.id;
   const showAllProposals=()=>{const next=new URLSearchParams(params);next.delete('status');next.delete('mine');setParams(next,{replace:true})};
   const filteredProposals=proposals.filter(item=>(!pendingOnly||item.status==='Pending HR Review')&&(!mineOnly||item.createdBy===userId)).filter(item=>matches(search,employeeLabelFor(item.employeeId),item.type,item.status,item.effectiveDate,item.notes,item.rejectionReason));
-  const filteredHistory=history.filter(item=>matches(search,employeeLabelFor(item.employeeId),item.type,item.source,item.status,item.effectiveDate,item.actorName,item.reason));
-  const missingReferences=[...new Set([...assignments,...proposals,...bonuses,...history].map(item=>item.employeeId))]
+  const missingReferences=[...new Set([...assignments,...proposals,...bonuses].map(item=>item.employeeId))]
     .filter(reference=>!findCompensationEmployee(employees,reference));
   const employeeReady=!employeeLoading&&employees.length>0;
   const proposalBlocked=!employeeReady||!activeAssignments.some(item=>findCompensationEmployee(employees,item.employeeId));
@@ -256,13 +252,6 @@ export default function CompensationPlanning({section}:{section:Section}){
       <div className="mt-4 flex flex-wrap gap-2">{PAY_GRADES.map(grade=><span key={grade.code} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[12px] text-slate-600"><b className="font-semibold text-slate-800">{grade.code}</b> · {wholePeso(grade.dailyRate)}/day</span>)}</div>
       <Card className="mt-3 overflow-hidden !p-0"><div className="overflow-x-auto"><table className={`${tableClass} min-w-[560px]`}><thead><tr className={headerClass}>{['Position','Department','Grade','Daily Rate'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}</tr></thead><tbody>
         {POSITIONS.map(item=><tr key={item.position} className={rowClass}><td className="px-4 py-3 font-medium text-slate-800">{item.position}</td><td className="px-4 py-3 text-slate-600">{item.department}</td><td className="px-4 py-3 text-slate-600">{item.grade}</td><td className="px-4 py-3 tabular-nums text-slate-800">{wholePeso(positionGrade(item.position)?.dailyRate??0)}</td></tr>)}
-      </tbody></table></div></Card>
-    </section>}
-    {section==='history'&&<section id="history-panel" aria-labelledby="history-heading">
-      <SectionHeading id="history-heading" title="Compensation History" description="A read-only timeline of prior salaries, proposed changes, decisions and effective dates."/>
-      <SearchToolbar label="Search compensation history" value={search} onChange={setSearch} shown={filteredHistory.length} total={history.length} placeholder="Search employee, reviewer, type or reason"/>
-      <Card className="mt-3 overflow-hidden !p-0"><div className="overflow-x-auto"><table className={`${tableClass} min-w-[1120px]`}><thead><tr className={headerClass}>{['Employee','Previous salary','New salary','Change type','Effective date','Reviewed by','Status'].map(label=><th key={label} className="px-4 py-3.5">{label}</th>)}<th className={actionCell}>Actions</th></tr></thead><tbody>
-        {compensationLoading?<TableMessage colSpan={8} loading>Loading compensation history…</TableMessage>:loadError?<TableMessage colSpan={8}>Compensation history could not be loaded.</TableMessage>:!filteredHistory.length?<TableMessage colSpan={8}>{history.length?'No history rows match this search.':'No compensation history yet. Completed decisions and assignments will appear here.'}</TableMessage>:filteredHistory.map(item=>{const applied=item.status!=='Rejected'&&(Boolean(item.appliedAt)||item.status==='Applied'||item.effectiveDate<=date);const status=applied?'Effective':item.status||'Scheduled';const dateApplied=applied?(item.appliedAt||item.effectiveDate||item.recordedAt.slice(0,10)):'Not recorded';return <tr key={item.id} className={rowClass}><td className="px-4 py-3.5"><div className="font-semibold text-slate-800">{employeeLabelFor(item.employeeId)}</div><div className="mt-0.5 text-[11px] text-slate-400">{item.employeeId}</div></td><td className="px-4 py-3.5">{peso(item.previousSalary)}</td><td className="px-4 py-3.5 font-semibold">{peso(item.newSalary)}</td><td className="px-4 py-3.5">{item.type||item.source}</td><td className="px-4 py-3.5">{formatDate(item.effectiveDate)}</td><td className="px-4 py-3.5">{item.actorName||'Not recorded'}</td><td className="px-4 py-3.5"><StatusBadge status={status}/></td><td className={actionCell}><div className="flex justify-end"><button type="button" className={ghost} onClick={()=>setDetails({title:'Compensation History Record',fields:[['Employee',employeeLabelFor(item.employeeId)],['Employee reference',item.employeeId],['Previous salary',peso(item.previousSalary)],['New salary',peso(item.newSalary)],['Change type',item.type||item.source],['Adjustment amount',peso(item.adjustmentAmount??item.newSalary-item.previousSalary)],['Effective date',formatDate(item.effectiveDate)],['Reviewed by',item.actorName||'Not recorded'],['Reason',item.reason||'Not recorded'],['Status',status],['Date applied',dateApplied==='Not recorded'?dateApplied:formatDate(dateApplied)],['Recorded at',formatDate(item.recordedAt)]]})}><Eye size={14}/>Details</button></div></td></tr>})}
       </tbody></table></div></Card>
     </section>}
     {section==='adjustments'&&<section id="adjustments-panel" aria-labelledby="adjustments-heading">
