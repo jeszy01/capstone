@@ -25,8 +25,9 @@ export const MARKET_TOLERANCE=0.02;
  */
 export function placement(position:string|undefined,dailyRate:number,grades:SalaryGradeBand[],daysPerMonth:number,settings:PositionSettings=loadPositionSettings()):Placement{
  const code=positionGradeCode(position,settings),grade=code?grades.find(item=>item.code===code)??null:null;
- const ownMarket=settings[positionGrade(position)?.position??'']?.marketRate;
- const market=grade?(ownMarket&&ownMarket>0?ownMarket:grade.marketRate):0;
+ // Market rate: HR's rate for the position, else the catalog's researched rate, else the grade's.
+ const entry=positionGrade(position),ownMarket=settings[entry?.position??'']?.marketRate;
+ const market=grade?(ownMarket&&ownMarket>0?ownMarket:entry?.marketRate||grade.marketRate):0;
  const rate=round(dailyRate);
  const empty={grade,step:0,dailyRate:rate,bandMin:0,bandMax:0,compaRatio:0,marketRate:0,marketGap:0,marketStatus:null,rangePosition:0};
  if(!grade)return {...empty,status:rate>0?'No grade':'No salary'};

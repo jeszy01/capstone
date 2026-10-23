@@ -68,7 +68,7 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
   const draft=positionDraft[item.position],grade=grades.find(band=>band.code===draft.grade),{min,max}=draftBand(draft.grade);
   const rates=rows.filter(row=>row.dailyRate>0&&positionGrade(row.employee.position)?.position===item.position).map(row=>row.dailyRate);
   const rate=rates.length?Math.round(rates.reduce((sum,value)=>sum+value,0)/rates.length*100)/100:min;
-  const market=numberValue(draft.market)>0?numberValue(draft.market):grade?.marketRate??0;
+  const market=numberValue(draft.market)>0?numberValue(draft.market):item.marketRate||(grade?.marketRate??0);
   const gap=market>0?Math.round((rate-market)/market*1000)/10:0;
   return {position:item.position,grade:draft.grade,rate,market,gap,compaRatio:min>0&&max>0?rate/((min+max)/2):0,
    range:rate<min?'Below range':rate>max?'Above range':'Within range',marketStatus:Math.abs(gap)<=MARKET_TOLERANCE*100?'At market':gap>0?'Above market':'Below market'};
@@ -114,7 +114,7 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
      <td className="px-5 py-3">{canManage?<select aria-label={`${row.position} grade`} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px]" value={row.grade} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...positionDraft[row.position],grade:event.target.value}})}>{grades.map(grade=><option key={grade.code} value={grade.code}>{grade.code}</option>)}</select>:<span className="font-semibold">{row.grade}</span>}</td>
      <td className="px-5 py-3 text-right tabular-nums text-slate-900">{peso(row.rate)}</td>
      <td className="px-5 py-3 text-right tabular-nums text-slate-800">{row.compaRatio?row.compaRatio.toFixed(2):'—'}</td>
-     <td className="px-5 py-3 text-right">{canManage?<input type="number" min="0" step="1" aria-label={`${row.position} market rate`} className={`${input} ml-auto max-w-[110px]`} placeholder={String(grades.find(grade=>grade.code===row.grade)?.marketRate??'')} value={positionDraft[row.position].market} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...positionDraft[row.position],market:event.target.value}})}/>:<span className="tabular-nums">{peso(row.market)}</span>}</td>
+     <td className="px-5 py-3 text-right">{canManage?<input type="number" min="0" step="1" aria-label={`${row.position} market rate`} className={`${input} ml-auto max-w-[110px]`} placeholder={String(POSITIONS.find(item=>item.position===row.position)?.marketRate||(grades.find(grade=>grade.code===row.grade)?.marketRate??''))} value={positionDraft[row.position].market} onChange={event=>setPositionDraft({...positionDraft,[row.position]:{...positionDraft[row.position],market:event.target.value}})}/>:<span className="tabular-nums">{peso(row.market)}</span>}</td>
      <td className="px-5 py-3 text-right tabular-nums text-slate-800">{row.market?`${row.gap.toFixed(1)}%`:'—'}</td>
      <td className="px-5 py-3"><OutlinePill label={row.range}/></td>
      <td className="px-5 py-3">{row.market?<OutlinePill label={row.marketStatus}/>:'—'}</td>

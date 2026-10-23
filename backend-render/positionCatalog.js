@@ -8,25 +8,27 @@ export const PAY_GRADES = [
   { code: 'G5', dailyRate: 1600 },
 ];
 
+// marketRate: the daily market rate, from Indeed Philippines average monthly salaries (October 2026) divided by 22 working
+// days, and never below the NCR minimum wage (₱755 a day, Wage Order NCR-28). HR can change it in Salary Structure.
 export const POSITIONS = [
-  { position: 'Rider', department: 'Fleet and Transportation', grade: 'G1' },
-  { position: 'Warehouse Helper', department: 'Supply Chain', grade: 'G1' },
-  { position: 'Utility Staff', department: 'Facilities', grade: 'G1' },
-  { position: 'Dispatcher', department: 'Fleet and Transportation', grade: 'G2' },
-  { position: 'Driver', department: 'Fleet and Transportation', grade: 'G2' },
-  { position: 'Warehouse Staff', department: 'Supply Chain', grade: 'G2' },
-  { position: 'Customer Support', department: 'E-Commerce Support', grade: 'G2' },
-  { position: 'Records Clerk', department: 'Facilities and Admin', grade: 'G2' },
-  { position: 'HR Staff', department: 'HR', grade: 'G3' },
-  { position: 'Accounting Staff', department: 'Finance', grade: 'G3' },
-  { position: 'Procurement Staff', department: 'Supply Chain', grade: 'G3' },
-  { position: 'Fleet Coordinator', department: 'Fleet and Transportation', grade: 'G3' },
-  { position: 'Warehouse Supervisor', department: 'Supply Chain', grade: 'G4' },
-  { position: 'Fleet Supervisor', department: 'Fleet and Transportation', grade: 'G4' },
-  { position: 'Finance Supervisor', department: 'Finance', grade: 'G4' },
-  { position: 'HR Manager', department: 'HR', grade: 'G5' },
-  { position: 'Finance Manager', department: 'Finance', grade: 'G5' },
-  { position: 'Operations Manager', department: 'E-Commerce Operations', grade: 'G5' },
+  { position: 'Rider', department: 'Fleet and Transportation', grade: 'G1', marketRate: 804 },
+  { position: 'Warehouse Helper', department: 'Supply Chain', grade: 'G1', marketRate: 755 },
+  { position: 'Utility Staff', department: 'Facilities', grade: 'G1', marketRate: 755 },
+  { position: 'Dispatcher', department: 'Fleet and Transportation', grade: 'G2', marketRate: 799 },
+  { position: 'Driver', department: 'Fleet and Transportation', grade: 'G2', marketRate: 794 },
+  { position: 'Warehouse Staff', department: 'Supply Chain', grade: 'G2', marketRate: 755 },
+  { position: 'Customer Support', department: 'E-Commerce Support', grade: 'G2', marketRate: 965 },
+  { position: 'Records Clerk', department: 'Facilities and Admin', grade: 'G2', marketRate: 765 },
+  { position: 'HR Staff', department: 'HR', grade: 'G3', marketRate: 904 },
+  { position: 'Accounting Staff', department: 'Finance', grade: 'G3', marketRate: 838 },
+  { position: 'Procurement Staff', department: 'Supply Chain', grade: 'G3', marketRate: 834 },
+  { position: 'Fleet Coordinator', department: 'Fleet and Transportation', grade: 'G3', marketRate: 1025 },
+  { position: 'Warehouse Supervisor', department: 'Supply Chain', grade: 'G4', marketRate: 1083 },
+  { position: 'Fleet Supervisor', department: 'Fleet and Transportation', grade: 'G4', marketRate: 1155 },
+  { position: 'Finance Supervisor', department: 'Finance', grade: 'G4', marketRate: 1469 },
+  { position: 'HR Manager', department: 'HR', grade: 'G5', marketRate: 2062 },
+  { position: 'Finance Manager', department: 'Finance', grade: 'G5', marketRate: 2254 },
+  { position: 'Operations Manager', department: 'E-Commerce Operations', grade: 'G5', marketRate: 2065 },
 ];
 
 export const DEPARTMENTS = [...new Set(POSITIONS.map(p => p.department))].sort((a, b) => a.localeCompare(b));

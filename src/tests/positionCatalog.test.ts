@@ -3,7 +3,7 @@ import {DEPARTMENTS,PAY_GRADES,POSITIONS,positionGrade} from '../../backend-rend
 
 describe('position catalog',()=>{
  it('gives each position its department, grade and daily rate',()=>{
-  expect(positionGrade('Rider')).toEqual({position:'Rider',department:'Fleet and Transportation',grade:'G1',dailyRate:755});
+  expect(positionGrade('Rider')).toEqual({position:'Rider',department:'Fleet and Transportation',grade:'G1',marketRate:804,dailyRate:755});
   expect(positionGrade(' records clerk ')?.dailyRate).toBe(850);
   expect(positionGrade('Accounting Staff')?.dailyRate).toBe(1000);
   expect(positionGrade('Fleet Supervisor')?.dailyRate).toBe(1250);

@@ -27,9 +27,10 @@ describe('salary grades with steps',()=>{
 describe('employee placement',()=>{
  it('finds the step, band, compa-ratio, market position and range position',()=>{
   const row=placement('Rider',832,grades,22);
-  expect(row).toMatchObject({step:3,bandMin:16610,bandMax:20196,compaRatio:0.99,marketRate:18414,marketStatus:'At market',status:'Within band'});
+  expect(row).toMatchObject({step:3,bandMin:16610,bandMax:20196,compaRatio:0.99,marketRate:17688,marketStatus:'Above market',marketGap:3.5,status:'Within band'});
   expect(row.rangePosition).toBeCloseTo(0.47,2);
-  expect(placement('Rider',755,grades,22)).toMatchObject({step:1,rangePosition:0,marketStatus:'Below market',marketGap:-9.8});
+  expect(placement('Rider',755,grades,22)).toMatchObject({step:1,rangePosition:0,marketStatus:'Below market',marketGap:-6.1});
+  expect(placement('Rider',810,grades,22)).toMatchObject({marketStatus:'At market'});
   expect(placement('Rider',1000,grades,22)).toMatchObject({step:5,status:'Above band',marketStatus:'Above market',rangePosition:1});
   expect(placement('Rider',700,grades,22)).toMatchObject({step:0,status:'Below band'});
  });
