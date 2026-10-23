@@ -19,7 +19,7 @@ import {Avatar,MessageRow,PanelHeader,Segmented,panelClass,theadClass} from './c
 type View='format'|'placement'|'history';
 const VIEWS=[{id:'format',label:'Format'},{id:'placement',label:'Placement'},{id:'history',label:'History'}] as const;
 type Props={employees:Employee[];assignments:EmployeeCompensation[];history:CompensationHistory[];proposals:CompensationProposal[];loading:boolean;daysPerMonth:number;onChanged:()=>Promise<void>};
-type Row={employee:Employee}&Placement;
+type Row={employee:Employee;basic:number}&Placement;
 
 const RANGE_TONE:Record<RangeStatus,string>={'Within band':'text-emerald-700','Below band':'text-amber-700','Above band':'text-blue-700','No grade':'text-slate-500','No salary':'text-red-700'};
 const BAR_TONE:Record<RangeStatus,string>={'Within band':'bg-emerald-600','Below band':'bg-amber-500','Above band':'bg-blue-600','No grade':'bg-slate-300','No salary':'bg-slate-300'};
@@ -43,7 +43,7 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
  const headcount=useMemo(()=>gradeHeadcount(activeEmployees.map(employee=>employee.position)),[activeEmployees]);
  const rows=useMemo<Row[]>(()=>activeEmployees.map(employee=>{
   const salary=assignments.find(item=>findCompensationEmployee(employees,item.employeeId)?.id===employee.id);
-  return {employee,...placement(employee.position,salary?salary.fixedSalary/daysPerMonth:0,grades,daysPerMonth)};
+  return {employee,basic:salary?.fixedSalary??0,...placement(employee.position,salary?salary.fixedSalary/daysPerMonth:0,grades,daysPerMonth)};
  }).sort((a,b)=>a.employee.name.localeCompare(b.employee.name)),[activeEmployees,employees,assignments,grades,daysPerMonth]);
  const pendingFor=new Set(proposals.filter(item=>item.status==='Pending HR Review').map(item=>findCompensationEmployee(employees,item.employeeId)?.id??item.employeeId));
  const query=search.trim().toLowerCase();
@@ -85,7 +85,7 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
     return <tr key={row.employee.id} className="border-b border-slate-100 last:border-0">
      <td className="px-3 py-2.5"><div className="flex items-center gap-3"><Avatar name={row.employee.name} index={index}/><div><div className="font-semibold text-slate-900">{row.employee.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.employee.position||'—'}</div></div></div></td>
      <td className="px-3 py-2.5">{row.grade?<><div className="font-bold text-slate-900">{row.grade.code}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.step?`Step ${row.step}`:'Below step 1'}</div></>:<span className="text-slate-500">No grade</span>}</td>
-     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-900">{row.dailyRate?peso(row.dailyRate*daysPerMonth):'—'}</td>
+     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-900">{row.basic?peso(row.basic):'—'}</td>
      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{row.grade?`${compactPeso(row.bandMin)} – ${compactPeso(row.bandMax)}`:'—'}</td>
      <td className="px-3 py-2.5 text-right">{row.compaRatio?<span className={`inline-block rounded-lg px-2.5 py-1 text-[12px] font-bold tabular-nums ${compaTone(row.compaRatio)}`}>{row.compaRatio.toFixed(2)}</span>:'—'}</td>
      <td className="whitespace-nowrap px-3 py-2.5 text-right">{row.marketStatus?<><div className="tabular-nums font-semibold text-slate-800">{compactPeso(row.marketRate)}</div><div className={`mt-0.5 text-[12px] font-medium ${MARKET_TONE[row.marketStatus]}`}>{row.marketStatus==='At market'?'At market':`${row.marketStatus} (${row.marketGap>0?'+':''}${row.marketGap}%)`}</div></>:'—'}</td>
@@ -146,7 +146,7 @@ function PromoteModal({row,grades,daysPerMonth,rating,onClose,onDone}:{row:Row;g
  const [effectiveDate,setEffectiveDate]=useState(today());
  const [reason,setReason]=useState('');
  const [saving,setSaving]=useState(false),[error,setError]=useState('');
- const current=Math.round(row.dailyRate*daysPerMonth*100)/100,next=Math.round(target.dailyRate*daysPerMonth*100)/100;
+ const current=row.basic,next=Math.round(target.dailyRate*daysPerMonth*100)/100;
  const submit=async()=>{
   setSaving(true);setError('');
   try{

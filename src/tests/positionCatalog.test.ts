@@ -9,6 +9,7 @@ describe('position catalog',()=>{
   expect(positionGrade('Fleet Supervisor')?.dailyRate).toBe(1250);
   expect(positionGrade('Operations Manager')).toMatchObject({department:'E-Commerce Operations',grade:'G5',dailyRate:1600});
   expect(positionGrade('Site Engineer')).toBeNull();
+  expect(positionGrade('Accountant')).toMatchObject({position:'Accounting Staff',grade:'G3',dailyRate:1000});
  });
  it('uses only defined grades and lists each department once',()=>{
   expect(POSITIONS).toHaveLength(18);

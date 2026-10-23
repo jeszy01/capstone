@@ -31,9 +31,12 @@ export const POSITIONS = [
 
 export const DEPARTMENTS = [...new Set(POSITIONS.map(p => p.department))].sort((a, b) => a.localeCompare(b));
 
-/** The catalog entry for a position (case-insensitive) with its grade's daily rate, or null. */
+// Older position titles still on employee records, and the catalog position each one is.
+const FORMER_TITLES = { 'accountant': 'Accounting Staff', 'hr officer': 'HR Staff', 'hr specialist': 'HR Staff', 'procurement officer': 'Procurement Staff' };
+
+/** The catalog entry for a position (case-insensitive, former titles included) with its grade's daily rate, or null. */
 export function positionGrade(position) {
-  const key = String(position ?? '').trim().toLowerCase();
+  const raw = String(position ?? '').trim().toLowerCase(), key = (FORMER_TITLES[raw] ?? raw).toLowerCase();
   const entry = POSITIONS.find(p => p.position.toLowerCase() === key);
   const grade = entry && PAY_GRADES.find(g => g.code === entry.grade);
   return entry && grade ? { ...entry, dailyRate: grade.dailyRate } : null;
