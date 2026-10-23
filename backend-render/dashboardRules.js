@@ -7,24 +7,15 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const runsIn = (runs, statuses, skipPreparedBy) => runs.filter(run => statuses.includes(runStatus(run)) && (!skipPreparedBy || String(run.preparedById ?? '') !== String(skipPreparedBy))).length;
 
 /**
- * The Pending Approvals rows for one user. data: claims (claims:records), proposals (compensation_proposals rows),
- * runs (payroll:runs) and hmo ({ enrollments, dependents } awaiting approval). A preparer's own payroll run or salary
- * proposal is never counted for them to approve.
+ * The Pending Approvals rows for one user. data: claims (claims:records), runs (payroll:runs) and hmo
+ * ({ enrollments, dependents } awaiting approval). A preparer's own payroll run is never counted for them to approve.
  */
-export function pendingApprovals(user, { claims = [], proposals = [], runs = [], hmo = { enrollments: 0, dependents: 0 } } = {}) {
+export function pendingApprovals(user, { claims = [], runs = [], hmo = { enrollments: 0, dependents: 0 } } = {}) {
   const rows = [], id = String(user.id), role = user.role;
   if (can(role, 'claims.view')) {
     const count = claims.filter(claim => claim && claimApproval(claim) === 'Pending Approval').length;
     rows.push({ key: 'claims', label: 'Claims', count, detail: can(role, 'claims.approve') ? `${plural(count, 'claim')} to verify` : `${plural(count, 'claim')} awaiting review`,
       action: 'Review', link: '/claims-reimbursement/claims?status=pending' });
-  }
-  const pendingProposals = proposals.filter(p => p.status === 'Pending HR Review');
-  if (can(role, 'compensation.approve')) {
-    const count = pendingProposals.filter(p => String(p.created_by ?? '') !== id).length;
-    rows.push({ key: 'salary', label: 'Salary Adjustments', count, detail: `${plural(count, 'proposal')} to approve or reject`, action: 'Review', link: '/compensation/adjustments?status=pending' });
-  } else if (can(role, 'compensation.manage')) {
-    const count = pendingProposals.filter(p => String(p.created_by ?? '') === id).length;
-    rows.push({ key: 'salary', label: 'Salary Adjustments', count, detail: `${plural(count, 'of your proposals', 'of your proposals')} awaiting review`, action: 'View', link: '/compensation/adjustments?status=pending&mine=1' });
   }
   if (can(role, 'payroll.approve')) {
     const count = runsIn(runs, ['Pending Approval'], id);

@@ -841,15 +841,14 @@ const payslipsGenerated = payrollRun => Boolean(payrollRun.payslipsGeneratedAt |
 // Each row needs its own permission (see dashboardRules.js); the department chart needs employees.view.
 app.get('/dashboard', auth, allow('dashboard.view'), async (req, res) => {
   const role = req.user.role, appRow = async key => { const { rows: [row] } = await pool.query('select value, deleted from app_data where key=$1', [key]); const value = row && !row.deleted ? appValue(row.value) : null; return Array.isArray(value) ? value : []; };
-  const [claims, runs, proposals, enrollments, dependents, employees] = await Promise.all([
+  const [claims, runs, enrollments, dependents, employees] = await Promise.all([
     can(role, 'claims.view') ? appRow('claims:records') : [],
     ['payroll.approve', 'payroll.fund', 'payroll.release'].some(p => can(role, p)) ? appRow('payroll:runs') : [],
-    can(role, 'compensation.approve') || can(role, 'compensation.manage') ? pool.query(`select status, created_by from compensation_proposals where status='Pending HR Review'`).then(r => r.rows) : [],
     can(role, 'hmo.view') ? pool.query(`select count(*)::int as n from hmo_enrollments where approval_status='Pending' and status in ('Pending','Submitted')`).then(r => r.rows[0].n) : 0,
     can(role, 'hmo.view') ? pool.query(`select count(*)::int as n from hmo_dependents where approval_status='Pending' and status in ('Pending','Submitted')`).then(r => r.rows[0].n) : 0,
     can(role, 'employees.view') ? pool.query('select status, department, employment_status from employees').then(r => r.rows) : null,
   ]);
-  ok(res, { approvals: pendingApprovals(req.user, { claims, runs, proposals, hmo: { enrollments, dependents } }), departments: employees ? departmentBreakdown(employees) : null, employeeOverview: employees ? employeeOverview(employees) : null });
+  ok(res, { approvals: pendingApprovals(req.user, { claims, runs, hmo: { enrollments, dependents } }), departments: employees ? departmentBreakdown(employees) : null, employeeOverview: employees ? employeeOverview(employees) : null });
 });
 
 // The Payroll Register of a run, built here from its saved figures; the app only displays it. Tax shows when the

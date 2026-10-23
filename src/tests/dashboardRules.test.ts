@@ -12,20 +12,18 @@ const data={
 const byKey=(rows:ReturnType<typeof pendingApprovals>)=>Object.fromEntries(rows.map(row=>[row.key,[row.count,row.action,row.link]]));
 
 describe('Pending approvals per role',()=>{
- it('Admin: claims, salary adjustments to review (never their own), payroll to approve and fund, HMO to view',()=>{
+ it('Admin: claims, payroll to approve and fund, HMO to view',()=>{
   expect(byKey(pendingApprovals(admin,data))).toEqual({
    claims:[2,'Review','/claims-reimbursement/claims?status=pending'],
-   salary:[2,'Review','/compensation/adjustments?status=pending'],
    'payroll-approval':[1,'Review','/payroll?status=Pending%20Approval'],
    'payroll-funding':[1,'Review','/payroll?status=Approved'],
    hmo:[3,'View','/hmo-benefits/hmo/employee-enrollment?status=pending'],
   });
  });
- it('HR: claims to verify, their own proposals, payroll to approve and fund (Finance page), runs awaiting export or payment, HMO to view',()=>{
+ it('HR: claims to verify, payroll to approve and fund (Finance page), runs awaiting export or payment, HMO to view',()=>{
   const rows=pendingApprovals(hr,data);
   expect(byKey(rows)).toEqual({
    claims:[2,'Review','/claims-reimbursement/claims?status=pending'],
-   salary:[1,'View','/compensation/adjustments?status=pending&mine=1'],
    'payroll-approval':[1,'Review','/payroll?status=Pending%20Approval'],
    'payroll-funding':[1,'Review','/payroll?status=Approved'],
    'payroll-payment':[2,'View','/payroll?status=Funded,Exported'],

@@ -8,10 +8,7 @@ export const modules:NavItem[]=[
  {label:'Payroll Management',to:'/payroll',icon:Wallet,children:[
   {label:'Payroll Runs',to:'/payroll'},{label:'Time & Attendance',to:'/time-attendance'},
  ]},
- {label:'Compensation',to:'/compensation/salary-structure',icon:BarChart3,children:[
-  {label:'Salary Structure',to:'/compensation/salary-structure'},
-  {label:'Adjustments',to:'/compensation/adjustments'},
- ]},
+ {label:'Compensation',to:'/compensation',icon:BarChart3},
  {label:'Claims',to:'/claims-reimbursement',icon:FileText},
  {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse},
 ];
