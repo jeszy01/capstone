@@ -2,6 +2,7 @@ import {useCallback,useEffect,useMemo,useState} from 'react';
 import {
   CheckCircle2,
   ClipboardCheck,
+  ShieldCheck,
   Eye,
   Gift,
   Plus,
@@ -32,6 +33,7 @@ import {useSearchParams} from 'react-router-dom';
 import {peso,read} from '../../utils/storage';
 import {compensationService} from './compensationService';
 import {AllowancesPanel,IncentivesPanel} from './RewardPanels';
+import {compactPeso,compensationSummary} from './compensationSummary';
 import {PAY_GRADES,POSITIONS,positionGrade} from '../../../backend-render/positionCatalog.js';
 import {InlineError,SearchToolbar,SectionHeading,StatusBadge,TableMessage,actionCell,formatDate,headerClass,matches,rowClass,tableClass,wholePeso} from './compensationUi';
 import {
@@ -154,6 +156,15 @@ export default function CompensationPlanning({section}:{section:Section}){
   },[success]);
 
   const activeAssignments=useMemo(()=>activeCompensations(assignments,date),[assignments,date]);
+  // daysPerMonth re-reads the Payroll Settings rates when they change.
+  const summary=useMemo(()=>compensationSummary(activeAssignments,bonuses,date,loadRates()),[activeAssignments,bonuses,date,daysPerMonth]);
+  const summaryReady=!compensationLoading&&!loadError;
+  const summaryCards=[
+    {label:'Monthly Basic Payroll',value:summary.basic,caption:`${summary.employees} active employee${summary.employees===1?'':'s'}`,icon:Wallet,tone:'bg-indigo-50 text-indigo-600'},
+    {label:'Total Allowances',value:summary.allowance,caption:summary.allowanceTypes.length?summary.allowanceTypes.slice(0,3).join(', ')+(summary.allowanceTypes.length>3?' & other':''):'No active allowances',icon:Gift,tone:'bg-cyan-50 text-cyan-600'},
+    {label:'Average Gross / Employee',value:summary.averageGross,caption:'Basic + allowances, monthly',icon:TrendingUp,tone:'bg-emerald-50 text-emerald-600'},
+    {label:'Total Employer Cost',value:summary.employerCost,caption:`${compactPeso(summary.statutory)} statutory`,icon:ShieldCheck,tone:'bg-pink-50 text-pink-600'},
+  ];
   const pendingProposals=proposals.filter(proposal=>proposal.status==='Pending HR Review');
   const activeGrades=grades.filter(grade=>grade.status==='Active');
   const proposalStatus=(proposal:CompensationProposal)=>proposal.status==='Approved'?(proposal.effectiveDate<=date?'Effective':'Scheduled'):proposal.status==='Pending HR Review'?'Pending Approval':proposal.status;
@@ -182,7 +193,7 @@ export default function CompensationPlanning({section}:{section:Section}){
 
   const saveProposal=(proposal:CompensationProposal)=>runMutation(async()=>{
     await compensationService.createProposal(proposal);
-    recordAudit({action:'Submitted compensation proposal',module:'Compensation Planning',description:`Submitted a ${proposal.type} proposal for ${employeeLabelFor(proposal.employeeId)}.`});
+    recordAudit({action:'Submitted compensation proposal',module:'Compensation',description:`Submitted a ${proposal.type} proposal for ${employeeLabelFor(proposal.employeeId)}.`});
     await loadCompensation();
     setModal(null);
     setSuccess('Compensation proposal submitted for Admin approval.');
@@ -218,10 +229,18 @@ export default function CompensationPlanning({section}:{section:Section}){
   const employeePanel=section!=='salary-structure';
   return <div className="space-y-5">
     <PageHeader
-      title="Compensation Planning"
-      description="Manage salary structures, effective-dated compensation and monetary rewards. Salary changes are reviewed before they affect pay."
+      title="Compensation"
+      description="Salary structure, allowances and cost"
       actions={<button type="button" className={ghost} aria-label="Refresh compensation and employee records" disabled={compensationLoading||saving} onClick={()=>{void loadCompensation();void loadEmployees()}}><RefreshCw size={15} className={compensationLoading?'animate-spin':''}/>Refresh</button>}
     />
+
+    <section aria-label="Compensation summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{summaryCards.map(({label,value,caption,icon:Icon,tone})=><div key={label} className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)]">
+      <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-indigo-50/70"/>
+      <span aria-hidden="true" className={`relative grid h-10 w-10 place-items-center rounded-xl ${tone}`}><Icon size={20}/></span>
+      <div className="relative mt-5 text-[12px] text-slate-500">{label}</div>
+      <div className="relative mt-1 text-[24px] font-bold tracking-tight text-slate-900 tabular-nums">{summaryReady?compactPeso(value):'—'}</div>
+      <span className="relative mt-3 inline-block rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">{summaryReady?caption:compensationLoading?'Loading…':'Unavailable'}</span>
+    </div>)}</section>
 
     {employeeLoading&&employeePanel&&<p className="-mt-2 text-[12px] text-slate-500" role="status">Loading employee records…</p>}
     {employeeError&&employeePanel&&<ErrorAlert title="Employee records could not be loaded." onRetry={()=>void loadEmployees()}>{employeeError} {legacyEmployees.length>0?'Existing local employee names remain available.':''}</ErrorAlert>}

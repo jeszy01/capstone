@@ -79,7 +79,7 @@ export const benefitTemplates:BenefitTemplate[]=[
  {name:'Maternity Leave',category:'Mandatory',valueType:'days',value:105,eligibleStatuses:[],minServiceMonths:0,coverage:'105 days paid leave (RA 11210): SSS maternity benefit plus the employer salary differential.'},
  {name:'Paternity Leave',category:'Mandatory',valueType:'days',value:7,eligibleStatuses:[],minServiceMonths:0,coverage:'7 days paid leave for married male employees (RA 8187).'},
  {name:'Solo Parent Leave',category:'Mandatory',valueType:'days',value:7,eligibleStatuses:[],minServiceMonths:6,coverage:'7 days paid leave a year for solo parents with a Solo Parent ID.'},
- {name:'Rice Subsidy',category:'De Minimis',valueType:'monthly',value:0,eligibleStatuses:['Regular'],minServiceMonths:0,coverage:'Tax-exempt up to the BIR de minimis limit. Paid in payroll through Compensation Planning → Allowances.'},
- {name:'Uniform / Clothing Allowance',category:'De Minimis',valueType:'yearly',value:0,eligibleStatuses:[],minServiceMonths:0,coverage:'Tax-exempt up to the BIR de minimis limit. Paid in payroll through Compensation Planning → Allowances.'},
- {name:'Medical Cash Allowance for Dependents',category:'De Minimis',valueType:'yearly',value:0,eligibleStatuses:['Regular'],minServiceMonths:0,coverage:'Tax-exempt up to the BIR de minimis limit. Paid in payroll through Compensation Planning → Allowances.'},
+ {name:'Rice Subsidy',category:'De Minimis',valueType:'monthly',value:0,eligibleStatuses:['Regular'],minServiceMonths:0,coverage:'Tax-exempt up to the BIR de minimis limit. Paid in payroll through Compensation → Allowances.'},
+ {name:'Uniform / Clothing Allowance',category:'De Minimis',valueType:'yearly',value:0,eligibleStatuses:[],minServiceMonths:0,coverage:'Tax-exempt up to the BIR de minimis limit. Paid in payroll through Compensation → Allowances.'},
+ {name:'Medical Cash Allowance for Dependents',category:'De Minimis',valueType:'yearly',value:0,eligibleStatuses:['Regular'],minServiceMonths:0,coverage:'Tax-exempt up to the BIR de minimis limit. Paid in payroll through Compensation → Allowances.'},
 ];

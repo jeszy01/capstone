@@ -18,7 +18,7 @@ import {ConfirmDialog,InlineError,SearchToolbar,SectionHeading,StatusBadge,Table
 
 type PanelProps={employees:Employee[];rewards:BonusIncentive[];loading:boolean;loadError:string;canManage:boolean;employeeLabelFor:(reference:string)=>string;onChanged:()=>Promise<void>;onSuccess:(message:string)=>void};
 type Draft=Omit<BonusIncentive,'id'|'createdAt'>;
-const MODULE='Compensation Planning';
+const MODULE='Compensation';
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 const employeeOptions=(employees:Employee[])=>employees.map(employee=><option key={employee.id} value={employee.id}>{employee.name} · {employee.employeeNo}</option>);
 const yesNo=(value:boolean)=>value?'Yes':'No';

@@ -55,7 +55,7 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   hmoService.cutoffLines(from,to,rates.payPeriodsPerMonth),
  ]);
  const assignments=bundle.assignments,grades=bundle.grades;
- // Allowances and approved incentives & bonuses are maintained in Compensation Planning.
+ // Allowances and approved incentives & bonuses are maintained in Compensation.
  const rewards=bundle.bonuses;
  const time=loadTimeSettings(),holidays=loadHolidays();
  const base=computeDeductions({employees,records,schedule:loadAttendanceSchedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);

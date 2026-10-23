@@ -49,7 +49,7 @@ describe('retired de minimis ceilings',()=>{
   const {ALLOWANCE_TYPES_KEY,loadAllowanceTypes}=await import('../features/compensation/allowanceRules');
   localStorage.setItem(WITHHOLDING_RULES_KEY,JSON.stringify([{...DEFAULT_WITHHOLDING_RULES,deMinimisEffectiveFrom:'2026-01-06',deMinimisSource:'RR',deMinimisCaps:[{id:'rice',label:'Rice',amount:2500,unit:'monthly'}]}]));
   localStorage.setItem(ALLOWANCE_TYPES_KEY,JSON.stringify([{id:'rice',name:'Rice Subsidy',deMinimisCapId:'rice'}]));
-  // Only an Admin saves cleaned Payroll Settings; only HR Staff save Compensation Planning data.
+  // Only an Admin saves cleaned Payroll Settings; only HR Staff save Compensation data.
   localStorage.setItem('session:user',JSON.stringify({id:'admin',employeeId:'USR-0001',name:'Admin',role:'Admin'}));
   expect(loadWithholdingRules()[0]).not.toHaveProperty('deMinimisCaps');
   expect(localStorage.getItem(WITHHOLDING_RULES_KEY)).not.toContain('deMinimis');

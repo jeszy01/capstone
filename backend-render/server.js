@@ -545,7 +545,7 @@ const ACTION_LABELS = {
   'user.deleted': 'Deleted user account', 'compensation.proposal.approved': 'Approved salary adjustment',
   'compensation.proposal.rejected': 'Rejected salary adjustment', 'compensation.reward.approved': 'Approved incentive or bonus',
   'compensation.reward.rejected': 'Rejected incentive or bonus' };
-const AUDIT_MODULES = { compensation_proposals: 'Compensation Planning', compensation_rewards: 'Compensation Planning', users: 'User Accounts' };
+const AUDIT_MODULES = { compensation_proposals: 'Compensation', compensation_rewards: 'Compensation', users: 'User Accounts' };
 
 app.get('/audit-logs', auth, allow('audit.view'), async (_req, res) => {
   const [{ rows }, users, legacy] = await Promise.all([
@@ -1112,7 +1112,7 @@ async function createGrade(b, ctx) {
   const status = String(b.status ?? 'Active');
   if (status !== 'Active' && status !== 'Inactive') throw new HttpError(400, 'INVALID_GRADE_STATUS', 'Salary grade status must be Active or Inactive.');
   if (!(await first('compensation_legacy_imports', { id: 'salary-grade-code-generation-v1' }))) throw new HttpError(503, 'SALARY_GRADE_GENERATOR_NOT_READY', 'Apply the salary-grade code-generation migration before creating grades.');
-  if (!(await first('compensation_legacy_imports', { id: 'browser-compensation-v1' }))) throw new HttpError(409, 'LEGACY_COMPENSATION_IMPORT_REQUIRED', 'Refresh Compensation Planning to import existing salary grades before creating a new grade.');
+  if (!(await first('compensation_legacy_imports', { id: 'browser-compensation-v1' }))) throw new HttpError(409, 'LEGACY_COMPENSATION_IMPORT_REQUIRED', 'Refresh Compensation to import existing salary grades before creating a new grade.');
   const createdAt = new Date().toISOString();
   const row = await insertRow('salary_grades', { grade: '', position, monthly_salary: basicSalary, daily_rate: roundMoney(basicSalary / await monthlyWorkDays()), status, created_at: createdAt, updated_at: createdAt });
   const code = String(row.grade ?? '');
@@ -1468,7 +1468,7 @@ const compensationActions = {
   delete_reward: deleteReward, review_reward: reviewReward, approve_reward: (b, ctx) => reviewReward({ ...b, decision: 'approve' }, ctx),
   import_legacy: importLegacy };
 
-// Admin approves salary adjustments and rewards; HR Staff manage everything else in Compensation Planning.
+// Admin approves salary adjustments and rewards; HR Staff manage everything else in Compensation.
 const COMPENSATION_APPROVALS = new Set(['review_proposal', 'review_reward', 'approve_reward']);
 
 app.get('/compensation', auth, allow('compensation.view'), async (_req, res) => ok(res, await loadCompensation()));
