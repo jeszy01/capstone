@@ -76,11 +76,6 @@ export function SalaryStructurePanel({employees,assignments,history,proposals,lo
      <td className="px-5 py-4 text-right">{canManage&&<button type="button" className={ghost} onClick={()=>setEditing(grade)}><Pencil size={14}/>Edit</button>}</td>
     </tr>)}</tbody>
    </table></div>
-   <div className="border-t border-slate-100 px-6 py-4">
-    <h3 className="m-0 text-[13px] font-semibold text-slate-800">Positions by grade</h3>
-    <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{grades.map(grade=>{const positions=positionsInGrade(grade.code);return <div key={grade.code} className="rounded-xl border border-slate-200/80 p-3"><div className="text-[12px] font-semibold text-slate-700">{grade.code} · {grade.name}</div><div className="mt-1 text-[12px] leading-relaxed text-slate-500">{positions.length?positions.map(item=>`${item.position} (${item.department})`).join(', '):'No positions yet'}</div></div>})}</div>
-    <p className="mb-0 mt-3 text-[12px] text-slate-500">New hires start at step 1 of their position’s grade. Monthly amounts in Placement are daily rate × {daysPerMonth} working days.</p>
-   </div>
   </>}
 
   {view==='placement'&&<div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-left text-[13px]">
