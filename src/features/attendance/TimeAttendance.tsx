@@ -1,11 +1,11 @@
 import {useEffect,useMemo,useState} from 'react';
-import {Card,Empty,ErrorAlert,LoadingState,PageHeader} from '../../components/common/ui';
+import {Card,Empty,ErrorAlert,LoadingState,PageHeader,Segmented,input} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {fetchAttendance} from './attendanceService';
 import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
-import {loadAttendanceSchedule,loadHolidays,recentCutoffs} from '../settings/payrollSettings';
+import {loadAttendanceSchedule,loadHolidays,recentCutoffs,shortRange} from '../settings/payrollSettings';
 import type {Holiday} from '../settings/payrollSettings';
 
 const mins=(time:string)=>{const[h,m]=time.split(':').map(Number);return h*60+(m||0)};
@@ -40,13 +40,30 @@ const fmt=(value:number)=>value?value.toFixed(1):'—';
 const dash=<span className="text-slate-300">—</span>;
 const chip='inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium';
 
-/** Attendance: the current cutoff's HR2 records as a per-employee timesheet, hours split by day type. */
+const VIEWS=[{id:'timesheet',label:'Timesheet'},{id:'history',label:'History'}] as const;
+
+/** Attendance: the current cutoff's timesheet, and past cutoffs' timesheets under History. */
 export default function TimeAttendance(){
- const cutoff=useMemo(()=>recentCutoffs()[0],[]);
- const holidays=useMemo(()=>loadHolidays(),[]);
- const schedule=useMemo(()=>loadAttendanceSchedule(),[]);
+ const[view,setView]=useState<(typeof VIEWS)[number]['id']>('timesheet');
+ const cutoffs=useMemo(()=>recentCutoffs(),[]);
+ const past=cutoffs.slice(1);
+ const[picked,setPicked]=useState(0);
  const[employees,setEmployees]=useState<Employee[]>([]);
  useEffect(()=>{employeeService.getAll().then(setEmployees).catch(()=>setEmployees([]))},[]);
+ return <div className="space-y-1">
+  <PageHeader title="Attendance" description={view==='timesheet'?'Summary per employee for the current cutoff · hours by day type':'Timesheets of past cutoffs · hours by day type'}/>
+  <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+   <Segmented label="Attendance views" options={VIEWS} value={view} onChange={setView}/>
+   {view==='history'&&<select aria-label="Cutoff" className={`${input} !w-auto`} value={picked} onChange={event=>setPicked(Number(event.target.value))}>{past.map((cutoff,i)=><option key={cutoff.from} value={i}>{shortRange(cutoff.from,cutoff.to)}</option>)}</select>}
+  </div>
+  <Timesheet cutoff={view==='timesheet'?cutoffs[0]:past[picked]} employees={employees}/>
+ </div>;
+}
+
+/** One cutoff's HR2 records as a per-employee timesheet, hours split by day type. */
+function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employee[]}){
+ const holidays=useMemo(()=>loadHolidays(),[]);
+ const schedule=useMemo(()=>loadAttendanceSchedule(),[]);
  const{records,loading,error,reload}=useRecords(cutoff);
  const rows=useMemo(()=>{
   const groups=new Map<string,Row>();
@@ -66,9 +83,8 @@ export default function TimeAttendance(){
  const total=sum(row=>row.total);
  const heads=['Employee','Days worked','Regular','Rest day','Holiday','Special','Leave','Absence','Total hours'];
  const align=(label:string)=>['Employee','Leave','Absence'].includes(label)?'text-left':'text-right';
- return <div className="space-y-1">
-  <PageHeader title="Timesheet" description="Summary per employee for the current cutoff · hours by day type"/>
-  <div className="flex flex-wrap gap-2 pt-3">
+ return <>
+  <div className="flex flex-wrap gap-2 pt-4">
    <span className="rounded-full bg-blue-600 px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-sm">{rows.length} employee{rows.length===1?'':'s'}</span>
    <span className="rounded-full border border-blue-100 bg-white px-3.5 py-1.5 text-[11px] font-medium text-blue-700">{records.length} record{records.length===1?'':'s'}</span>
    <span className="rounded-full border border-blue-100 bg-white px-3.5 py-1.5 text-[11px] font-medium text-blue-700">{total.toFixed(1)} total hours</span>
@@ -99,5 +115,5 @@ export default function TimeAttendance(){
     </tr></tfoot>}
    </table></div>
   </Card>
- </div>;
+ </>;
 }
