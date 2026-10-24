@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {ReactNode} from 'react';
-import {useSearchParams} from 'react-router-dom';
-import {Bell,Building2,Check,ChevronDown,Database,Download,FileImage,Globe2,KeyRound,LogOut,Lock,Palette,ShieldCheck,UserRound,Users} from 'lucide-react';
+import {Navigate,useNavigate,useParams,useSearchParams} from 'react-router-dom';
+import {Bell,Building2,Check,Database,Download,FileImage,Globe2,KeyRound,LogOut,Lock,Palette,ShieldCheck,UserRound,Users} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import {Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,TextInput,ghost,input} from '../components/common/ui';
 import {UserAccounts} from './Admin';
@@ -20,7 +20,7 @@ import {formatWithSetting} from '../features/settings/systemSettings';
 
 type SectionId='profile'|'company'|'branding'|'regional'|'appearance'|'notifications'|'security'|'users'|'privacy'|'backup';
 // Each section has its own gradient badge; company-wide sections are for an Admin (settings.edit), Users & Roles needs users.manage.
-// The nav lists the general settings, then the Privacy group (security, users, privacy, backup) as a dropdown.
+// Settings lists the general sections; the Privacy ones (security, users, privacy, backup) open from the sidebar's Privacy dropdown.
 const SECTIONS:Array<{id:SectionId;label:string;icon:LucideIcon;gradient:string;admin?:'settings.edit'|'users.manage';privacy?:true}>=[
  {id:'profile',label:'Profile',icon:UserRound,gradient:'from-sky-500 to-blue-600'},
  {id:'company',label:'Company Information',icon:Building2,gradient:'from-blue-600 to-indigo-600',admin:'settings.edit'},
@@ -342,30 +342,28 @@ function SecuritySection({onDirty}:{onDirty:(dirty:boolean)=>void}){
  </div>;
 }
 
-/** Settings: profile, company, appearance, regional, document branding, security, users and roles, privacy, data and backup. */
-export default function SettingsPrivacy(){
- const [params,setParams]=useSearchParams();
- const sections=SECTIONS.filter(item=>!item.admin||can(item.admin));
- const section=sections.find(item=>item.id===params.get('section'))?.id??sections[0].id;
+/** Settings (profile, company, branding, regional, appearance, notifications) or, under /privacy/:section, Privacy (security, users and roles, privacy, data and backup). */
+export default function SettingsPrivacy({group='settings'}:{group?:'settings'|'privacy'}){
+ const [params,setParams]=useSearchParams(),navigate=useNavigate(),privacyId=useParams().section;
+ const privacy=group==='privacy';
+ const sections=SECTIONS.filter(item=>Boolean(item.privacy)===privacy&&(!item.admin||can(item.admin)));
+ const section=sections.find(item=>item.id===(privacy?privacyId:params.get('section')))?.id??sections[0]?.id;
  const [dirty,setDirty]=useState(false),[pending,setPending]=useState<SectionId|null>(null);
- const general=sections.filter(item=>!item.privacy),privacyItems=sections.filter(item=>item.privacy);
- const[privacyOpen,setPrivacyOpen]=useState(()=>Boolean(sectionOf(section).privacy));
- useEffect(()=>{if(sectionOf(section).privacy)setPrivacyOpen(true)},[section]);
- const navButton=(item:typeof SECTIONS[number])=><button type="button" aria-current={item.id===section?'page':undefined} onClick={()=>open(item.id)} className={`w-full rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition ${item.id===section?'bg-blue-600 font-semibold text-white shadow-sm':'text-gray-600 hover:bg-gray-50'}`}>{item.label}</button>;
- const go=(next:SectionId)=>setParams(next===sections[0].id?{}:{section:next},{replace:true});
+ const go=(next:SectionId)=>privacy?navigate(`/privacy/${next}`,{replace:true}):setParams(next===sections[0].id?{}:{section:next},{replace:true});
  const open=(next:SectionId)=>{if(next===section)return;if(dirty)setPending(next);else go(next)};
  useEffect(()=>{if(!dirty)return;const unload=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload)},[dirty]);
+ // Old links to a privacy section on the Settings page open it under Privacy.
+ const moved=SECTIONS.find(item=>item.privacy&&item.id===params.get('section'));
+ if(!privacy&&moved)return <Navigate to={`/privacy/${moved.id}`} replace/>;
+ if(!section)return <Navigate to="/settings-privacy" replace/>;
+ const title=privacy?'Privacy':'Settings';
  return <div>
-  <PageHeader title="Settings"/>
+  <PageHeader title={title}/>
   <div className="mt-6 grid gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
    <div className="md:hidden"><Field label="Section"><select className={input} value={section} onChange={event=>open(event.target.value as SectionId)}>{sections.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Field></div>
-   <nav aria-label="Settings sections" className="hidden self-start rounded-2xl border border-gray-100/80 bg-white p-2 shadow-sm md:block">
-    <div className="px-3 pb-2 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-gray-400">Settings</div>
-    <ul className="m-0 grid list-none gap-1 p-0">{general.map(item=><li key={item.id}>{navButton(item)}</li>)}</ul>
-    {privacyItems.length>0&&<div className="mt-2 border-t border-gray-100 pt-2">
-     <button type="button" aria-expanded={privacyOpen} onClick={()=>setPrivacyOpen(value=>!value)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition ${privacyOpen?'text-gray-900':'text-gray-600 hover:bg-gray-50'}`}>Privacy<ChevronDown size={16} className={`text-gray-400 transition-transform ${privacyOpen?'rotate-180':''}`}/></button>
-     {privacyOpen&&<ul className="m-0 ml-4 mt-1 grid list-none gap-1 border-l border-gray-200 py-0 pl-2 pr-0">{privacyItems.map(item=><li key={item.id}>{navButton(item)}</li>)}</ul>}
-    </div>}
+   <nav aria-label={`${title} sections`} className="hidden self-start rounded-2xl border border-gray-100/80 bg-white p-2 shadow-sm md:block">
+    <div className="px-3 pb-2 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-gray-400">{title}</div>
+    <ul className="m-0 grid list-none gap-1 p-0">{sections.map(item=><li key={item.id}><button type="button" aria-current={item.id===section?'page':undefined} onClick={()=>open(item.id)} className={`w-full rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition ${item.id===section?'bg-blue-600 font-semibold text-white shadow-sm':'text-gray-600 hover:bg-gray-50'}`}>{item.label}</button></li>)}</ul>
    </nav>
    <div className="min-w-0">
     {section==='profile'&&<ProfileSection/>}

@@ -1,4 +1,4 @@
-import {Banknote,BarChart3,CircleHelp,CreditCard,FileText,Heart,LayoutGrid,ReceiptText,Settings,ShieldCheck,User} from 'lucide-react';
+import {Banknote,BarChart3,CircleHelp,CreditCard,FileText,Heart,LayoutGrid,Lock,ReceiptText,Settings,ShieldCheck,User} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import {hmoTabs} from '../../features/hmo/hmoNavigation';
 export interface NavItem{label:string;to:string;icon?:LucideIcon;children?:NavItem[]}
@@ -12,7 +12,9 @@ export const modules:NavItem[]=[
  {label:'HMO / Benefits',to:'/hmo-benefits',icon:Heart},
 ];
 export const insights:NavItem[]=[{label:'HR Analytics',to:'/hr-analytics',icon:BarChart3},{label:'Reports',to:'/reports',icon:FileText}];
-export const system:NavItem[]=[{label:'Settings',to:'/settings-privacy',icon:Settings},{label:'Audit Logs',to:'/logs-audits',icon:ShieldCheck},{label:'Help',to:'/help',icon:CircleHelp}];
+export const system:NavItem[]=[{label:'Settings',to:'/settings-privacy',icon:Settings},{label:'Privacy',to:'/privacy/security',icon:Lock,children:[
+ {label:'Security',to:'/privacy/security'},{label:'Users & Roles',to:'/privacy/users'},{label:'Privacy',to:'/privacy/privacy'},{label:'Data & Backup',to:'/privacy/backup'},
+]},{label:'Audit Logs',to:'/logs-audits',icon:ShieldCheck},{label:'Help',to:'/help',icon:CircleHelp}];
 export const titles={
  ...Object.fromEntries([...overview,...modules.flatMap(m=>m.children??[m])].map(i=>[i.to,i.label])),
  ...Object.fromEntries(hmoTabs.map(tab=>[tab.to,tab.label])),
@@ -21,6 +23,10 @@ export const titles={
  '/settings-privacy':'Settings',
  '/notifications':'Notifications',
  '/help':'Help',
+ '/privacy/security':'Security',
+ '/privacy/users':'Users & Roles',
+ '/privacy/privacy':'Privacy',
+ '/privacy/backup':'Data & Backup',
  '/logs-audits':'Audit Logs',
  '/finance':'Finance',
  '/payroll-settings':'Payroll Settings',

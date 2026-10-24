@@ -62,7 +62,7 @@ function PasskeyModal({request,onDone}:{request:PasskeyRequest;onDone:(verified:
   {status==='checking'?<LoadingState>Checking passkey…</LoadingState>:<>
    <p className="m-0 text-[13px] leading-relaxed text-gray-600">{request.detail}</p>
    {status==='ready'&&<div className="mt-4"><Field label="Passkey"><TextInput type="password" autoComplete="off" autoFocus value={passkey} onChange={event=>setPasskey(event.target.value)} onKeyDown={event=>{if(event.key==='Enter')void confirm()}}/></Field></div>}
-   {error&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error===NOT_SET?<>Set a passkey in <Link to="/settings-privacy?section=security" className="font-semibold underline" onClick={()=>onDone(false)}>Settings &gt; Security</Link>.</>:error}</p>}
+   {error&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error===NOT_SET?<>Set a passkey in <Link to="/privacy/security" className="font-semibold underline" onClick={()=>onDone(false)}>Settings &gt; Security</Link>.</>:error}</p>}
   </>}
   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={busy} onClick={()=>onDone(false)}>Cancel</button>{status==='ready'&&<Button disabled={busy} onClick={()=>void confirm()}>{busy?'Checking…':'Confirm'}</Button>}</div>
  </Modal>;

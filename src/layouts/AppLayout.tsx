@@ -3,7 +3,7 @@ import {Outlet,useLocation,useNavigate} from 'react-router-dom';
 import {useState,useEffect,useRef} from 'react';
 import {Bell,ChevronDown,Search,Menu,ChevronRight,House,Landmark,LogOut,Sun,Moon} from 'lucide-react';
 import {Sidebar} from '../components/navigation/Sidebar';
-import {titles,modules} from '../components/navigation/navConfig';
+import {titles,modules,system} from '../components/navigation/navConfig';
 import {CURRENT_USER_EVENT,getCurrentUser,logout,profileName} from '../features/auth/authService';
 import {can} from '../features/auth/permissions';
 import {accountService} from '../features/auth/accountService';
@@ -48,7 +48,7 @@ export default function AppLayout(){
  const[user,setUser]=useState(getCurrentUser);
  useEffect(()=>{const sync=()=>setUser(getCurrentUser());window.addEventListener(CURRENT_USER_EVENT,sync);return()=>window.removeEventListener(CURRENT_USER_EVENT,sync)},[]);
  const userName=profileName(user)||'User';
- const parent=modules.find(module=>module.children?.some(child=>pathname===child.to||pathname.startsWith(`${child.to}/`)));
+ const parent=[...modules,...system].find(module=>module.children?.some(child=>pathname===child.to||pathname.startsWith(`${child.to}/`)));
  const go=(path:string)=>{setAdminOpen(false);navigate(path)};
  const signOut=()=>{setAdminOpen(false);endSession();window.location.assign('/')};
  // The bell, the Notifications page and the sound use only the signed-in role's notifications.

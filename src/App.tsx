@@ -29,6 +29,8 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
  return <Routes><Route element={<AppLayout/>}><Route element={<RouteGuard/>}>
   <Route path="/dashboard" element={<Dashboard/>}/>
   <Route path="/settings-privacy" element={<SettingsPrivacy/>}/>
+  <Route path="/privacy" element={<Navigate to="/privacy/security" replace/>}/>
+  <Route path="/privacy/:section" element={<SettingsPrivacy group="privacy"/>}/>
   <Route path="/notifications" element={<Notifications/>}/>
   <Route path="/help" element={<Help/>}/>
   <Route path="/logs-audits" element={<LogsAudits/>}/>

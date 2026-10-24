@@ -15,6 +15,9 @@ export function can(permission:Permission,role:User['role']|undefined=getCurrent
 // The permission each page needs, matched by path prefix (most specific first).
 const routePermissions:Array<[string,Permission]>=[
  ['/logs-audits','audit.view'],
+ ['/privacy/users','users.manage'],
+ ['/privacy/privacy','settings.edit'],
+ ['/privacy/backup','settings.edit'],
  ['/finance','payroll.fund'],
  ['/payroll-settings','settings.view'],
  ['/payroll','payroll.view'],
