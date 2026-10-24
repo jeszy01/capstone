@@ -1,19 +1,17 @@
 import {useState} from 'react';
 import {Card,Field,PageHeader,input} from '../components/common/ui';
 import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate} from '../features/payroll/withholdingTax';
-import {loadThirteenthMonthRules} from '../features/payroll/thirteenthMonth';
 import {loadRates,loadRunOptions,loadTimeSettings} from '../features/settings/payrollSettings';
 import {peso} from '../utils/storage';
 
 // Read-only reference of the payroll rules. Every value is read from the saved settings, so it shows what payroll uses.
 type Table={title:string;columns:string[];rows:string[][]};
-type SectionId='time'|'schedule'|'holiday'|'contributions'|'withholding'|'thirteenth';
+type SectionId='time'|'schedule'|'holiday'|'contributions'|'withholding'|'benefits';
 const SECTIONS:Array<{id:SectionId;label:string}>=[
  {id:'time',label:'Working Time & Overtime'},{id:'schedule',label:'Pay Schedule'},{id:'holiday',label:'Holiday Pay'},
- {id:'contributions',label:'Government Contributions'},{id:'withholding',label:'Withholding Tax'},{id:'thirteenth',label:'13th Month Rules'},
+ {id:'contributions',label:'Government Contributions'},{id:'withholding',label:'Withholding Tax'},{id:'benefits',label:'Benefits'},
 ];
 const SETTING=['Setting','Value','Basis'];
-const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const pct=(multiplier:number)=>`${Math.round(multiplier*1000)/10}%`;
 const whole=(value:number)=>`₱${value.toLocaleString('en-PH')}`;
@@ -76,15 +74,28 @@ function tables(section:SectionId):Table[]{
    {title:'Monthly tax table',columns:['Monthly pay over','Base tax','Plus rate on excess','Basis'],rows:rule.tables.monthly.map(row=>[whole(row.over),row.base?peso(row.base):'₱0',`${row.rate}%`,basis])},
   ];
  }
- const rules=loadThirteenthMonthRules();
- const excluded=[rules.excludeOvertime&&'overtime',rules.excludeHolidayPay&&'premiums',rules.excludeNightDifferential&&'night differential',rules.excludeAllowances&&'allowances'].filter(Boolean).join(', ');
- const[month,day]=rules.releaseDeadline.split('-').map(Number);
- return [{title:'13th month pay',columns:SETTING,rows:[
-  ['Formula','Basic salary earned in the year ÷ 12','PD 851'],
-  ['Not included',excluded?excluded[0].toUpperCase()+excluded.slice(1):'None','PD 851 IRR'],
-  ['Who gets it',`Rank-and-file with ${rules.minimumServiceMonths}+ month${rules.minimumServiceMonths===1?'':'s'} of service`,'PD 851'],
-  ['Pay by',`${MONTHS[month-1]??''} ${day||''}${rules.allowInstallments?` (${rules.installments} installments)`:''}`.trim(),'PD 851'],
- ]}];
+ return [
+  {title:'Benefits',columns:['Benefit','Formula','Who gets it','Basis'],rows:[
+   ['13th month pay','Basic salary earned in the year ÷ 12','Rank-and-file with 1+ month of service','PD 851'],
+   ['Service incentive leave','5 paid days a year, unused days paid as daily rate × unused days','1+ year of service','Art. 95'],
+   ['Maternity leave','105 days, SSS benefit plus employer salary differential','Female employees','RA 11210'],
+   ['Paternity leave','7 days × daily rate','Married male employees','RA 8187'],
+   ['Solo parent leave','7 days × daily rate','Solo parents with ID and 6+ months of service','RA 8972'],
+   ['De minimis (rice, uniform, medical)','Fixed amount, tax-free up to the BIR limit, excess is taxable','Per company policy','BIR rules'],
+  ]},
+  {title:'13th month pay',columns:SETTING,rows:[
+   ['Formula','Basic salary earned in the year ÷ 12','PD 851'],
+   ['Not included','Overtime, premiums, allowances','PD 851 IRR'],
+   ['Who gets it','Rank-and-file with 1+ month of service','PD 851'],
+   ['Pay by','December 24','PD 851'],
+  ]},
+  {title:'Bonuses and incentives',columns:SETTING,rows:[
+   ['Amount','Fixed peso amount per employee','Company policy'],
+   ['Period','Added to the cutoff it belongs to','Company policy'],
+   ['Approval','Reviewed before payroll, the encoder cannot approve','Company workflow'],
+   ['Tax','Taxable unless marked non-taxable','RA 10963'],
+  ]},
+ ];
 }
 
 export default function PayrollSettings(){
