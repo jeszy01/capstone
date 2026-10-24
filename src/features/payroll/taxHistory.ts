@@ -1,7 +1,7 @@
 import type {PayrollRates} from '../../types/domain';
 import {numberValue} from '../../utils/storage';
 import {calculatePayroll} from './payrollCalculator';
-import {isApprovedRun,isThirteenthMonthRun,runTaxPeriod} from './payrollRuns';
+import {isApprovedRun,isThirteenthMonthRun,runStatus,runTaxPeriod} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {ruleForDate} from './withholdingTax';
 import type {AnnualTaxHistory,WithholdingTaxRuleSet} from './withholdingTax';
@@ -14,17 +14,30 @@ export const isFinalTaxRow=(run:Pick<PayrollRun,'runType'|'to'>,row:Pick<RunRow,
 export type TaxHistoryScope={year:string;from:string;to:string;currentRunId?:string;final:boolean};
 
 /**
- * The runs whose pay and withholding count toward the employee's year to date for the cutoff from..to.
- * - An ordinary cutoff counts the other same-year runs that end before it starts, approved or still pending approval
- *   (a pending run's contents are locked, so its withholding is what will be paid).
+ * The runs whose pay and withholding count toward the employee's year to date for the cutoff from..to. Only approved
+ * runs count, each once; a cutoff cannot be submitted while an earlier run of the year awaits approval
+ * (earlierPendingBlocked), so a run Finance later rejects never shapes another run's tax.
+ * - An ordinary cutoff counts the other same-year runs that end before it starts.
  * - A final cutoff (the year-end adjustment, or a separated employee's last pay) annualizes, so it counts every approved
  *   same-year run that ends on or before its last day, including a 13th month run released inside the cutoff.
  *   Submitting a final cutoff is blocked while another run of the year is pending (see finalCutoffBlocked).
  */
 export function taxHistoryRuns(runs:PayrollRun[],scope:TaxHistoryScope){
- return runs.filter(run=>run.id!==scope.currentRunId&&run.from.slice(0,4)===scope.year&&(scope.final
-  ?isApprovedRun(run)&&(run.to<scope.from||(isThirteenthMonthRun(run)&&run.to<=scope.to))
-  :(isApprovedRun(run)||run.status==='Pending Approval')&&run.to<scope.from));
+ const seen=new Set<string>();
+ return runs.filter(run=>{
+  if(run.id===scope.currentRunId||seen.has(run.id)||!isApprovedRun(run)||run.from.slice(0,4)!==scope.year)return false;
+  seen.add(run.id);
+  return run.to<scope.from||(scope.final&&isThirteenthMonthRun(run)&&run.to<=scope.to);
+ });
+}
+
+/**
+ * Why a run starting on from cannot be submitted yet: an earlier run of the same year is still being prepared, awaits
+ * Finance's decision, or was returned for changes. Its pay and tax would be missing from this run's year to date.
+ */
+export function earlierPendingBlocked(runs:PayrollRun[],from:string,year:string,currentRunId?:string){
+ const pending=runs.filter(run=>run.id!==currentRunId&&!isApprovedRun(run)&&runStatus(run)!=='Rejected'&&run.from.slice(0,4)===year&&run.to<from);
+ return pending.length?`An earlier ${year} payroll is not approved yet (${pending.length===1?'1 run':`${pending.length} runs`}). Its pay and tax count toward this payroll's year to date, so submit this payroll after Finance approves or rejects it.`:'';
 }
 
 /**
@@ -38,10 +51,16 @@ export function finalCutoffBlocked(runs:PayrollRun[],year:string,currentRunId?:s
 
 /** The employee's year-to-date pay and withholding before this cutoff, including a previous employer's figures entered for a new hire. */
 export function yearToDateHistory(runs:PayrollRun[],row:Pick<RunRow,'input'>,scope:TaxHistoryScope,rates:PayrollRates,rules:WithholdingTaxRuleSet[]):AnnualTaxHistory{
+ let latestRegular='';
  const history=taxHistoryRuns(runs,scope).flatMap(run=>run.rows.filter(item=>item.input.empId===row.input.empId).map(item=>({run,item}))).reduce<AnnualTaxHistory>((total,{run,item})=>{
-  const b=item.result.taxBreakdown??calculatePayroll(item.input,rates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,rates.payPeriodsPerMonth),rules}).taxBreakdown!;
-  total.regular+=b.regularCompensation;total.supplementary+=b.supplementaryCompensation;total.benefitPayments+=b.benefitPayments;total.taxExemptBenefits+=b.taxExemptBenefits;total.mandatoryContributions+=b.mandatoryContributions;total.withheld+=item.result.tax;total.payrollPeriods+=1;total.monetizedLeaveExempt=(total.monetizedLeaveExempt??0)+(b.monetizedLeaveExempt??0);
+  const benefitOnly=isThirteenthMonthRun(run);
+  const b=item.result.taxBreakdown??calculatePayroll(item.input,rates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,rates.payPeriodsPerMonth),rules,benefitOnly}).taxBreakdown!;
+  total.regular+=b.regularCompensation;total.supplementary+=b.supplementaryCompensation;total.benefitPayments+=b.benefitPayments;total.taxExemptBenefits+=b.taxExemptBenefits;total.mandatoryContributions+=b.mandatoryContributions;total.withheld+=item.result.tax;total.monetizedLeaveExempt=(total.monetizedLeaveExempt??0)+(b.monetizedLeaveExempt??0);
+  // A 13th month run is a benefit payment, not a payroll period: it adds pay and tax but neither a period nor the method.
+  if(benefitOnly)return total;
+  total.payrollPeriods+=1;
   if(b.status==='Cumulative average')total.cumulativeAverage=true;
+  if(run.to>=latestRegular){latestRegular=run.to;total.lastTaxableRegular=b.taxableRegular}
   return total;
  },{regular:0,supplementary:0,benefitPayments:0,taxExemptBenefits:0,mandatoryContributions:0,withheld:0,payrollPeriods:0});
  const previousBenefits=numberValue(row.input.priorEmployerBenefitsPaid),previousTaxable=numberValue(row.input.priorEmployerTaxableCompensation),previousPeriods=numberValue(row.input.priorEmployerPayrollPeriods);
@@ -49,4 +68,15 @@ export function yearToDateHistory(runs:PayrollRun[],row:Pick<RunRow,'input'>,sco
  history.regular+=Math.max(0,previousTaxable-Math.max(0,previousBenefits-cap));history.benefitPayments+=previousBenefits;history.withheld+=numberValue(row.input.priorEmployerWithheld);history.payrollPeriods+=previousPeriods;
  if(previousTaxable>0||previousPeriods>0)history.cumulativeAverage=true;
  return history;
+}
+
+/**
+ * One payroll row's pay and withholding as it is submitted: with the year to date from the other runs, the year-end or
+ * final-pay annualization, and the HMO deduction (a 13th month run is a benefit payment without deductions). Review
+ * Payroll's preview and submission, its government loan check, and the Withholding Tax estimates all use it.
+ */
+export function calculateRunRow(row:Pick<RunRow,'input'|'hmo'|'separated'>,run:Pick<PayrollRun,'runType'|'from'|'to'>&{id?:string},runs:PayrollRun[],rates:PayrollRates,rules:WithholdingTaxRuleSet[]){
+ const benefitOnly=isThirteenthMonthRun(run),final=isFinalTaxRow(run,row);
+ const priorYear=yearToDateHistory(runs,row,{year:run.from.slice(0,4),from:run.from,to:run.to,currentRunId:run.id,final},rates,rules);
+ return calculatePayroll(benefitOnly?row.input:{...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,rates.payPeriodsPerMonth),priorYear,finalPeriod:final,rules,benefitOnly});
 }

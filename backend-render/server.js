@@ -13,6 +13,7 @@ import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingRecei
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
+import { lockedRuleChange } from './withholdingRuleLock.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -168,6 +169,12 @@ async function saveAppData(req, key, isDel, value) {
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
     }
     events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed);
+    // A withholding tax version a payroll run was computed with cannot be changed or removed (see withholdingRuleLock.js).
+    if (key === 'payroll:withholding-tax-rules') {
+      const { rows: [runs] } = await client.query(`select value from app_data where key='payroll:runs' and not deleted`);
+      const locked = lockedRuleChange(existed ? appValue(row.value) : null, next, runs ? appValue(runs.value) : []);
+      if (locked) throw new AccessError(locked);
+    }
     await client.query(
       `insert into app_data(key,value,deleted,updated_by) values($1,$2,$3,$4)
        on conflict(key) do update set value=$2, deleted=$3, updated_at=now(), updated_by=$4`,

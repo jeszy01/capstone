@@ -5,7 +5,7 @@ import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
 import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
 import {fetchAttendance} from '../attendance/attendanceService';
 import {attendanceGaps} from '../attendance/workDays';
-import {finalCutoffBlocked,isFinalTaxRow,isYearEndCutoff,yearToDateHistory} from './taxHistory';
+import {calculateRunRow,earlierPendingBlocked,finalCutoffBlocked,isYearEndCutoff} from './taxHistory';
 import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payrollSettingsSnapshot} from '../settings/payrollSettings';
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
@@ -16,7 +16,7 @@ import type {PayrollRun,RunRow} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
 import {activeCompensations,isBonusReward} from '../compensation/compensationState';
-import {numberValue,read} from '../../utils/storage';
+import {read} from '../../utils/storage';
 import {loadWithholdingRules} from './withholdingTax';
 import {compensationService} from '../compensation/compensationService';
 import {loanService} from '../deductions/loanService';
@@ -28,11 +28,8 @@ const blank=BLANK_PAYROLL_INPUT;
 const payPeriodOf=(rates:PayrollRates)=>rates.payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const;
 
 /** One employee's pay with their year-to-date tax history; the last December payroll and a separated employee's last pay annualize. */
-export function calcRow(row:RunRow,run:RunScope,rates:PayrollRates){
- const {from,to}=run,rules=loadWithholdingRules(),final=isFinalTaxRow({runType:run.runType,to},row);
- const history=yearToDateHistory(read<PayrollRun[]>(RUNS_KEY,[]),row,{year:from.slice(0,4),from,to,currentRunId:run.id,final},rates,rules);
- if(isThirteenthMonthRun(run))return calculatePayroll(row.input,rates,[],{periodStart:from,periodEnd:to,period:payPeriodOf(rates),priorYear:history,rules});
- return calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},rates,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:final,rules});
+export function calcRow(row:Pick<RunRow,'input'|'hmo'|'separated'>,run:RunScope,rates:PayrollRates,runs=read<PayrollRun[]>(RUNS_KEY,[])){
+ return calculateRunRow(row,run,runs,rates,loadWithholdingRules());
 }
 
 /**
@@ -44,7 +41,7 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
  if(isThirteenthMonthRun(run)){
   const employees=await employeeService.getAllFromServer();
   const lines=computeThirteenthMonth({runs:read<PayrollRun[]>(RUNS_KEY,[]),employees,rules:loadThirteenthMonthRules(),releaseDate:to});
-  return lines.map(line=>{const input:PayrollInput={...blank,empId:line.empId,name:line.name,thirteenthMonthAndOtherBenefits:line.amount};return {position:line.position,rest:0,hmo:0,input,result:calculatePayroll(input,rates,[],{periodStart:from,periodEnd:to,period:payPeriodOf(rates),rules:loadWithholdingRules()})}});
+  return lines.map(line=>{const input:PayrollInput={...blank,empId:line.empId,name:line.name,thirteenthMonthAndOtherBenefits:line.amount};return {position:line.position,rest:0,hmo:0,input,result:calculatePayroll(input,rates,[],{periodStart:from,periodEnd:to,period:payPeriodOf(rates),rules:loadWithholdingRules(),benefitOnly:true})}});
  }
  const employees=await employeeService.getAllFromServer();
  const[records,bundle,scheduledLoans,scheduledGovernmentLoans,hmoLines]=await Promise.all([
@@ -78,9 +75,11 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   const graded=activeAssignments.find(assignment=>employeeIds.includes(assignment.employeeId)&&gradeCodes.has(assignment.salaryCode.trim().toLowerCase()));
   const dailyRate=graded?graded.dailyRate:(item.salary as number)/rates.daysPerMonth;
   const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave!==false).length,lwopDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave===false).length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,otherDeductions:otherDeductionsForCutoff(loadOtherDeductions(),employee.id,from,to),allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,allowancesOtherBenefits:allowance.otherBenefits,...loanAmounts};
-  // Government loans are deducted from the net pay left after every other deduction.
-  // Other authorized deductions (Deductions → Other Authorized Deductions) plus the HMO cutoff deduction.
-  const compute=(payrollInput:PayrollInput)=>calculatePayroll({...payrollInput,otherDeductions:numberValue(payrollInput.otherDeductions)+hmo},rates,[],{periodStart:from,periodEnd:to,rules:loadWithholdingRules()});
+  // Inactive or resigned: this is their last pay, so its withholding annualizes the year to date.
+  const separated=employee.status==='Inactive'||employee.employmentStatus==='Resigned';
+  // Government loans are deducted from the net pay left after every other deduction, computed exactly as the row is:
+  // year-to-date withholding, annualization, other authorized deductions and the HMO cutoff deduction.
+  const compute=(payrollInput:PayrollInput)=>calcRow({hmo,...(separated?{separated}:{}),input:payrollInput},run,rates);
   const governmentLoans=governmentLoanDeductions(scheduledGovernmentLoans,employeeIds,compute(input).net,rates.payPeriodsPerMonth);
   const governmentTotals=governmentLoanTotals(governmentLoans);
   // Government loans have their own fields so they never mix with employee loan installments.
@@ -88,8 +87,6 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   // An employee who is no longer active is checked only up to their last attendance day.
   const lastDay=mine.map(record=>record.date).sort().pop()??to;
   const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to:employee.status==='Active'?to:lastDay,holidays});
-  // Inactive or resigned: this is their last pay, so its withholding annualizes the year to date.
-  const separated=employee.status==='Inactive'||employee.employmentStatus==='Resigned';
   built.push({position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))});
  }
  return built;
@@ -101,6 +98,10 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
  */
 export async function submitBlocked(run:PayrollRun,runs:PayrollRun[]):Promise<string>{
  const {from,to}=run,year=from.slice(0,4),others=runs.filter(item=>item.id!==run.id);
+ const earlier=earlierPendingBlocked(runs,from,year,run.id);if(earlier)return earlier;
+ // Tax was computed from the runs approved at the time; an earlier run approved or changed since then changes it.
+ const rates=loadRates();
+ if(run.rows.some(row=>{const fresh=calcRow(row,run,rates,runs);return fresh.tax!==row.result.tax||fresh.net!==row.result.net}))return 'Earlier payroll runs changed after this payroll was computed. Recompute it, check the amounts, and submit again.';
  if(!isThirteenthMonthRun(run)){
   const [employees,schedule]=await Promise.all([employeeService.getAllFromServer(),loanService.schedule(from,to)]);
   const numbers=new Set(run.rows.map(row=>row.input.empId));

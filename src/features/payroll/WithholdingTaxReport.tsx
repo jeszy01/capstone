@@ -1,32 +1,25 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Calculator,Download,Eye,LoaderCircle,Printer,TriangleAlert} from 'lucide-react';
 import {Button,Card,Empty,Modal,ghost,input} from '../../components/common/ui';
-import type {Employee,PayrollInput,PayrollRates,PayrollResult} from '../../types/domain';
+import type {Employee,PayrollInput,PayrollResult} from '../../types/domain';
 import {numberValue,peso,read} from '../../utils/storage';
 import {can} from '../auth/permissions';
 import {employeeService} from '../employees/employeeService';
-import {calculatePayroll} from './payrollCalculator';
 import {loadRates} from '../settings/payrollSettings';
-import {RUNS_KEY,isApprovedRun,periodLabel,runTaxPeriod} from './payrollRuns';
+import {RUNS_KEY,isApprovedRun,periodLabel} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {loadWithholdingRules,validateRuleSet} from './withholdingTax';
-import type {AnnualTaxHistory} from './withholdingTax';
-import {isFinalTaxRow,yearToDateHistory} from './taxHistory';
+import {calculateRunRow} from './taxHistory';
 import {BirWorksheets} from './BirWorksheets';
 import {confirmWithPasskey} from '../auth/passkeyGate';
 import {StatusBadge} from '../../components/common/StatusBadge';
 
-const rates=loadRates();
 const nf=(value:number)=>peso(value);
 const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 type Entry={key:string;run:PayrollRun;row:RunRow;result:PayrollResult;employee?:Employee;recalculated:boolean;error?:string};
 const rowKey=(runId:string,empId:string,index:number)=>`${runId}:${empId}:${index}`;
 function employeeFor(employees:Employee[],input:PayrollInput){return employees.find(employee=>employee.id===input.empId||employee.employeeNo===input.empId)}
 function reportStatus(entry:Entry){return entry.error?'Validation error':isApprovedRun(entry.run)?'Actual':entry.run.status==='Rejected'?'Rejected':entry.recalculated||entry.result.taxBreakdown?'Estimate':'Pending estimate'}
-// The same year-to-date history Review Payroll uses (see taxHistory.ts).
-function priorHistory(runs:PayrollRun[],currentRun:PayrollRun,row:RunRow,allRules=loadWithholdingRules(),currentRates:PayrollRates=rates):AnnualTaxHistory{
- return yearToDateHistory(runs,row,{year:currentRun.from.slice(0,4),from:currentRun.from,to:currentRun.to,currentRunId:currentRun.id,final:isFinalTaxRow(currentRun,row)},currentRates,allRules);
-}
 function validationForRun(run:PayrollRun,employees:Employee[],rosterReady:boolean,rules=loadWithholdingRules()):string[]{
  const errors:string[]=[];
  const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(`${value}T00:00:00Z`))&&new Date(`${value}T00:00:00Z`).toISOString().slice(0,10)===value;
@@ -82,7 +75,7 @@ export function WithholdingTaxReport({from,to,query}:{from:string;to:string;quer
     // An approved run keeps the tax it was approved with; Review Payroll already computed it, year-end adjustment included.
     if(isApprovedRun(run)){locked++;continue}
     run.rows.forEach((row,index)=>{
-     const calculated=calculatePayroll({...row.input,otherDeductions:numberValue(row.input.otherDeductions)+row.hmo},activeRates,[],{periodStart:run.from,periodEnd:run.to,period:runTaxPeriod(run,activeRates.payPeriodsPerMonth),priorYear:priorHistory(runs,run,row,activeRules,activeRates),finalPeriod:isFinalTaxRow(run,row),rules:activeRules});
+     const calculated=calculateRunRow(row,run,runs,activeRates,activeRules);
      nextEstimates[rowKey(run.id,row.input.empId,index)]=calculated;
     });
    }

@@ -7,7 +7,8 @@ import {deMinimisRuleFor} from './deMinimis';
 const round=(v:number)=>Math.round((v+Number.EPSILON)*100)/100;
 const clamp=(v:number,lo:number,hi:number)=>Math.min(hi,Math.max(lo,v));
 
-export interface PayrollTaxContext{periodStart?:string;periodEnd?:string;period?:PayrollPeriod;priorYear?:AnnualTaxHistory;finalPeriod?:boolean;rules?:WithholdingTaxRuleSet[]}
+/** benefitOnly: a 13th month or other-benefits payment made apart from a regular payroll period (a 13th month run). */
+export interface PayrollTaxContext{periodStart?:string;periodEnd?:string;period?:PayrollPeriod;priorYear?:AnnualTaxHistory;finalPeriod?:boolean;rules?:WithholdingTaxRuleSet[];benefitOnly?:boolean}
 export function computeTax(monthlyTaxable:number,table:Array<{over:number;base:number;rate:number}>):number{
  const b=[...table].sort((a,c)=>c.over-a.over).find(x=>monthlyTaxable>=x.over);
  return b?round(b.base+b.rate/100*(monthlyTaxable-b.over)):0;
@@ -68,7 +69,7 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const monetizedLeave=round(numberValue(r.slConversion));
  const monetizedLeaveExempt=round(Math.min(monetizedLeave,Math.max(0,deMinimisRuleFor(periodEnd).monetizedLeaveDays*rate-(taxContext.priorYear?.monetizedLeaveExempt??0))));
  const otherBenefits=round(otherBenefitAllowances+monetizedLeave-monetizedLeaveExempt);
- const computedTax=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:round(thirteenth+otherBenefits),taxExemptBenefits:round(taxExempt+monetizedLeaveExempt),mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules});
+ const computedTax=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:round(thirteenth+otherBenefits),taxExemptBenefits:round(taxExempt+monetizedLeaveExempt),mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules,benefitOnly:taxContext.benefitOnly});
  const withDeMinimis={...computedTax,deMinimisExempt:round(exemptAllowances+monetizedLeaveExempt),monetizedLeaveExempt};
  const taxBreakdown=mwe?{...withDeMinimis,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:withDeMinimis;
  const tax=taxBreakdown.withholdingTax;

@@ -70,10 +70,13 @@ export function detectPayrollPeriod(from:string,to:string,configuredPayPeriods=2
  const days=Math.floor((Date.parse(`${to}T00:00:00Z`)-Date.parse(`${from}T00:00:00Z`))/86400000)+1;
  if(days<=2)return 'daily'; if(days<=8)return 'weekly'; if(days<=17)return 'semi-monthly'; return 'monthly';
 }
-export interface AnnualTaxHistory{regular:number;supplementary:number;benefitPayments:number;taxExemptBenefits:number;mandatoryContributions:number;withheld:number;payrollPeriods:number;cumulativeAverage?:boolean;/** Monetized leave already exempted this year. */monetizedLeaveExempt?:number}
+export interface AnnualTaxHistory{regular:number;supplementary:number;benefitPayments:number;taxExemptBenefits:number;mandatoryContributions:number;withheld:number;payrollPeriods:number;cumulativeAverage?:boolean;/** Monetized leave already exempted this year. */monetizedLeaveExempt?:number;
+ /** Taxable regular compensation of the latest regular payroll period this year; a benefit-only payment uses its bracket. */lastTaxableRegular?:number}
 export interface WithholdingTaxInput{
  regularCompensation:number;supplementaryCompensation:number;thirteenthMonthAndOtherBenefits?:number;taxExemptBenefits?:number;mandatoryContributions?:number;
  period:PayrollPeriod;periodStart:string;periodEnd:string;priorYear?:AnnualTaxHistory;finalPeriod?:boolean;rules?:WithholdingTaxRuleSet[];
+ /** A payment of 13th month pay or other benefits made apart from a regular payroll period (a 13th month run). */
+ benefitOnly?:boolean;
 }
 export interface WithholdingTaxBreakdown{
  status:'Calculated'|'Cumulative average'|'Year-end adjusted';ruleId:string;ruleSource:string;period:PayrollPeriod;
@@ -98,6 +101,7 @@ export function calculateWithholdingTax(input:WithholdingTaxInput):WithholdingTa
  const priorRegular=Math.max(0,prior.regular||0),priorSupp=Math.max(0,prior.supplementary||0),priorContrib=Math.max(0,prior.mandatoryContributions||0);
  const ytdTaxable=Math.max(0,priorRegular+priorSupp+priorBenefits-Math.min(priorBenefits,rule.annualBenefitsExemption)+regular+supp+benefits-benefitExemption-priorContrib-contrib);
  const gross=regular+supp+benefits+exempt;
+ if(input.benefitOnly&&!input.finalPeriod)return benefitPaymentTax({input,rule,prior,regular,supp,benefits,benefitExemption,exempt,contrib,taxablePeriod,ytdTaxable,gross});
  const payrollPeriods=Math.max(1,(prior.payrollPeriods||0)+1);
  const cumulativeRequired=Boolean(prior.cumulativeAverage)||taxableRegular<(periodTable[1]?.over??0)||(supp+Math.max(0,benefits-benefitExemption))>=taxableRegular;
  const cumulativeTax=taxFromTable(ytdTaxable/payrollPeriods,periodTable)*payrollPeriods;
@@ -107,4 +111,30 @@ export function calculateWithholdingTax(input:WithholdingTaxInput):WithholdingTa
   return{status:'Year-end adjusted',ruleId:rule.id,ruleSource:rule.source,period:input.period,grossCompensation:gross,regularCompensation:regular,supplementaryCompensation:supp,benefitPayments:benefits,benefitExemptionApplied:benefitExemption,taxExemptBenefits:exempt,mandatoryContributions:contrib,taxableRegular:Math.max(0,regular-contrib),taxableSupplementary:Math.max(0,supp+benefits-benefitExemption),taxableCompensation:taxablePeriod,taxBeforeAdjustment:taxBefore,yearToDateTaxableCompensation:ytdTaxable,annualTaxLiability:annualLiability,priorTaxWithheld:priorWithheld,withholdingTax:round(annualLiability-priorWithheld),explanation:'Annualized liability on year-to-date taxable compensation less withholding already recorded for the year; a negative adjustment is a refund/credit.'};
  }
  return{status:cumulativeRequired?'Cumulative average':'Calculated',ruleId:rule.id,ruleSource:rule.source,period:input.period,grossCompensation:gross,regularCompensation:regular,supplementaryCompensation:supp,benefitPayments:benefits,benefitExemptionApplied:benefitExemption,taxExemptBenefits:exempt,mandatoryContributions:contrib,taxableRegular,taxableSupplementary:Math.max(0,supp+benefits-benefitExemption),taxableCompensation:taxablePeriod,taxBeforeAdjustment:taxBefore,withholdingTax:periodTax,explanation:cumulativeRequired?'Cumulative-average method: annual-to-date taxable compensation is averaged over the payroll periods, taxed using the applicable period table, then prior withholding is credited. The cumulative method continues for the remainder of the calendar year.':'RR 11-2018 method: select the bracket using taxable regular compensation, then apply its base amount and marginal rate to total taxable regular and supplementary compensation.'};
+}
+
+/**
+ * A 13th month or other-benefits payment made apart from a regular payroll period. It is not a payroll period: it
+ * neither counts toward the cumulative-average divisor nor decides the method. Only the part above the remaining
+ * ₱90,000 exemption is taxable (RA 10963), and it is taxed as supplementary compensation (RR 2-98 Sec. 2.79(B), Steps
+ * 5-6): the bracket comes from the employee's taxable regular compensation, so the tax is that bracket's rate on the
+ * taxable excess (base + rate × (regular + excess − floor) less base + rate × (regular − floor)). An employee already
+ * on the cumulative-average method is taxed the increase in cumulative tax that the excess causes, over the same
+ * number of payroll periods. Before any regular payroll period of the year, the excess is taxed as that period's pay.
+ */
+function benefitPaymentTax({input,rule,prior,regular,supp,benefits,benefitExemption,exempt,contrib,taxablePeriod,ytdTaxable,gross}:{input:WithholdingTaxInput;rule:WithholdingTaxRuleSet;prior:AnnualTaxHistory;regular:number;supp:number;benefits:number;benefitExemption:number;exempt:number;contrib:number;taxablePeriod:number;ytdTaxable:number;gross:number}):WithholdingTaxBreakdown{
+ const table=rule.tables[input.period],periods=Math.max(0,prior.payrollPeriods||0);
+ const cumulative=Boolean(prior.cumulativeAverage)&&periods>0;
+ let tax:number,explanation:string;
+ if(!taxablePeriod){tax=0;explanation='13th month and other benefits within the remaining ₱90,000 exemption: nothing taxable. This payment is not a payroll period, so it does not change how later cutoffs are taxed.'}
+ else if(cumulative){
+  const before=Math.max(0,ytdTaxable-taxablePeriod);
+  tax=round(Math.max(0,taxFromTable(ytdTaxable/periods,table)*periods-taxFromTable(before/periods,table)*periods));
+  explanation=`Cumulative-average method: the taxable excess over the ₱90,000 exemption is added to the year-to-date taxable compensation over the same ${periods} payroll period${periods===1?'':'s'}; the tax is the increase in cumulative tax.`;
+ }else if(periods>0&&prior.lastTaxableRegular!==undefined){
+  const bracket=[...table].sort((a,b)=>b.over-a.over).find(row=>prior.lastTaxableRegular!>=row.over);
+  tax=round((bracket?.rate??0)/100*taxablePeriod);
+  explanation=`Supplementary compensation paid separately: the taxable excess over the ₱90,000 exemption is taxed at ${bracket?.rate??0}%, the rate of the bracket of the latest taxable regular compensation (₱${prior.lastTaxableRegular.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}).`;
+ }else{tax=taxFromTable(taxablePeriod,table);explanation='No regular payroll period yet this year: the taxable excess over the ₱90,000 exemption is taxed as one payroll period\'s compensation.'}
+ return{status:cumulative?'Cumulative average':'Calculated',ruleId:rule.id,ruleSource:rule.source,period:input.period,grossCompensation:gross,regularCompensation:regular,supplementaryCompensation:supp,benefitPayments:benefits,benefitExemptionApplied:benefitExemption,taxExemptBenefits:exempt,mandatoryContributions:contrib,taxableRegular:Math.max(0,regular-contrib),taxableSupplementary:Math.max(0,supp+benefits-benefitExemption),taxableCompensation:taxablePeriod,taxBeforeAdjustment:tax,withholdingTax:tax,explanation};
 }

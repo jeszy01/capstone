@@ -85,9 +85,10 @@ describe('3. December year-end adjustment',()=>{
  it('withholds the annual tax due without a 13th month run',()=>{
   expect(payYear(null).withheld).toBe(officialTax('annual',443400));
  });
- it('counts pending runs in ordinary cutoffs but only approved runs in the year-end adjustment',()=>{
+ // Since the audit of 25 October 2026 (P5) only approved runs count; a later cutoff waits for Finance's decision.
+ it('counts only approved runs, in ordinary cutoffs and in the year-end adjustment',()=>{
   const runs=[{id:'a',from:'2026-11-16',to:'2026-11-30',status:'Pending Approval'},{id:'b',from:'2026-12-01',to:'2026-12-15',status:'Approved'},{id:'c',from:'2026-12-20',to:'2026-12-20',status:'Approved',runType:'thirteenth-month'}] as PayrollRun[];
-  expect(taxHistoryRuns(runs,{year:'2026',from:'2026-12-01',to:'2026-12-15',final:false}).map(run=>run.id)).toEqual(['a']);
+  expect(taxHistoryRuns(runs,{year:'2026',from:'2026-12-01',to:'2026-12-15',final:false}).map(run=>run.id)).toEqual([]);
   expect(taxHistoryRuns(runs,{year:'2026',from:'2026-12-16',to:'2026-12-31',final:true}).map(run=>run.id)).toEqual(['b','c']);
  });
  it('blocks the year-end payroll while a run of the year is still pending',()=>{

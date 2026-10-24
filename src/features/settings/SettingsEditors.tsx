@@ -5,12 +5,15 @@ import {Button,Card,Empty,Field,Modal,Tabs,TextInput,ghost,input} from '../../co
 import {confirmWithPasskey} from '../auth/passkeyGate';
 import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate,saveWithholdingRules,validateRuleSet} from '../payroll/withholdingTax';
 import type {PayrollPeriod,TaxBracket,WithholdingTaxRuleSet} from '../payroll/withholdingTax';
+import {lockedRuleChange} from '../../../backend-render/withholdingRuleLock.js';
+import {RUNS_KEY} from '../payroll/payrollRuns';
+import type {PayrollRun} from '../payroll/payrollRuns';
 import {loadThirteenthMonthRules,saveThirteenthMonthRules,validateThirteenthMonthRules} from '../payroll/thirteenthMonth';
 import type {ThirteenthMonthRules} from '../payroll/thirteenthMonth';
 import {HOLIDAY_TYPES,OVERTIME_ROUNDING,RATE_FIELDS,loadHolidays,loadRates,loadTimeSettings,saveHolidays,saveRates,saveTimeSettings,validateRates,validateTimeSettings} from './payrollSettings';
 import type {Holiday,HolidayType,RateField,TimeSettings} from './payrollSettings';
 import type {OvertimeRounding,PayrollRates} from '../../types/domain';
-import {peso} from '../../utils/storage';
+import {peso,read} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 
 // Payroll Settings editors (Admin only, settings.edit). Saving asks for the passkey; the server allows only an Admin
@@ -167,12 +170,16 @@ export function WithholdingSection({editing,canEdit,onEdit,onDone,onDirty,startN
  const fresh=():WithholdingTaxRuleSet=>({...structuredClone(rules.slice(-1)[0]??DEFAULT_WITHHOLDING_RULES),id:crypto.randomUUID(),effectiveFrom:today(),effectiveTo:undefined});
  const {draft,setDraft}=useDraft(()=>newVersion?fresh():structuredClone(selected),editing,onDirty);
  const rule=editing?draft:selected;
- const save=useSave(()=>validateRuleSet({...draft,effectiveTo:undefined}),()=>{
+ // The saved versions with the draft in place; a new version closes the one before it on the day before it starts.
+ const nextRules=()=>{
   const prior=rules.filter(item=>item.id!==draft.id&&item.effectiveFrom<draft.effectiveFrom&&(!item.effectiveTo||item.effectiveTo>=draft.effectiveFrom));
   const cutOff=new Date(`${draft.effectiveFrom}T00:00:00Z`);cutOff.setUTCDate(cutOff.getUTCDate()-1);
   const closed=rules.map(item=>prior.some(old=>old.id===item.id)?{...item,effectiveTo:cutOff.toISOString().slice(0,10)}:item);
-  const next=[...closed.filter(item=>item.id!==draft.id&&item.effectiveFrom!==draft.effectiveFrom),draft].sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
-  saveWithholdingRules(next);
+  return [...closed.filter(item=>item.id!==draft.id&&item.effectiveFrom!==draft.effectiveFrom),draft].sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
+ };
+ // A version a payroll run was computed with is locked; the server refuses the change as well.
+ const save=useSave(()=>{const errors=validateRuleSet({...draft,effectiveTo:undefined});const locked=errors.length?'':lockedRuleChange(rules,nextRules(),read<PayrollRun[]>(RUNS_KEY,[]));return locked?[...errors,locked]:errors},()=>{
+  saveWithholdingRules(nextRules());
   setRules(loadWithholdingRules());setSelectedId(draft.id);setNewVersion(false);onDone('Withholding Tax saved.');
  });
  const table=tableOf(rule,period);
