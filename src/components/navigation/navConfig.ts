@@ -1,17 +1,17 @@
-import {LayoutGrid,Users,Wallet,BarChart3,FileText,HeartPulse} from 'lucide-react';
+import {Banknote,CreditCard,Heart,LayoutGrid,ReceiptText,Settings,ShieldCheck,User} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import {hmoTabs} from '../../features/hmo/hmoNavigation';
 export interface NavItem{label:string;to:string;icon?:LucideIcon;children?:NavItem[]}
-export const overview:NavItem[]=[{label:'Dashboard',to:'/dashboard',icon:LayoutGrid}];
+export const overview:NavItem[]=[{label:'Dashboard',to:'/dashboard',icon:LayoutGrid},{label:'Employees',to:'/employees',icon:User}];
 export const modules:NavItem[]=[
- {label:'Employees',to:'/employees',icon:Users},
- {label:'Payroll Management',to:'/payroll',icon:Wallet,children:[
-  {label:'Payroll Runs',to:'/payroll'},{label:'Attendance',to:'/time-attendance'},{label:'Deductions',to:'/deductions'},
+ {label:'Payroll Management',to:'/payroll',icon:CreditCard,children:[
+  {label:'Payroll Runs',to:'/payroll'},{label:'Attendance',to:'/time-attendance'},{label:'Deductions',to:'/deductions'},{label:'Payroll Settings',to:'/payroll-settings'},
  ]},
- {label:'Compensation',to:'/compensation',icon:BarChart3},
- {label:'Claims',to:'/claims-reimbursement',icon:FileText},
- {label:'HMO & Benefits',to:'/hmo-benefits',icon:HeartPulse},
+ {label:'Compensation',to:'/compensation',icon:Banknote},
+ {label:'Claims',to:'/claims-reimbursement',icon:ReceiptText},
+ {label:'HMO / Benefits',to:'/hmo-benefits',icon:Heart},
 ];
+export const system:NavItem[]=[{label:'Settings & Privacy',to:'/settings-privacy',icon:Settings},{label:'Audit Logs',to:'/logs-audits',icon:ShieldCheck}];
 export const titles={
  ...Object.fromEntries([...overview,...modules.flatMap(m=>m.children??[m])].map(i=>[i.to,i.label])),
  ...Object.fromEntries(hmoTabs.map(tab=>[tab.to,tab.label])),

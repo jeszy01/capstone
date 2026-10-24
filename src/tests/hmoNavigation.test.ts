@@ -20,8 +20,8 @@ describe('HMO presentation navigation',()=>{
     expect(titles['/hmo-benefits']).toBe('HMO & Benefits');
   });
 
-  it('shows HMO & Benefits as a single link',()=>{
-    const hmo=modules.find(item=>item.label==='HMO & Benefits');
+  it('shows HMO / Benefits as a single link',()=>{
+    const hmo=modules.find(item=>item.label==='HMO / Benefits');
     expect(hmo?.to).toBe('/hmo-benefits');
     expect(hmo?.children).toBeUndefined();
     // Government loans are deductions: they live under Payroll Management → Deductions, not in a sidebar module.
