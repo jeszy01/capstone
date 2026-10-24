@@ -5,6 +5,7 @@ import AppLayout from './layouts/AppLayout';
 import Login from './features/auth/Login';
 import {getCurrentUser,refreshCurrentUser} from './features/auth/authService';
 import {Dashboard,Employees,Payroll,Deductions,Compensation} from './pages/Modules';
+import {HrAnalytics,Reports} from './pages/Insights';
 import TimeAttendance from './features/attendance/TimeAttendance';
 import Finance from './pages/Finance';
 import HmoBenefits from './features/hmo/HmoBenefits';
@@ -34,6 +35,8 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/employees" element={<Employees/>}/>
   <Route path="/payroll" element={<Payroll/>}/>
   <Route path="/deductions" element={<Deductions/>}/>
+  <Route path="/hr-analytics" element={<HrAnalytics/>}/>
+  <Route path="/reports" element={<Reports/>}/>
   <Route path="/payroll/review" element={<ReviewPayroll/>}/>
   <Route path="/time-attendance" element={<TimeAttendance/>}/>
   <Route path="/compensation" element={<Compensation/>}/>
