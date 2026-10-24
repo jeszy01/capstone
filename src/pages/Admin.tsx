@@ -1,14 +1,12 @@
 import {useEffect,useState} from 'react';
-import {ClipboardList,Pencil,Plus,Power,RefreshCw,Save,Trash2,UserPlus} from 'lucide-react';
+import {ClipboardList,Pencil,Plus,Power,RefreshCw,Trash2,UserPlus} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,TextInput,button,ghost,input} from '../components/common/ui';
 import {getCurrentUser} from '../features/auth/authService';
-import {accountService} from '../features/auth/accountService';
-import {can} from '../features/auth/permissions';
 import {userService} from '../features/auth/userService';
 import type {ManagedUser} from '../features/auth/userService';
 import type {User} from '../types/domain';
 import {read} from '../utils/storage';
-import {readAuditEvents,recordAudit} from '../features/audit/auditService';
+import {readAuditEvents} from '../features/audit/auditService';
 import type {AuditEvent} from '../features/audit/auditService';
 import {StatusBadge} from '../components/common/StatusBadge';
 
