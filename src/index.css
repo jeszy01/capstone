@@ -111,6 +111,10 @@
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
+/* Chart colours (HR Analytics), checked for colour-blind separation and contrast in each theme. */
+:root { --chart-1: #6366f1; --chart-2: #14b8a6; --chart-3: #f59e0b; --chart-4: #ec4899; --chart-1-soft: #c7d2fe; --chart-grid: #eef2f7; --chart-axis: #94a3b8; --chart-surface: #ffffff; }
+.pbms-dark { --chart-2: #0d9488; --chart-3: #d97706; --chart-1-soft: #a5b4fc; --chart-grid: #1c1c22; --chart-axis: #8b8b96; --chart-surface: #101014; }
+
 /* ---- Dark theme (black / gray / white) ---- */
 :root { color-scheme: light; }
 .pbms-dark { color-scheme: dark; }

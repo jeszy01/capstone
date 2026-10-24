@@ -1,27 +1,55 @@
 import {useEffect,useRef,useState} from 'react';
-import {ArrowRight,Banknote,BarChart3,CreditCard,Download,FileSpreadsheet,FileText,HandCoins,Heart,Printer,ReceiptText,Shield,Wallet} from 'lucide-react';
+import type {ReactNode} from 'react';
+import {ArrowRight,Banknote,BarChart3,CircleCheck,CreditCard,Download,FileSpreadsheet,FileText,HandCoins,Heart,Printer,ReceiptText,Shield,ShieldCheck,Wallet,WalletMinimal as WalletIcon} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
-import {ErrorAlert,Modal,PageHeader,ghost,input} from '../components/common/ui';
-import {apiClient} from '../services/api/apiClient';
-import type {DashboardSummary} from '../../backend-render/dashboardRules.js';
+import {Card,ErrorAlert,Modal,PageHeader,ghost,input} from '../components/common/ui';
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
-import {DepartmentDonut,EmployeeOverviewCard} from '../features/dashboard/DashboardPanels';
+import {SummaryCard} from '../features/compensation/compensationWidgets';
+import {BarChart,LineChart,NoData,SERIES} from '../features/analytics/Charts';
+import {benefitsByPlan,claimsByType,compactPeso,costTrend,kpis,statutory} from '../features/analytics/hrAnalytics';
+import {hmoService} from '../features/hmo/hmoService';
+import {normalizeClaims} from '../features/claims/claimsTypes';
+import {loadRates} from '../features/settings/payrollSettings';
+import {RUNS_KEY} from '../features/payroll/payrollRuns';
+import type {PayrollRun} from '../features/payroll/payrollRuns';
+import {read} from '../utils/storage';
 import {MONTHS,REPORTS,buildReport,reportCsv,reportExcel} from '../features/reports/reportBuilders';
 import type {Report,ReportId} from '../features/reports/reportBuilders';
 
-/** Insights → HR Analytics: the employee overview and the headcount by department, as counted by the server. */
+/** Insights → HR Analytics: payroll cost figures and charts from the approved payroll runs, HMO enrollments and claims. */
 export function HrAnalytics(){
- const[summary,setSummary]=useState<DashboardSummary|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
- useEffect(()=>{let mounted=true;apiClient.get<{data:DashboardSummary}>('/dashboard').then(response=>{if(mounted)setSummary(response.data)}).catch(cause=>{if(mounted)setError(cause instanceof Error?cause.message:'')}).finally(()=>{if(mounted)setLoading(false)});return()=>{mounted=false}},[]);
+ const[employees,setEmployees]=useState<Employee[]>([]),[benefits,setBenefits]=useState<Array<{label:string;value:number}>>([]);
+ useEffect(()=>{employeeService.getAll().then(setEmployees).catch(()=>setEmployees([]))},[]);
+ useEffect(()=>{Promise.all([hmoService.plans(),hmoService.enrollments()]).then(([plans,enrollments])=>setBenefits(benefitsByPlan(plans,enrollments))).catch(()=>setBenefits([]))},[]);
+ const runs=read<PayrollRun[]>(RUNS_KEY,[]);
+ const figures=kpis(runs,employees),trend=costTrend(runs,loadRates()),claims=claimsByType(normalizeClaims(employees)),shares=statutory(runs);
+ const chartCard=(title:string,subtitle:string,body:ReactNode)=><Card className="min-w-0 !p-0"><div className="border-b border-gray-100 px-6 py-4"><h2 className="m-0 text-[15px] font-bold text-gray-900">{title}</h2><p className="mb-0 mt-0.5 text-[12.5px] text-gray-500">{subtitle}</p></div><div className="px-4 pb-4 pt-3">{body}</div></Card>;
+ const green='bg-emerald-50 text-emerald-700';
  return <div className="space-y-6">
   <PageHeader title="HR Analytics"/>
-  <section className="grid min-w-0 gap-5 xl:grid-cols-2">
-   <EmployeeOverviewCard data={summary?.employeeOverview??null} loading={loading} error={error}/>
-   <DepartmentDonut data={summary?.departments??null} loading={loading} error={error}/>
+  <section aria-label="Payroll figures" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+   <SummaryCard label="Monthly Gross Payroll" value={compactPeso(figures.gross)} caption={`${figures.active} active ${figures.active===1?'employee':'employees'}`} icon={WalletIcon} tone="bg-indigo-50 text-indigo-600" captionTone={green}/>
+   <SummaryCard label="Monthly Net Pay" value={compactPeso(figures.net)} caption="After statutory deductions" icon={Banknote} tone="bg-teal-50 text-teal-600"/>
+   <SummaryCard label="Monthly Employer Cost" value={compactPeso(figures.employer)} caption="Salary + statutory + benefits" icon={ShieldCheck} tone="bg-pink-50 text-pink-600"/>
+   <SummaryCard label="Total Net Released" value={compactPeso(figures.released)} caption={`${figures.paidRuns} paid ${figures.paidRuns===1?'run':'runs'}`} icon={CircleCheck} tone="bg-emerald-50 text-emerald-600" captionTone={green}/>
   </section>
+  {chartCard('Payroll Cost Trend','Gross, net and employer cost per period',trend.length?<LineChart labels={trend.map(item=>item.label)} series={[
+   {label:'Gross',color:SERIES[0],values:trend.map(item=>item.gross),area:true},
+   {label:'Net',color:SERIES[1],values:trend.map(item=>item.net)},
+   {label:'Employer cost',color:SERIES[2],values:trend.map(item=>item.employer),dashed:true},
+  ]}/>:<NoData/>)}
+  <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+   {chartCard('Benefits Cost Breakdown','Monthly employer share by plan',benefits.length?<BarChart labels={benefits.map(item=>item.label)} barColors={benefits.map((_,i)=>SERIES[i%SERIES.length])} series={[{label:'Employer share',color:SERIES[0],values:benefits.map(item=>item.value)}]}/>:<NoData/>)}
+   {chartCard('Claims by Type','Reimbursement volume',claims.some(item=>item.value)?<BarChart labels={claims.map(item=>item.label)} barColors={claims.map(item=>CLAIM_COLORS[item.label]??SERIES[0])} series={[{label:'Amount',color:SERIES[0],values:claims.map(item=>item.value)}]}/>:<NoData/>)}
+  </section>
+  {chartCard('Statutory Contribution Summary','Monthly employee vs employer shares',shares.some(item=>item.employee||item.employer)?<BarChart labels={shares.map(item=>item.label)} series={[
+   {label:'Employee share',color:SERIES[0],values:shares.map(item=>item.employee)},
+   {label:'Employer share',color:'var(--chart-1-soft)',values:shares.map(item=>item.employer)},
+  ]}/>:<NoData/>)}
  </div>;
 }
+const CLAIM_COLORS:Record<string,string>={'Food':SERIES[2],'Transportation':SERIES[0],'Office Supplies':SERIES[1]};
 
 const GROUP_STYLES:Record<string,{icon:LucideIcon;tint:string;border:string}>={
  'Payroll':{icon:CreditCard,tint:'bg-purple-50 text-purple-600',border:'border-purple-200 hover:border-purple-300'},
