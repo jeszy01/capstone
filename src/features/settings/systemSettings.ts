@@ -9,7 +9,7 @@ export interface Regional{dateFormat:DateFormat;currency:'PHP';timeZone:'Asia/Ma
 export interface Branding{logo:string;headerText:string;footerText:string;logoOnPayslips:boolean;logoOnReports:boolean}
 export interface PrivacySettings{hideSalaryFromHr:boolean;maskGovIds:boolean}
 export interface BackupInfo{lastBackupAt:string;lastBackupBy:string}
-export type UiColor='blue'|'green'|'purple'|'orange'|'rose';
+export type UiColor='blue'|'green'|'teal'|'purple'|'graphite'|'orange'|'red'|'rose';
 export type FontSize='small'|'medium'|'large';
 export interface Appearance{color:UiColor;fontSize:FontSize}
 
@@ -54,12 +54,16 @@ export function maskGovId(value:string|null|undefined){
  return digits.length>4?`•••• ${digits.slice(-4)}`:'••••';
 }
 
-// Appearance: the UI colour swaps the blue, indigo and sky scales, the sidebar and the dark-theme tints; the font size scales the whole interface.
-export const UI_COLORS:Array<{id:UiColor;label:string;swatch:string}>=[
- {id:'blue',label:'Blue',swatch:'#2563eb'},{id:'green',label:'Green',swatch:'#059669'},{id:'purple',label:'Purple',swatch:'#7c3aed'},{id:'orange',label:'Orange',swatch:'#ea580c'},{id:'rose',label:'Rose',swatch:'#e11d48'},
+// Appearance: each theme pairs an accent with a matching sidebar ('blue' is the company default) and recolours every page; the font size scales the whole interface.
+export const UI_COLORS:Array<{id:UiColor;label:string;swatch:string;sidebar:string}>=[
+ {id:'blue',label:'Default',swatch:'#2563eb',sidebar:'#0b1f4b'},{id:'green',label:'Emerald',swatch:'#047857',sidebar:'#052e25'},{id:'teal',label:'Ocean',swatch:'#0f766e',sidebar:'#072f37'},{id:'purple',label:'Violet',swatch:'#7c3aed',sidebar:'#1e1446'},
+ {id:'graphite',label:'Graphite',swatch:'#4f46e5',sidebar:'#111827'},{id:'orange',label:'Sunset',swatch:'#c2410c',sidebar:'#1c1917'},{id:'red',label:'Crimson',swatch:'#dc2626',sidebar:'#2a0b10'},{id:'rose',label:'Rose',swatch:'#e11d48',sidebar:'#2b1030'},
 ];
 export const FONT_SIZES:Array<{id:FontSize;label:string}>=[{id:'small',label:'Small'},{id:'medium',label:'Medium'},{id:'large',label:'Large'}];
-export const loadAppearance=():Appearance=>({...DEFAULT_APPEARANCE,...read<Partial<Appearance>>(APPEARANCE_KEY,{})});
+export function loadAppearance():Appearance{
+ const value={...DEFAULT_APPEARANCE,...read<Partial<Appearance>>(APPEARANCE_KEY,{})};
+ return UI_COLORS.some(color=>color.id===value.color)?value:{...value,color:DEFAULT_APPEARANCE.color};
+}
 export function applyAppearance(value=loadAppearance()){
  const root=document.documentElement;
  root.dataset.uiColor=value.color;root.dataset.fontSize=value.fontSize;

@@ -14,7 +14,7 @@ import {accountService,passkeyProblems,passwordProblems} from '../features/auth/
 import type {AccountSecurity,AccountSession} from '../features/auth/accountService';
 import {employeeService} from '../features/employees/employeeService';
 import {notificationSoundOn,setNotificationSoundOn} from '../features/notifications/notificationSound';
-import {DEFAULT_LOGO,FONT_SIZES,SESSION_TIMEOUTS,UI_COLORS,loadAppearance,loadBackup,loadBranding,loadCompany,loadPrivacy,loadRegional,loadSessionTimeout,saveAppearance,saveBackup,saveBranding,saveCompany,savePrivacy,saveRegional,saveSessionTimeout} from '../features/settings/systemSettings';
+import {DEFAULT_APPEARANCE,DEFAULT_LOGO,FONT_SIZES,SESSION_TIMEOUTS,UI_COLORS,loadAppearance,loadBackup,loadBranding,loadCompany,loadPrivacy,loadRegional,loadSessionTimeout,saveAppearance,saveBackup,saveBranding,saveCompany,savePrivacy,saveRegional,saveSessionTimeout} from '../features/settings/systemSettings';
 import type {Appearance,Branding,CompanyProfile,DateFormat,PrivacySettings,Regional} from '../features/settings/systemSettings';
 import {formatWithSetting} from '../features/settings/systemSettings';
 
@@ -104,10 +104,16 @@ function CompanySection(){
 
 function AppearanceSection(){
  const[draft,setDraft]=useState<Appearance>(loadAppearance),[sound,setSound]=useState(notificationSoundOn),[saved,flash]=useSaved();
- const save=()=>{saveAppearance(draft);setNotificationSoundOn(sound);flash()};
- return <Section id="appearance" footer={<><Saved show={saved}/><button type="button" className={saveButton} onClick={save}>Save Changes</button></>}>
-  <div className="text-[13px] font-medium text-gray-700">UI Color</div>
-  <div className="mt-3 flex flex-wrap gap-3">{UI_COLORS.map(color=><button key={color.id} type="button" aria-label={color.label} aria-pressed={draft.color===color.id} onClick={()=>setDraft({...draft,color:color.id})} className={`h-9 w-9 rounded-full transition ${draft.color===color.id?'ring-2 ring-offset-2':'hover:scale-110'}`} style={{background:`linear-gradient(135deg, ${color.swatch}, ${color.swatch}cc)`,['--tw-ring-color' as string]:color.swatch}}/>)}</div>
+ const save=(value=draft)=>{setDraft(value);saveAppearance(value);setNotificationSoundOn(sound);flash()};
+ return <Section id="appearance" footer={<><Saved show={saved}/><button type="button" className={ghost} onClick={()=>save({...draft,color:DEFAULT_APPEARANCE.color})}>Reset to Default</button><button type="button" className={saveButton} onClick={()=>save()}>Save Changes</button></>}>
+  <div className="text-[13px] font-medium text-gray-700">Theme</div>
+  <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">{UI_COLORS.map(theme=>{const on=draft.color===theme.id;return <button key={theme.id} type="button" aria-label={`${theme.label} theme`} aria-pressed={on} onClick={()=>setDraft({...draft,color:theme.id})} className={`rounded-xl border p-2 text-left transition ${on?'border-blue-500 ring-2 ring-blue-500/20':'border-gray-200 hover:border-gray-300'}`}>
+   <div className="flex h-14 overflow-hidden rounded-lg border border-gray-100">
+    <div className="flex w-1/3 flex-col gap-1 p-1.5" style={{background:theme.sidebar}}><span className="h-1.5 rounded-full bg-white/25"/><span className="h-1.5 rounded-full" style={{background:theme.swatch}}/><span className="h-1.5 rounded-full bg-white/25"/></div>
+    <div className="flex flex-1 flex-col justify-between bg-gray-50 p-1.5"><span className="h-1.5 w-2/3 rounded-full bg-gray-200"/><span className="h-3 w-1/2 rounded" style={{background:theme.swatch}}/></div>
+   </div>
+   <div className="mt-2 flex items-center justify-between px-0.5 text-[12.5px] font-semibold text-gray-800">{theme.label}{on&&<Check size={14} style={{color:theme.swatch}}/>}</div>
+  </button>})}</div>
   <div className="mt-6 text-[13px] font-medium text-gray-700">Font Size</div>
   <div className="mt-3 flex flex-wrap gap-2">{FONT_SIZES.map(size=><button key={size.id} type="button" aria-pressed={draft.fontSize===size.id} onClick={()=>setDraft({...draft,fontSize:size.id})} className={`rounded-xl border px-4 py-2 text-[13px] font-semibold transition ${draft.fontSize===size.id?'border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm':'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}>{size.label}</button>)}</div>
   <div className="mt-4"><Toggle label="Notification sound" checked={sound} onChange={setSound}/></div>
