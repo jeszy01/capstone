@@ -3,7 +3,7 @@ import {read,write} from '../../utils/storage';
 import {getCurrentUser} from '../auth/authService';
 import type {User} from '../../types/domain';
 
-export type NotificationRole='admin'|'hr';
+export type NotificationRole='admin'|'hr'|'finance';
 export type NotificationType='claim_submitted'|'claim_approved'|'claim_rejected'|'ot_pending'|'payroll_pending'|'payroll_approved'|'payroll_rejected'|'payroll_returned'|'payroll_funded';
 export interface AppNotification{id:string;type:NotificationType;title:string;message:string;role:NotificationRole;link:string;read:boolean;created_at:string}
 
@@ -13,7 +13,7 @@ export const NOTIFICATIONS_KEY='notifications:records';
 export const NOTIFICATIONS_EVENT='pbms:notifications';
 const MAX_READ=200;
 
-export const notificationRole=(role:User['role']|undefined=getCurrentUser()?.role):NotificationRole|null=>role==='Admin'?'admin':role==='HR Staff'?'hr':null;
+export const notificationRole=(role:User['role']|undefined=getCurrentUser()?.role):NotificationRole|null=>role==='Admin'?'admin':role==='HR Staff'?'hr':role==='Finance'?'finance':null;
 const all=()=>read<AppNotification[]>(NOTIFICATIONS_KEY,[]);
 export const notificationsFor=(role:NotificationRole|null)=>role?all().filter(item=>item.role===role).sort((a,b)=>b.created_at.localeCompare(a.created_at)):[];
 export const unreadCount=(role:NotificationRole|null)=>notificationsFor(role).filter(item=>!item.read).length;
@@ -57,6 +57,6 @@ const runLink=(runId:string)=>`/payroll/review?run=${runId}`;
 export const notifyClaimSubmitted=(claimNumber:string,amount:string)=>notify('claim_submitted','New claim submitted',`${claimNumber} · ${amount}`,CLAIMS_LINK,['admin','hr']);
 export const notifyClaimDecided=(claimNumber:string,status:'Approved'|'Rejected')=>notify(status==='Approved'?'claim_approved':'claim_rejected',`Claim ${status.toLowerCase()}`,claimNumber,CLAIMS_LINK,['hr']);
 export const notifyOvertimePending=(employeeName:string,date:string)=>notify('ot_pending','OT pending approval',`${employeeName} · ${date}`,'/time-attendance',['admin','hr']);
-// The Admin approves, returns or rejects a submitted run; HR hears about each. Funding notifies HR from the server.
-export const notifyPayrollPending=(runId:string,label:string)=>notify('payroll_pending','Payroll submitted for approval',label,runLink(runId),['admin']);
+// Finance approves, returns or rejects a submitted run; HR hears about each. Funding notifies HR from the server.
+export const notifyPayrollPending=(runId:string,label:string)=>notify('payroll_pending','Payroll submitted for approval',label,runLink(runId),['finance']);
 export const notifyPayrollDecided=(runId:string,label:string,status:'Approved'|'Returned'|'Rejected',comment?:string)=>notify(status==='Approved'?'payroll_approved':status==='Returned'?'payroll_returned':'payroll_rejected',`Payroll ${status.toLowerCase()}`,status==='Approved'?`${label} · Waiting for funding`:`${label} · ${comment??''}`,runLink(runId),['hr']);

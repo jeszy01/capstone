@@ -1,6 +1,11 @@
 import {apiClient} from '../../services/api/apiClient';
 import {read,write,remove} from '../../utils/storage';
-import type {Session} from '../../types/domain';
+import type {Session,User} from '../../types/domain';
+
+// Server role keys and the labels the app shows.
+export type ServerRole='admin'|'hr_staff'|'finance';
+export const roleLabel=(role:string):User['role']=>{const key=role.trim().toLowerCase().replace(/[\s-]+/g,'_');return key==='admin'?'Admin':key==='finance'?'Finance':'HR Staff'};
+export const serverRole=(role:User['role']):ServerRole=>role==='Admin'?'admin':role==='Finance'?'finance':'hr_staff';
 
 import {API_BASE} from '../../config/api';
 const functionBase=API_BASE;
@@ -37,7 +42,7 @@ export async function refreshCurrentUser():Promise<boolean>{
  const current=getCurrentUser();if(!current)return false;
  const response=await apiClient.get<{data:Array<{id:string;name?:string|null;display_name?:string|null;email?:string|null;employee_id:string;role:string}>}>('/current-user');
  const row=response.data[0];if(!row)return false;
- const role=row.role.toLowerCase()==='admin'?'Admin':'HR Staff';
+ const role=roleLabel(row.role);
  const name=row.name||row.email||current.name;
  const displayName=row.display_name===undefined?current.displayName??null:row.display_name;
  if(role===current.role&&name===current.name&&displayName===(current.displayName??null))return false;

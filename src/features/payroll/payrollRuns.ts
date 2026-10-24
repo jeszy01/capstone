@@ -31,7 +31,7 @@ export type PayrollRunType='regular'|'thirteenth-month';
 export type PayrollRun={id:string;runType?:PayrollRunType;from:string;to:string;status:RunStatus;rows:RunRow[];totals:{gross:number;deductions:number;net:number};
  preparedBy:string;preparedById?:string;createdAt:string;payDate?:string;settings?:PayrollSettingsSnapshot;
  /** What Create Payroll warned about (Strict Mode off), shown on the run. */warnings?:string[];
- submittedAt?:string;submittedBy?:string;decidedBy?:string;decidedById?:string;decidedAt?:string;/** The Admin's comment; required to return or reject. */decisionComment?:string;
+ submittedAt?:string;submittedBy?:string;decidedBy?:string;decidedById?:string;decidedAt?:string;/** Finance's comment; required to return or reject. */decisionComment?:string;
  /** Set by the server when the Admin uploads the bank transfer receipt; the file itself is stored privately. */
  funding?:{receiptId?:string;fileName?:string;mimeType?:string;size?:number;amount:number;uploadedAt?:string;uploadedBy?:string;uploadedById?:string;confirmedAt:string;confirmedBy:string;confirmedById:string;replacedFrom?:string|null};
  payouts?:Record<string,PayoutLine>;exports?:PayoutExport[];paidAt?:string;paidBy?:string;

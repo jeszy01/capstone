@@ -134,7 +134,7 @@ export function PayrollSummaryModal({run,employees,onClose}:{run:PayrollRun;empl
           <tr className="border-t-2 border-slate-800 font-bold"><td className={td}>Total</td><td className={td}>{rows.length}</td><td className={td}>{peso(data.gross)}</td><td className={td}>{peso(data.deductions)}</td><td className={td}>{peso(data.employer)}</td><td className={td}>{peso(data.net)}</td></tr></tbody></table></div></div>
 
       <div className="grid gap-6 pt-6 sm:grid-cols-3">
-        {[['Prepared by',run.preparedBy||'Payroll Officer'],['Approved by',run.decidedBy||'Admin'],['Received by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[64px] flex-col justify-end border-t border-slate-700 pt-1.5 text-[12px] text-slate-500"><b className="text-slate-800">{label}</b><span>{name}</span><span className="mt-3">Date: ________________</span></div>)}
+        {[['Prepared by',run.preparedBy||'Payroll Officer'],['Approved by',run.decidedBy||'Finance'],['Received by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[64px] flex-col justify-end border-t border-slate-700 pt-1.5 text-[12px] text-slate-500"><b className="text-slate-800">{label}</b><span>{name}</span><span className="mt-3">Date: ________________</span></div>)}
       </div>
     </div>
     <button className={`${ghost} no-print mt-4`} onClick={()=>window.print()}>Print / Save as PDF</button>

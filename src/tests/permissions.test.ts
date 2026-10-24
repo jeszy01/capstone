@@ -2,16 +2,22 @@ import {describe,expect,it} from 'vitest';
 import {can,canOpen} from '../features/auth/permissions';
 
 describe('role permissions',()=>{
- it('gives an Admin every permission',()=>{
-  for(const permission of ['payroll.approve','payroll.fund'] as const)expect(can(permission,'Admin')).toBe(true);
+ it('gives an Admin every permission except approving payroll',()=>{
+  expect(can('payroll.fund','Admin')).toBe(true);
+  expect(can('payroll.approve','Admin')).toBe(false);
   for(const permission of ['compensation.approve','users.manage','settings.edit','audit.view'] as const)expect(can(permission,'Admin')).toBe(true);
   for(const permission of ['payroll.generate','payroll.release','claims.encode','claims.approve','claims.pay','attendance.encode','employees.manage','hmo.manage','compensation.manage','loans.manage','leave.encode','leave.approve','deductions.manage'] as const)expect(can(permission,'Admin')).toBe(true);
   expect(can('hmo.approve','Admin')).toBe(true);
   expect(can('hmo.approve','HR Staff')).toBe(false);
  });
- it('lets HR Staff generate, approve, fund and release payroll (Finance page), handle claims and view Logs & Audits, but not change settings',()=>{
-  for(const permission of ['payroll.generate','payroll.release','payroll.approve','payroll.fund','claims.encode','claims.approve','claims.pay','attendance.encode','employees.manage','compensation.manage','hmo.manage','audit.view'] as const)expect(can(permission,'HR Staff')).toBe(true);
+ it('lets HR Staff generate, fund and release payroll, handle claims and view Logs & Audits, but not approve payroll or change settings',()=>{
+  expect(can('payroll.approve','HR Staff')).toBe(false);
+  for(const permission of ['payroll.generate','payroll.release','payroll.fund','claims.encode','claims.approve','claims.pay','attendance.encode','employees.manage','compensation.manage','hmo.manage','audit.view'] as const)expect(can(permission,'HR Staff')).toBe(true);
   for(const permission of ['compensation.approve','users.manage','settings.edit'] as const)expect(can(permission,'HR Staff')).toBe(false);
+ });
+ it('lets only Finance approve payroll; Finance cannot prepare, release or pay it',()=>{
+  for(const permission of ['payroll.view','payroll.approve','payroll.fund'] as const)expect(can(permission,'Finance')).toBe(true);
+  for(const permission of ['payroll.generate','payroll.release','settings.view','users.manage','audit.view'] as const)expect(can(permission,'Finance')).toBe(false);
  });
  it('shows Payroll Settings to Admin and HR Staff; only Admin edits them',()=>{
   expect(can('settings.view','Admin')).toBe(true);

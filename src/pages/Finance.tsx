@@ -6,6 +6,7 @@ import {StatusBadge} from '../components/common/StatusBadge';
 import {peso,read,write} from '../utils/storage';
 import {formatDate} from '../utils/date';
 import {getCurrentUser} from '../features/auth/authService';
+import {can} from '../features/auth/permissions';
 import {notifyPayrollDecided} from '../features/notifications/notificationService';
 import {RUNS_KEY,expectStatus,runLabel,runStatus,updateRun} from '../features/payroll/payrollRuns';
 import type {PayrollRun} from '../features/payroll/payrollRuns';
@@ -17,12 +18,12 @@ const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.mes
 const netOf=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
 
 /**
- * Finance (account menu, Admin and HR Staff): one page to approve submitted payroll and to confirm funding. Confirm
+ * Finance (account menu): Finance approves submitted payroll; every role with payroll.fund confirms funding. Confirm
  * marks an approved run Funded; its bank transfer receipt is attached afterwards (the server checks the file, stores it
  * privately and logs it), and payouts cannot be exported until it is.
  */
 export default function Finance(){
- const user=getCurrentUser();
+ const user=getCurrentUser(),canApprove=can('payroll.approve');
  const[,setTick]=useState(0),[action,setAction]=useState<Action|null>(null),[comment,setComment]=useState(''),[receipt,setReceipt]=useState<File|null>(null);
  const[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const runs=read<PayrollRun[]>(RUNS_KEY,[]).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
@@ -38,7 +39,7 @@ export default function Finance(){
   try{
    if(kind==='Approved'||kind==='Rejected'){
     if(kind==='Rejected'&&text.length<3)throw new Error('Write a comment (at least 3 characters) to reject this payroll.');
-    await updateRun(run.id,item=>{expectStatus(item,'Pending Approval');const {decisionComment:_previous,...rest}=item;return {...rest,status:kind,decidedBy:user?.name??'Admin',decidedById:user?.id,decidedAt:new Date().toISOString(),...(text?{decisionComment:text}:{})}});
+    await updateRun(run.id,item=>{expectStatus(item,'Pending Approval');const {decisionComment:_previous,...rest}=item;return {...rest,status:kind,decidedBy:user?.name??'Finance',decidedById:user?.id,decidedAt:new Date().toISOString(),...(text?{decisionComment:text}:{})}});
     // The Dashboard's payroll figures read the last approved run's inputs.
     if(kind==='Approved'){const stamp=Date.now();write('payroll:records',run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
     notifyPayrollDecided(run.id,runLabel(run),kind,text);
@@ -77,10 +78,10 @@ export default function Finance(){
  const receiptLine=(run:PayrollRun)=>run.funding?.receiptId?<div className="mt-1 text-[11px] font-normal text-slate-500">Receipt {run.funding.fileName} · {peso(run.funding.amount)} · by {run.funding.uploadedBy} on {formatDate(run.funding.uploadedAt)}</div>
   :run.funding?<div className="mt-1 text-[11px] font-semibold text-amber-700">No receipt yet · payouts cannot be exported until it is attached</div>:null;
  return <div className="space-y-5">
-  <PageHeader title="Finance" description="Approve submitted payroll, confirm funding, then attach the bank transfer receipt."/>
+  <PageHeader title="Finance" description={canApprove?'Approve submitted payroll, confirm funding, then attach the bank transfer receipt.':'Confirm funding of approved payroll, then attach the bank transfer receipt.'}/>
   {error&&!action&&<p role="alert" className="m-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
   {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
-  {table('Awaiting approval','Submitted by HR. You cannot approve a payroll you prepared.',pending,'No payroll is waiting for approval.',run=>{const own=Boolean(run.preparedById&&run.preparedById===user?.id);return <>
+  {canApprove&&table('Awaiting approval','Submitted by HR. You cannot approve a payroll you prepared.',pending,'No payroll is waiting for approval.',run=>{const own=Boolean(run.preparedById&&run.preparedById===user?.id);return <>
    <button type="button" className={`${ghost} text-red-700`} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Rejected',run)}>Reject</button>
    <button type="button" className={button} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Approved',run)}>Approve</button>
   </>})}

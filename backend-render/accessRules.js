@@ -6,7 +6,7 @@ import { registerMismatch } from './payrollRegister.js';
 // Role-based access rules for the Render backend. permissions.json is the one role -> allowed actions map;
 // the frontend imports the same file for its route guards, sidebar and buttons.
 export const PERMISSIONS = JSON.parse(readFileSync(new URL('./permissions.json', import.meta.url), 'utf8'));
-export const ROLE_LABELS = { admin: 'Admin', hr_staff: 'HR Staff' };
+export const ROLE_LABELS = { admin: 'Admin', hr_staff: 'HR Staff', finance: 'Finance' };
 export const roleKey = role => { const r = String(role ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_'); return r === 'hr' ? 'hr_staff' : r; };
 export const can = (role, permission) => (PERMISSIONS[roleKey(role)] ?? []).includes(permission);
 // Government IDs and the bank account number are returned only to roles with employees.sensitive.view.
@@ -117,8 +117,8 @@ function payoutEvents(old, row, status, log) {
 
 /**
  * Checks a save of payroll:runs against the process in payrollFlow.js and returns one audit event per change.
- * HR Staff create, compute, submit, export and track payouts; the Admin approves, returns or rejects (never their own
- * run) and confirms funding. Every status change is checked here, whatever the browser sends.
+ * HR Staff create, compute, submit, export and track payouts; Finance approves, returns or rejects (never a run they
+ * prepared) and confirms funding. Every status change is checked here, whatever the browser sends.
  */
 async function payrollRunEvents(user, before, after) {
   const prev = byId(before), next = byId(after), events = [];
@@ -150,7 +150,7 @@ async function payrollRunEvents(user, before, after) {
     }
     // A status change outside payrollFlow.js TRANSITIONS is a conflict (409); other refusals are 403.
     if (!canMove(was, now)) throw new AccessError(was === now
-      ? (was === 'Pending Approval' ? 'A submitted payroll run cannot be changed. The Admin can return it for changes.' : 'This payroll run cannot be changed.')
+      ? (was === 'Pending Approval' ? 'A submitted payroll run cannot be changed. Finance can return it for changes.' : 'This payroll run cannot be changed.')
       : `A payroll run cannot move from ${was} to ${now}.`, 409, 'INVALID_TRANSITION');
     if (now === 'Computed') {
       need(user, 'payroll.generate', 'Only HR Staff can compute payroll.');
@@ -195,9 +195,9 @@ function timesheetLockEvents(user, before, after) {
   }
   return events;
 }
-// Notifications: one copy per role ('admin' or 'hr'). Anyone may add unread ones; a user may only mark their own role's copies
+// Notifications: one copy per role ('admin', 'hr' or 'finance'). Anyone may add unread ones; a user may only mark their own role's copies
 // as read, and unread ones are never removed (a stale copy that drops them is refused, and the browser reloads the server copy).
-const NOTIFICATION_ROLES = { admin: 'admin', hr_staff: 'hr' };
+const NOTIFICATION_ROLES = { admin: 'admin', hr_staff: 'hr', finance: 'finance' };
 function notificationEvents(user, before, after) {
   const own = NOTIFICATION_ROLES[roleKey(user.role)];
   if (!own) throw forbid();
@@ -206,7 +206,7 @@ function notificationEvents(user, before, after) {
   for (const [id, row] of next) {
     const old = prev.get(id);
     if (!old) {
-      if (!['admin', 'hr'].includes(row.role) || row.read) throw forbid('A new notification must be unread and for Admin or HR.');
+      if (!Object.values(NOTIFICATION_ROLES).includes(row.role) || row.read) throw forbid('A new notification must be unread and for Admin, HR or Finance.');
       continue;
     }
     if (stable(old) === stable(row)) continue;

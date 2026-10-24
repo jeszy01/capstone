@@ -1000,7 +1000,7 @@ const accountLabel = u => `${u.name || u.email} (${u.email})`;
 const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const accountRole = value => {
   const r = roleKey(value);
-  if (r !== 'admin' && r !== 'hr_staff') throw new HttpError(400, 'INVALID_ROLE', 'Unsupported user role.');
+  if (!ROLE_LABELS[r]) throw new HttpError(400, 'INVALID_ROLE', 'Unsupported user role.');
   return r;
 };
 async function findAccount(id) {
@@ -2397,7 +2397,7 @@ const storedRuns = async () => {
   const runs = row && !row.deleted ? appValue(row.value) : [];
   return Array.isArray(runs) ? runs.filter(Boolean) : [];
 };
-// Adds unread notifications for the given roles ('admin', 'hr'): the same app_data list the app shows in its bell.
+// Adds unread notifications for the given roles ('admin', 'hr', 'finance'): the same app_data list the app shows in its bell.
 async function notifyRoles(roles, type, title, message, link) {
   const client = await pool.connect();
   try {

@@ -5,7 +5,7 @@ import type {User} from '../../types/domain';
 // The same role -> allowed actions map the server enforces; route guards, the sidebar and buttons all read it here.
 export type Role=keyof typeof permissions;
 export type Permission=(typeof permissions)[Role][number];
-const roleKeys:Record<User['role'],Role>={'Admin':'admin','HR Staff':'hr_staff'};
+const roleKeys:Record<User['role'],Role>={'Admin':'admin','HR Staff':'hr_staff','Finance':'finance'};
 
 export function can(permission:Permission,role:User['role']|undefined=getCurrentUser()?.role){
  const key=role?roleKeys[role]:undefined;

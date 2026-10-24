@@ -13,7 +13,8 @@ describe('notifications',()=>{
  it('creates one copy per target role',()=>{
   notifyClaimSubmitted('CLM-0001','₱100.00');
   notifyPayrollPending('run-1','Jan 1 - Jan 15');
-  expect(notificationsFor('admin').map(item=>item.type)).toEqual(['payroll_pending','claim_submitted']);
+  expect(notificationsFor('finance').map(item=>item.type)).toEqual(['payroll_pending']);
+  expect(notificationsFor('admin').map(item=>item.type)).toEqual(['claim_submitted']);
   expect(notificationsFor('hr').map(item=>item.type)).toEqual(['claim_submitted']);
  });
  it('marks only the signed-in role\'s copies as read',()=>{

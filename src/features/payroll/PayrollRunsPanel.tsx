@@ -26,7 +26,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
  const statusFilter=(params.get('status')??'').split(',').map(item=>item.trim()).filter(Boolean);
  const clearFilter=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
  const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].filter(run=>!statusFilter.length||statusFilter.includes(runStatus(run))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- const rates=loadRates(),canPrepare=can('payroll.generate'),canDelete=canPrepare||can('payroll.approve'),canRelease=can('payroll.release');
+ const rates=loadRates(),canPrepare=can('payroll.generate'),canDelete=canPrepare,canRelease=can('payroll.release');
  // A run is processed once it has computed rows; until then Payslips and Total Net show "—".
  const processed=(run:PayrollRun)=>runStatus(run)!=='Draft'&&run.rows.length>0;
  const net=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
