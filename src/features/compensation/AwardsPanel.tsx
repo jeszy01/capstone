@@ -8,7 +8,7 @@ import {can} from '../auth/permissions';
 import {getCurrentUser} from '../auth/authService';
 import {RUNS_KEY,periodLabel} from '../payroll/payrollRuns';
 import type {PayrollRun} from '../payroll/payrollRuns';
-import {cutoffFor,cutoffNumberFor} from '../settings/payrollSettings';
+import {cutoffContaining,cutoffFor} from '../settings/payrollSettings';
 import {compensationService} from './compensationService';
 import {compactPeso} from './compensationSummary';
 import {findCompensationEmployee,today} from './compensationState';
@@ -101,7 +101,7 @@ function RejectModal({award,saving,error,onClose,onReject}:{award:Award;saving:b
 // The current cutoff and the next three, for paying an incentive or bonus.
 function upcomingCutoffs(date:string){
  const cutoffs:Array<{from:string;to:string}>=[];
- let month=date.slice(0,7),number=cutoffNumberFor(date);
+ let {month,cutoff:number}=cutoffContaining(date);
  while(cutoffs.length<4){
   const cutoff=cutoffFor(month,number);
   if(!cutoffs.some(item=>item.from===cutoff.from))cutoffs.push(cutoff);

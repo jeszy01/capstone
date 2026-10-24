@@ -88,7 +88,7 @@ export function AllowancesPanel({employees,rewards,assignments,daysPerMonth,load
     })}</tbody>
    </table></div>}
   </section>
-  <CoverageTable key={policy.map(type=>`${type.id}:${type.defaultAmount}:${Boolean(type.allEmployees)}`).join('|')} policy={policy} employees={employees} activeEmployees={activeEmployees} allowances={allowances} canManage={canManage} onSaved={async next=>{setPolicy(next);saveAllowancePolicy(next);await onChanged()}}/>
+  {view==='policy'&&<CoverageTable key={policy.map(type=>`${type.id}:${type.defaultAmount}:${Boolean(type.allEmployees)}`).join('|')} policy={policy} employees={employees} activeEmployees={activeEmployees} allowances={allowances} canManage={canManage} onSaved={async next=>{setPolicy(next);saveAllowancePolicy(next);await onChanged()}}/>}
   {editingType&&<PolicyTypeModal type={editingType} onClose={()=>setEditingType(null)} onSave={type=>savePolicy(policy.map(item=>item.id===type.id?type:item),type)}/>}
   {assigning&&<AssignModal employee={assigning} employees={employees} policy={policy} allowances={allowances} amounts={matrixFor(assigning)} onClose={()=>setAssigning(null)} onDone={async()=>{setAssigning(null);await onChanged()}}/>}
  </div>;

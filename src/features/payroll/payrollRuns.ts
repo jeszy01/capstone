@@ -5,7 +5,7 @@ import {apiClient} from '../../services/api/apiClient';
 import {loanService} from '../deductions/loanService';
 import {governmentLoanService} from '../governmentLoans/governmentLoanService';
 import type {GovernmentLoanDeduction} from '../governmentLoans/governmentLoanPayroll';
-import {cutoffFor,cutoffNumberFor} from '../settings/payrollSettings';
+import {cutoffContaining,cutoffFor} from '../settings/payrollSettings';
 import type {PayrollSettingsSnapshot} from '../settings/payrollSettings';
 import {runStatus} from '../../../backend-render/payrollFlow.js';
 import type {PayoutMethod,PayoutStatus,RunStatus} from '../../../backend-render/payrollFlow.js';
@@ -55,7 +55,7 @@ export const runTaxPeriod=(run:Pick<PayrollRun,'runType'>,payPeriodsPerMonth:num
 export const latestPayrollRun=(runs:PayrollRun[])=>runs.filter(run=>!['Rejected','Draft'].includes(runStatus(run))&&!isThirteenthMonthRun(run)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
 export const runLabel=(run:Pick<PayrollRun,'runType'|'from'|'to'>)=>isThirteenthMonthRun(run)?`13th Month Pay · ${label(run.to)}`:periodLabel(run.from,run.to);
 /** The cutoff containing today, from the Pay Schedule settings. */
-export const cutoffRange=()=>{const d=new Date(),date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;return cutoffFor(date.slice(0,7),cutoffNumberFor(date))};
+export const cutoffRange=()=>{const d=new Date(),date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;const current=cutoffContaining(date);return cutoffFor(current.month,current.cutoff)};
 
 /**
  * Reads the server's current payroll runs, applies change to them and saves the result, so a run another user saved

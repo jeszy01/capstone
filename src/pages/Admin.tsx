@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {ClipboardList,Pencil,Plus,Power,RefreshCw,Trash2,UserPlus} from 'lucide-react';
+import {ChevronLeft,ChevronRight,Pencil,Plus,Power,RefreshCw,Search,Trash2,UserPlus} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,TextInput,button,ghost,input} from '../components/common/ui';
 import {getCurrentUser} from '../features/auth/authService';
 import {userService} from '../features/auth/userService';
@@ -15,8 +15,7 @@ function fallbackUsers(current:User|null):ManagedUser[]{
  if(stored.length)return stored;
  return current?[{...current,email:'',status:'Active'}]:[];
 }
-const auditTime=(iso:string)=>{const date=new Date(iso);return Number.isNaN(date.getTime())?iso:date.toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})};
-const auditHead='sticky top-0 z-10 bg-gray-50 px-3 py-3 shadow-[inset_0_-1px_0_#e2e8f0]';
+const auditHead='sticky top-0 z-10 bg-gray-50 px-4 py-3 shadow-[inset_0_-1px_0_#e2e8f0]';
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 type AccountDraft={account:ManagedUser;name:string;email:string;role:User['role']};
 
@@ -57,9 +56,45 @@ export function UserAccounts(){
  </>;
 }
 
+const PAGE_SIZE=25;
+const auditDate=(iso:string)=>{const date=new Date(iso);return Number.isNaN(date.getTime())?{day:iso,time:''}:{day:date.toLocaleDateString('en-PH',{dateStyle:'medium'}),time:date.toLocaleTimeString('en-PH',{timeStyle:'short'})}};
+const filterSelect=`${input} sm:!w-44`;
+
+/** Audit Logs: every recorded action, newest first, searchable and filtered by module and role, 25 per page. */
 export function LogsAudits(){
  const[events,setEvents]=useState<AuditEvent[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const[query,setQuery]=useState(''),[module,setModule]=useState(''),[role,setRole]=useState(''),[page,setPage]=useState(0);
  const load=()=>{setLoading(true);setError('');readAuditEvents().then(setEvents).catch(cause=>setError(errorText(cause,'Audit events could not be loaded.'))).finally(()=>setLoading(false))};
  useEffect(load,[]);
- return <div><PageHeader title="Logs & Audits"/><Card className="mt-6"><div className="mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600"><ClipboardList size={21}/></span><h2 className="m-0 text-[16px] font-semibold">Audit activity</h2></div><button type="button" className={button} disabled={loading} onClick={load}><RefreshCw size={15}/>Refresh</button></div>{error&&<ErrorAlert title="Audit events are unavailable." onRetry={load}>{error}</ErrorAlert>}<div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200"><table className="w-full min-w-[960px] table-fixed text-left text-[13px]"><colgroup><col className="w-[180px]"/><col className="w-[130px]"/><col className="w-[100px]"/><col className="w-[160px]"/><col className="w-[130px]"/><col/><col className="w-[120px]"/></colgroup><thead><tr className="text-[11px] uppercase tracking-wide text-gray-500"><th scope="col" className={auditHead}>Date &amp; Time</th><th scope="col" className={auditHead}>User</th><th scope="col" className={auditHead}>Role</th><th scope="col" className={auditHead}>Action</th><th scope="col" className={auditHead}>Module</th><th scope="col" className={auditHead}>Description</th><th scope="col" className={auditHead}>IP/device</th></tr></thead><tbody>{loading?<tr><td colSpan={7}><LoadingState>Loading audit events…</LoadingState></td></tr>:events.length===0?<tr><td colSpan={7}><Empty>{error?'Audit events could not be loaded. Use Try again above.':'No audit events have been recorded yet.'}</Empty></td></tr>:events.map(event=><tr key={event.id} className="border-b border-gray-100 align-top last:border-0"><td className="whitespace-nowrap px-3 py-3 text-gray-500"><time dateTime={event.timestamp}>{auditTime(event.timestamp)}</time></td><td className="break-words px-3 py-3 font-medium text-gray-800">{event.user}</td><td className="break-words px-3 py-3 text-gray-600">{event.role}</td><td className="break-words px-3 py-3 font-medium text-gray-800">{event.action}</td><td className="break-words px-3 py-3 text-gray-500">{event.module}</td><td className="break-words px-3 py-3 text-gray-600">{event.description}</td><td className="break-words px-3 py-3 text-gray-500">{event.ipDevice}</td></tr>)}</tbody></table></div></Card></div>;
+ useEffect(()=>setPage(0),[query,module,role]);
+ const options=(key:'module'|'role')=>[...new Set(events.map(event=>event[key]).filter(value=>value&&value!=='—'))].sort();
+ const term=query.trim().toLowerCase();
+ const shown=events.filter(event=>(!module||event.module===module)&&(!role||event.role===role)&&(!term||`${event.user} ${event.action} ${event.description}`.toLowerCase().includes(term)));
+ const pages=Math.max(1,Math.ceil(shown.length/PAGE_SIZE)),current=Math.min(page,pages-1),rows=shown.slice(current*PAGE_SIZE,(current+1)*PAGE_SIZE);
+ return <div className="space-y-5">
+  <PageHeader title="Audit Logs" description="Every recorded action in the system, newest first." actions={<button type="button" className={ghost} disabled={loading} onClick={load}><RefreshCw size={15} className={loading?'animate-spin':''}/>Refresh</button>}/>
+  {error&&<ErrorAlert title="Audit events are unavailable." onRetry={load}>{error}</ErrorAlert>}
+  <Card className="!p-0 overflow-hidden">
+   <div className="flex flex-col gap-3 border-b border-gray-100 p-4 sm:flex-row sm:items-center">
+    <label className="relative block flex-1"><span className="sr-only">Search audit logs</span><Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"/><input className={`${input} !pl-10`} placeholder="Search user, action or description" value={query} onChange={event=>setQuery(event.target.value)}/></label>
+    <select aria-label="Filter by module" className={filterSelect} value={module} onChange={event=>setModule(event.target.value)}><option value="">All modules</option>{options('module').map(item=><option key={item}>{item}</option>)}</select>
+    <select aria-label="Filter by role" className={filterSelect} value={role} onChange={event=>setRole(event.target.value)}><option value="">All roles</option>{options('role').map(item=><option key={item}>{item}</option>)}</select>
+   </div>
+   <div className="max-h-[65vh] overflow-auto"><table className="w-full min-w-[900px] table-fixed text-left text-[13px]"><colgroup><col className="w-[150px]"/><col className="w-[190px]"/><col className="w-[180px]"/><col className="w-[140px]"/><col/><col className="w-[150px]"/></colgroup>
+    <thead><tr className="text-[11px] uppercase tracking-wide text-gray-500">{['Date & Time','User','Action','Module','Description','IP / Device'].map(label=><th key={label} scope="col" className={auditHead}>{label}</th>)}</tr></thead>
+    <tbody>{loading?<tr><td colSpan={6}><LoadingState>Loading audit events…</LoadingState></td></tr>:!rows.length?<tr><td colSpan={6}><Empty>{error?'Audit events could not be loaded. Use Try again above.':events.length?'No audit events match these filters.':'No audit events have been recorded yet.'}</Empty></td></tr>:rows.map(event=>{const when=auditDate(event.timestamp);return <tr key={event.id} className="border-b border-gray-100 align-top last:border-0 hover:bg-gray-50/60">
+     <td className="px-4 py-3"><time dateTime={event.timestamp} className="block font-medium text-gray-800">{when.day}</time><span className="text-[12px] text-gray-500">{when.time}</span></td>
+     <td className="px-4 py-3"><div className="truncate font-medium text-gray-900" title={event.user}>{event.user}</div><div className="truncate text-[12px] text-gray-500">{event.role}</div></td>
+     <td className="px-4 py-3"><span className="inline-block max-w-full break-words rounded-md bg-blue-50 px-2 py-0.5 text-[12px] font-semibold text-blue-700">{event.action}</span></td>
+     <td className="break-words px-4 py-3 text-gray-600">{event.module}</td>
+     <td className="break-words px-4 py-3 text-gray-700">{event.description}</td>
+     <td className="break-words px-4 py-3 text-[12px] text-gray-500">{event.ipDevice}</td>
+    </tr>})}</tbody>
+   </table></div>
+   {!loading&&shown.length>0&&<div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-[12.5px] text-gray-600">
+    <span>Showing {current*PAGE_SIZE+1}–{current*PAGE_SIZE+rows.length} of {shown.length}</span>
+    <div className="flex items-center gap-2"><button type="button" className={`${ghost} !px-3 !py-1.5`} disabled={current===0} onClick={()=>setPage(current-1)}><ChevronLeft size={15}/>Previous</button><span className="px-1">Page {current+1} of {pages}</span><button type="button" className={`${ghost} !px-3 !py-1.5`} disabled={current>=pages-1} onClick={()=>setPage(current+1)}>Next<ChevronRight size={15}/></button></div>
+   </div>}
+  </Card>
+ </div>;
 }

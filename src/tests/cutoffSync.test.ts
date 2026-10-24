@@ -31,8 +31,10 @@ describe('weekly cumulative HR2 sync',()=>{
 
 describe('cutoff list',()=>{
  it('follows the Payroll Settings cutoff rules',()=>{
-  expect(recentCutoffs(3,'2026-10-07',DEFAULT_RATES)).toEqual([{from:'2026-10-01',to:'2026-10-15'},{from:'2026-09-16',to:'2026-09-30'},{from:'2026-09-01',to:'2026-09-15'}]);
-  expect(recentCutoffs(1,'2026-10-07',{...DEFAULT_RATES,firstCutoffEndDay:10})).toEqual([{from:'2026-10-01',to:'2026-10-10'}]);
+  expect(recentCutoffs(3,'2026-10-07',DEFAULT_RATES)).toEqual([{from:'2026-09-26',to:'2026-10-09'},{from:'2026-09-10',to:'2026-09-25'},{from:'2026-08-26',to:'2026-09-09'}]);
+  expect(recentCutoffs(1,'2026-10-27',DEFAULT_RATES)).toEqual([{from:'2026-10-26',to:'2026-11-09'}]);
+  expect(recentCutoffs(1,'2026-10-07',{...DEFAULT_RATES,firstCutoffEndDay:10})).toEqual([{from:'2026-09-26',to:'2026-10-10'}]);
+  expect(recentCutoffs(3,'2026-10-07',{...DEFAULT_RATES,firstCutoffEndDay:15,secondCutoffEndDay:31})).toEqual([{from:'2026-10-01',to:'2026-10-15'},{from:'2026-09-16',to:'2026-09-30'},{from:'2026-09-01',to:'2026-09-15'}]);
   expect(shortRange('2026-10-01','2026-10-07')).toBe('Oct 1 - 7, 2026');
  });
 });

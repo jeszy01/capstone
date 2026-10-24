@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import {Card,Empty,Modal,button,ghost,maskValue} from '../../components/common/ui';
+import {Card,Empty,Modal,button,ghost} from '../../components/common/ui';
 import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {peso,read} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
@@ -19,7 +19,7 @@ const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.mes
  * Payroll Runs: every run with its period, schedule and approval status. Review computes a Draft and opens it; a run not yet
  * approved can be deleted; an approved run opens its payslips and releases them to ESS. Details opens the run.
  */
-export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAmounts:boolean}){
+export function PayrollRuns({employees}:{employees:Employee[]}){
  // ?status=Pending Approval (or a comma list) shows only runs in those statuses, as the Dashboard links do.
  const[params,setParams]=useSearchParams();const nav=useNavigate();
  const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleting,setDeleting]=useState<PayrollRun|null>(null),[releasing,setReleasing]=useState<PayrollRun|null>(null),[,setTick]=useState(0);
@@ -81,7 +81,7 @@ export function PayrollRuns({employees,showAmounts}:{employees:Employee[];showAm
      <td className={`${cell} whitespace-nowrap`}><div>{schedule(run)}</div><div className="text-[11px] text-gray-500">Pay date {formatDate(run.payDate??run.to)}</div></td>
      <td className={cell}><StatusBadge status={runStatus(run)}/></td>
      <td className={cell}>{processed(run)?<><div className="tabular-nums">{run.rows.length}</div><div className="text-[11px] text-gray-500">{payslips(run)}</div></>:'—'}</td>
-     <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{processed(run)?maskValue(showAmounts,peso(net(run))):'—'}</td>
+     <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{processed(run)?peso(net(run)):'—'}</td>
      <td className={`${cell} text-right`}><div className="flex justify-end gap-2 whitespace-nowrap">{actions(run)}</div></td>
     </tr>)}</tbody>
    </table></div>

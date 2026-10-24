@@ -49,16 +49,17 @@ function tables(section:SectionId):Table[]{
   ]},
  ];
  if(section==='schedule'){
-  const semi=rates.payPeriodsPerMonth===2,end=rates.firstCutoffEndDay;
-  const payDay=(day:number)=>day>=28?'last day':ordinal(day);
+  const semi=rates.payPeriodsPerMonth===2,end=rates.firstCutoffEndDay,end2=rates.secondCutoffEndDay;
+  const payDay=(day:number)=>day>=28?'last day (30th/31st)':ordinal(day);
+  const start=end2>=28?'1st':`${ordinal(end2+1)} of the previous month`,last=end2>=28?'end of month':ordinal(end2);
   return [{title:'Pay schedule',columns:SETTING,rows:semi?[
    ['Frequency','Semi-monthly','Art. 103'],
-   ['First cutoff',`1st to ${ordinal(end)}, paid on ${payDay(rates.firstPayDay)}`,'Art. 103'],
-   ['Second cutoff',`${ordinal(end+1)} to end, paid on ${payDay(rates.secondPayDay)}`,'Art. 103'],
+   ['First cutoff',`${start} to ${ordinal(end)}, paid on ${payDay(rates.firstPayDay)}`,'Art. 103'],
+   ['Second cutoff',`${ordinal(end+1)} to ${last}, paid on ${payDay(rates.secondPayDay)}`,'Art. 103'],
    ['Weekend or holiday','Paid the working day before','Art. 103'],
   ]:[
    ['Frequency','Monthly','Art. 103'],
-   ['Cutoff',`1st to end, paid on ${payDay(rates.secondPayDay)}`,'Art. 103'],
+   ['Cutoff',`${start} to ${last}, paid on ${payDay(rates.secondPayDay)}`,'Art. 103'],
    ['Weekend or holiday','Paid the working day before','Art. 103'],
   ]}];
  }

@@ -17,6 +17,8 @@ export const DEFAULT_TAX_BRACKETS:TaxBracket[]=DEFAULT_WITHHOLDING_RULES.tables.
 
 export const loadRates=():PayrollRates=>{
  const saved=read<Partial<PayrollRates>>(RATES_KEY,{});
+ // Settings saved before the 26 - 9 / 10 - 25 cutoffs: their 1st cutoff end day belonged to calendar-month cutoffs.
+ if(saved.secondCutoffEndDay===undefined)delete saved.firstCutoffEndDay;
  const rates={...DEFAULT_RATES,...saved};
  // Settings saved before the PhilHealth total rate existed: the total is the sum of the saved shares.
  return saved.philTotalRate===undefined?{...rates,philTotalRate:rates.philRate+rates.philEmployerRate}:rates;
@@ -61,6 +63,7 @@ export const RATE_FIELDS:Record<'time'|'schedule'|'holiday'|'sss'|'philhealth'|'
  schedule:[
   {key:'payPeriodsPerMonth',label:'Pay periods per month',unit:'periods',integer:true},
   {key:'firstCutoffEndDay',label:'1st cutoff end day',unit:'day',integer:true},
+  {key:'secondCutoffEndDay',label:'2nd cutoff end day',unit:'day',integer:true},
   {key:'firstPayDay',label:'1st cutoff pay day',unit:'day',integer:true},
   {key:'secondPayDay',label:'2nd cutoff pay day',unit:'day',integer:true},
  ],
@@ -115,6 +118,7 @@ export function validateRates(v:PayrollRates):string[]{
  if(v.daysPerMonth<1||v.daysPerMonth>31)errors.push('Working days per month must be between 1 and 31.');
  if(v.payPeriodsPerMonth!==1&&v.payPeriodsPerMonth!==2)errors.push('Pay periods per month must be 1 or 2.');
  if(v.firstCutoffEndDay<1||v.firstCutoffEndDay>27)errors.push('1st cutoff end day must be from 1 to 27.');
+ if(v.secondCutoffEndDay<=v.firstCutoffEndDay||v.secondCutoffEndDay>31)errors.push('2nd cutoff end day must be after the 1st cutoff end day and no later than 31 (31 = end of month).');
  if(v.firstPayDay<1||v.firstPayDay>31||v.secondPayDay<1||v.secondPayDay>31)errors.push('Pay days must be from 1 to 31.');
  if(v.otMultiplier<1||v.otRestMultiplier<1)errors.push('Overtime multipliers must be at least 1.');
  if(v.sssStep<=0)errors.push('SSS salary credit step must be more than 0.');
@@ -152,13 +156,26 @@ export function validateTaxBrackets(rows:TaxBracket[]):string[]{
 
 const pad=(value:number)=>String(value).padStart(2,'0');
 const lastDay=(year:number,month:number)=>new Date(Date.UTC(year,month,0)).getUTCDate();
+// A month's cutoffs: the 1st runs from the day after the previous month's 2nd cutoff to firstCutoffEndDay, the 2nd from
+// the next day to secondCutoffEndDay (31 = end of month). With 9 and 25: Sep 26 - Oct 9 and Oct 10 - 25.
+const secondEnd=(rates:PayrollRates,year:number,month:number)=>Math.min(rates.secondCutoffEndDay??31,lastDay(year,month));
+const monthStart=(year:number,month:number,rates:PayrollRates)=>{
+ const py=month===1?year-1:year,pm=month===1?12:month-1,end=secondEnd(rates,py,pm);
+ return end>=lastDay(py,pm)?`${year}-${pad(month)}-01`:`${py}-${pad(pm)}-${pad(end+1)}`;
+};
 /** Cutoff number (1 or 2) of a month, using the Pay Schedule settings. */
 export function cutoffFor(month:string,cutoff:1|2,rates=loadRates()){
- const [y,m]=month.split('-').map(Number);
- if(rates.payPeriodsPerMonth===1)return {from:`${month}-01`,to:`${month}-${pad(lastDay(y,m))}`};
- return cutoff===1?{from:`${month}-01`,to:`${month}-${pad(rates.firstCutoffEndDay)}`}:{from:`${month}-${pad(rates.firstCutoffEndDay+1)}`,to:`${month}-${pad(lastDay(y,m))}`};
+ const [y,m]=month.split('-').map(Number),end=`${month}-${pad(secondEnd(rates,y,m))}`;
+ if(rates.payPeriodsPerMonth===1)return {from:monthStart(y,m,rates),to:end};
+ return cutoff===1?{from:monthStart(y,m,rates),to:`${month}-${pad(rates.firstCutoffEndDay)}`}:{from:`${month}-${pad(rates.firstCutoffEndDay+1)}`,to:end};
 }
-export const cutoffNumberFor=(date:string,rates=loadRates()):1|2=>rates.payPeriodsPerMonth===1||Number(date.slice(8,10))<=rates.firstCutoffEndDay?1:2;
+/** The month and cutoff number a date falls in; days after the 2nd cutoff belong to next month's 1st. */
+export function cutoffContaining(date:string,rates=loadRates()):{month:string;cutoff:1|2}{
+ let [y,m]=date.split('-').map(Number);const d=Number(date.slice(8,10));
+ if(d>secondEnd(rates,y,m)){m+=1;if(m>12){m=1;y+=1}return {month:`${y}-${pad(m)}`,cutoff:1}}
+ return {month:`${y}-${pad(m)}`,cutoff:rates.payPeriodsPerMonth===1||d<=rates.firstCutoffEndDay?1:2};
+}
+export const cutoffNumberFor=(date:string,rates=loadRates()):1|2=>cutoffContaining(date,rates).cutoff;
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 /** Compact range label: "Oct 1 - 15, 2026", "Oct 26 - Nov 10, 2026" or "Dec 16, 2026 - Jan 15, 2027". */
 export function shortRange(from:string,to:string){
@@ -170,8 +187,8 @@ export function shortRange(from:string,to:string){
 export const shortDate=(date:string)=>`${MONTHS[Number(date.slice(5,7))-1]} ${Number(date.slice(8,10))}`;
 /** The cutoff containing the given date and the ones before it, newest first, from the Pay Schedule settings. */
 export function recentCutoffs(count=6,date=new Date().toLocaleDateString('en-CA'),rates=loadRates()){
- const list:Array<{from:string;to:string}>=[];
- let [year,month]=date.split('-').map(Number),half=cutoffNumberFor(date,rates);
+ const list:Array<{from:string;to:string}>=[],start=cutoffContaining(date,rates);
+ let [year,month]=start.month.split('-').map(Number),half=start.cutoff;
  while(list.length<count){
   list.push(cutoffFor(`${year}-${pad(month)}`,half,rates));
   if(rates.payPeriodsPerMonth===2&&half===2)half=1;

@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {ReactNode} from 'react';
 import {useSearchParams} from 'react-router-dom';
-import {Building2,Check,Database,Download,FileImage,Globe2,KeyRound,LogOut,Lock,Palette,ShieldCheck,UserRound,Users} from 'lucide-react';
+import {Bell,Building2,Check,ChevronDown,Database,Download,FileImage,Globe2,KeyRound,LogOut,Lock,Palette,ShieldCheck,UserRound,Users} from 'lucide-react';
 import type {LucideIcon} from 'lucide-react';
 import {Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,TextInput,ghost,input} from '../components/common/ui';
 import {UserAccounts} from './Admin';
@@ -14,22 +14,24 @@ import {accountService,passkeyProblems,passwordProblems} from '../features/auth/
 import type {AccountSecurity,AccountSession} from '../features/auth/accountService';
 import {employeeService} from '../features/employees/employeeService';
 import {notificationSoundOn,setNotificationSoundOn} from '../features/notifications/notificationSound';
-import {DEFAULT_APPEARANCE,DEFAULT_LOGO,FONT_SIZES,SESSION_TIMEOUTS,UI_COLORS,loadAppearance,loadBackup,loadBranding,loadCompany,loadPrivacy,loadRegional,loadSessionTimeout,saveAppearance,saveBackup,saveBranding,saveCompany,savePrivacy,saveRegional,saveSessionTimeout} from '../features/settings/systemSettings';
+import {CURRENCIES,DATE_FORMATS,DEFAULT_APPEARANCE,DEFAULT_LOGO,LANGUAGES,TIME_ZONES,FONT_SIZES,SESSION_TIMEOUTS,UI_COLORS,loadAppearance,loadBackup,loadBranding,loadCompany,loadPrivacy,loadRegional,loadSessionTimeout,saveAppearance,saveBackup,saveBranding,saveCompany,savePrivacy,saveRegional,saveSessionTimeout} from '../features/settings/systemSettings';
 import type {Appearance,Branding,CompanyProfile,DateFormat,PrivacySettings,Regional} from '../features/settings/systemSettings';
 import {formatWithSetting} from '../features/settings/systemSettings';
 
-type SectionId='profile'|'company'|'appearance'|'regional'|'branding'|'security'|'users'|'privacy'|'backup';
+type SectionId='profile'|'company'|'branding'|'regional'|'appearance'|'notifications'|'security'|'users'|'privacy'|'backup';
 // Each section has its own gradient badge; company-wide sections are for an Admin (settings.edit), Users & Roles needs users.manage.
-const SECTIONS:Array<{id:SectionId;label:string;icon:LucideIcon;gradient:string;admin?:'settings.edit'|'users.manage'}>=[
+// The nav lists the general settings, then the Privacy group (security, users, privacy, backup) as a dropdown.
+const SECTIONS:Array<{id:SectionId;label:string;icon:LucideIcon;gradient:string;admin?:'settings.edit'|'users.manage';privacy?:true}>=[
  {id:'profile',label:'Profile',icon:UserRound,gradient:'from-sky-500 to-blue-600'},
  {id:'company',label:'Company Information',icon:Building2,gradient:'from-blue-600 to-indigo-600',admin:'settings.edit'},
- {id:'appearance',label:'Appearance',icon:Palette,gradient:'from-pink-500 to-rose-500'},
- {id:'regional',label:'Regional',icon:Globe2,gradient:'from-teal-500 to-emerald-600',admin:'settings.edit'},
  {id:'branding',label:'Document Branding',icon:FileImage,gradient:'from-violet-500 to-purple-600',admin:'settings.edit'},
- {id:'security',label:'Security',icon:ShieldCheck,gradient:'from-amber-500 to-orange-600'},
- {id:'users',label:'Users & Roles',icon:Users,gradient:'from-cyan-500 to-sky-600',admin:'users.manage'},
- {id:'privacy',label:'Privacy',icon:Lock,gradient:'from-indigo-500 to-violet-600',admin:'settings.edit'},
- {id:'backup',label:'Data & Backup',icon:Database,gradient:'from-emerald-500 to-teal-600',admin:'settings.edit'},
+ {id:'regional',label:'Regional',icon:Globe2,gradient:'from-teal-500 to-emerald-600',admin:'settings.edit'},
+ {id:'appearance',label:'Appearance',icon:Palette,gradient:'from-pink-500 to-rose-500'},
+ {id:'notifications',label:'Notifications',icon:Bell,gradient:'from-orange-500 to-amber-500'},
+ {id:'security',label:'Security',icon:ShieldCheck,gradient:'from-amber-500 to-orange-600',privacy:true},
+ {id:'users',label:'Users & Roles',icon:Users,gradient:'from-cyan-500 to-sky-600',admin:'users.manage',privacy:true},
+ {id:'privacy',label:'Privacy',icon:Lock,gradient:'from-indigo-500 to-violet-600',admin:'settings.edit',privacy:true},
+ {id:'backup',label:'Data & Backup',icon:Database,gradient:'from-emerald-500 to-teal-600',admin:'settings.edit',privacy:true},
 ];
 const MODULE='Settings';
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
@@ -103,8 +105,8 @@ function CompanySection(){
 }
 
 function AppearanceSection(){
- const[draft,setDraft]=useState<Appearance>(loadAppearance),[sound,setSound]=useState(notificationSoundOn),[saved,flash]=useSaved();
- const save=(value=draft)=>{setDraft(value);saveAppearance(value);setNotificationSoundOn(sound);flash()};
+ const[draft,setDraft]=useState<Appearance>(loadAppearance),[saved,flash]=useSaved();
+ const save=(value=draft)=>{setDraft(value);saveAppearance(value);flash()};
  return <Section id="appearance" footer={<><Saved show={saved}/><button type="button" className={ghost} onClick={()=>save({...draft,color:DEFAULT_APPEARANCE.color})}>Reset to Default</button><button type="button" className={saveButton} onClick={()=>save()}>Save Changes</button></>}>
   <div className="text-[13px] font-medium text-gray-700">Theme</div>
   <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">{UI_COLORS.map(theme=>{const on=draft.color===theme.id;return <button key={theme.id} type="button" aria-label={`${theme.label} theme`} aria-pressed={on} onClick={()=>setDraft({...draft,color:theme.id})} className={`rounded-xl border p-2 text-left transition ${on?'border-blue-500 ring-2 ring-blue-500/20':'border-gray-200 hover:border-gray-300'}`}>
@@ -116,11 +118,16 @@ function AppearanceSection(){
   </button>})}</div>
   <div className="mt-6 text-[13px] font-medium text-gray-700">Font Size</div>
   <div className="mt-3 flex flex-wrap gap-2">{FONT_SIZES.map(size=><button key={size.id} type="button" aria-pressed={draft.fontSize===size.id} onClick={()=>setDraft({...draft,fontSize:size.id})} className={`rounded-xl border px-4 py-2 text-[13px] font-semibold transition ${draft.fontSize===size.id?'border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm':'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}>{size.label}</button>)}</div>
-  <div className="mt-4"><Toggle label="Notification sound" checked={sound} onChange={setSound}/></div>
  </Section>;
 }
 
-const DATE_FORMATS:DateFormat[]=['MMM D, YYYY','MM/DD/YYYY','DD/MM/YYYY','YYYY-MM-DD'];
+function NotificationsSection(){
+ const[sound,setSound]=useState(notificationSoundOn),[saved,flash]=useSaved();
+ return <Section id="notifications" footer={<><Saved show={saved}/><button type="button" className={saveButton} onClick={()=>{setNotificationSoundOn(sound);flash()}}>Save Changes</button></>}>
+  <Toggle label="Notification sound" checked={sound} onChange={setSound}/>
+ </Section>;
+}
+
 function RegionalSection(){
  const[draft,setDraft]=useState<Regional>(loadRegional),[saved,flash]=useSaved();
  const today=new Date();
@@ -128,9 +135,9 @@ function RegionalSection(){
  return <Section id="regional" footer={<><Saved show={saved}/><button type="button" className={saveButton} onClick={()=>{saveRegional(draft);flash()}}>Save Changes</button></>}>
   <div className="grid gap-4 sm:grid-cols-2">
    <Field label="Date Format"><select className={input} value={draft.dateFormat} onChange={event=>setDraft({...draft,dateFormat:event.target.value as DateFormat})}>{DATE_FORMATS.map(format=><option key={format} value={format}>{format} ({sample(format)})</option>)}</select></Field>
-   <Field label="Currency"><select className={input} value={draft.currency} onChange={()=>undefined}><option value="PHP">Philippine Peso (₱)</option></select></Field>
-   <Field label="Time Zone"><select className={input} value={draft.timeZone} onChange={()=>undefined}><option value="Asia/Manila">Asia/Manila (UTC+8)</option></select></Field>
-   <Field label="Language"><select className={input} value={draft.language} onChange={()=>undefined}><option value="English">English</option></select></Field>
+   <Field label="Currency"><select className={input} value={draft.currency} onChange={event=>setDraft({...draft,currency:event.target.value})}>{CURRENCIES.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
+   <Field label="Time Zone"><select className={input} value={draft.timeZone} onChange={event=>setDraft({...draft,timeZone:event.target.value})}>{TIME_ZONES.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
+   <Field label="Language"><select className={input} value={draft.language} onChange={event=>setDraft({...draft,language:event.target.value})}>{LANGUAGES.map(item=><option key={item}>{item}</option>)}</select></Field>
   </div>
  </Section>;
 }
@@ -341,6 +348,10 @@ export default function SettingsPrivacy(){
  const sections=SECTIONS.filter(item=>!item.admin||can(item.admin));
  const section=sections.find(item=>item.id===params.get('section'))?.id??sections[0].id;
  const [dirty,setDirty]=useState(false),[pending,setPending]=useState<SectionId|null>(null);
+ const general=sections.filter(item=>!item.privacy),privacyItems=sections.filter(item=>item.privacy);
+ const[privacyOpen,setPrivacyOpen]=useState(()=>Boolean(sectionOf(section).privacy));
+ useEffect(()=>{if(sectionOf(section).privacy)setPrivacyOpen(true)},[section]);
+ const navButton=(item:typeof SECTIONS[number])=><button type="button" aria-current={item.id===section?'page':undefined} onClick={()=>open(item.id)} className={`w-full rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition ${item.id===section?'bg-blue-600 font-semibold text-white shadow-sm':'text-gray-600 hover:bg-gray-50'}`}>{item.label}</button>;
  const go=(next:SectionId)=>setParams(next===sections[0].id?{}:{section:next},{replace:true});
  const open=(next:SectionId)=>{if(next===section)return;if(dirty)setPending(next);else go(next)};
  useEffect(()=>{if(!dirty)return;const unload=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload)},[dirty]);
@@ -348,12 +359,20 @@ export default function SettingsPrivacy(){
   <PageHeader title="Settings"/>
   <div className="mt-6 grid gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
    <div className="md:hidden"><Field label="Section"><select className={input} value={section} onChange={event=>open(event.target.value as SectionId)}>{sections.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Field></div>
-   <nav aria-label="Settings sections" className="hidden self-start rounded-2xl border border-gray-100/80 bg-white p-2 shadow-sm md:block"><ul className="m-0 grid list-none gap-1 p-0">{sections.map(item=>{const Icon=item.icon,active=item.id===section;return <li key={item.id}><button type="button" aria-current={active?'page':undefined} onClick={()=>open(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition ${active?`bg-gradient-to-r text-white shadow-md ${item.gradient}`:'text-gray-600 hover:bg-gray-50'}`}><span aria-hidden="true" className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${active?'bg-white/20':`bg-gradient-to-br text-white ${item.gradient}`}`}><Icon size={15}/></span>{item.label}</button></li>})}</ul></nav>
+   <nav aria-label="Settings sections" className="hidden self-start rounded-2xl border border-gray-100/80 bg-white p-2 shadow-sm md:block">
+    <div className="px-3 pb-2 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-gray-400">Settings</div>
+    <ul className="m-0 grid list-none gap-1 p-0">{general.map(item=><li key={item.id}>{navButton(item)}</li>)}</ul>
+    {privacyItems.length>0&&<div className="mt-2 border-t border-gray-100 pt-2">
+     <button type="button" aria-expanded={privacyOpen} onClick={()=>setPrivacyOpen(value=>!value)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition ${privacyOpen?'text-gray-900':'text-gray-600 hover:bg-gray-50'}`}>Privacy<ChevronDown size={16} className={`text-gray-400 transition-transform ${privacyOpen?'rotate-180':''}`}/></button>
+     {privacyOpen&&<ul className="m-0 ml-4 mt-1 grid list-none gap-1 border-l border-gray-200 py-0 pl-2 pr-0">{privacyItems.map(item=><li key={item.id}>{navButton(item)}</li>)}</ul>}
+    </div>}
+   </nav>
    <div className="min-w-0">
     {section==='profile'&&<ProfileSection/>}
     {section==='company'&&<CompanySection/>}
     {section==='appearance'&&<AppearanceSection/>}
     {section==='regional'&&<RegionalSection/>}
+    {section==='notifications'&&<NotificationsSection/>}
     {section==='branding'&&<BrandingSection/>}
     {section==='security'&&<SecuritySection onDirty={setDirty}/>}
     {section==='users'&&<UserAccounts/>}

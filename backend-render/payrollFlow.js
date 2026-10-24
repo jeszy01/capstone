@@ -62,13 +62,14 @@ export const PAYOUT_TRACKING_FIELDS = ['status', 'reason', 'exportId', 'updatedA
 const pad = n => String(n).padStart(2, '0');
 const isoDay = date => `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 /**
- * The pay date of a cutoff ending on cutoffTo: the 15th for a 1st cutoff, the last day of the month for a 2nd (or
- * monthly) cutoff. A Saturday, Sunday or holiday (other than a Special Working Day) moves it to the previous working day.
+ * The pay date of a cutoff ending on cutoffTo: the 15th for a cutoff ending by the 15th (1st cutoff, e.g. 26 - 9), the last
+ * day of the month otherwise (2nd cutoff, e.g. 10 - 25, or monthly). A Saturday, Sunday or holiday (other than a Special
+ * Working Day) moves it to the previous working day.
  */
 export function cutoffPayDate(cutoffTo, holidays = []) {
   const [year, month, day] = String(cutoffTo).split('-').map(Number);
   const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const date = new Date(Date.UTC(year, month - 1, day === last ? last : 15));
+  const date = new Date(Date.UTC(year, month - 1, day <= 15 ? 15 : last));
   const off = new Set((Array.isArray(holidays) ? holidays : []).filter(h => h && h.type !== 'Special Working Day').map(h => h.date));
   while ([0, 6].includes(date.getUTCDay()) || off.has(isoDay(date))) date.setUTCDate(date.getUTCDate() - 1);
   return isoDay(date);

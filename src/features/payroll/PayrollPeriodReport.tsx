@@ -1,7 +1,7 @@
 import {useMemo,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {CalendarDays,CalendarRange,FileText,Printer,X} from 'lucide-react';
-import {Button,Card,Segmented,ghost,input,maskValue,useOverlayFocus} from '../../components/common/ui';
+import {Button,Card,Segmented,ghost,input,useOverlayFocus} from '../../components/common/ui';
 import {localToday} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {peso} from '../../utils/storage';
@@ -27,7 +27,7 @@ body.print-payroll-report .payroll-report th,body.print-payroll-report .payroll-
 body.print-payroll-report .payroll-report thead{display:table-header-group}body.print-payroll-report .payroll-report tr{break-inside:avoid}body.print-payroll-report .payroll-report section{break-inside:avoid-page}}`;
 
 /** Printable monthly and annual payroll reports built from saved payroll runs. */
-export function PayrollPeriodReport({runs,employees,showAmounts=false}:{runs:PayrollRun[];employees:Employee[];showAmounts?:boolean}){
+export function PayrollPeriodReport({runs,employees}:{runs:PayrollRun[];employees:Employee[]}){
  const today=localToday();
  const[kind,setKind]=useState<Kind>('monthly');
  const latest=runs.map(run=>run.to).sort().reverse()[0]??today;
@@ -37,12 +37,11 @@ export function PayrollPeriodReport({runs,employees,showAmounts=false}:{runs:Pay
  const period:ReportPeriod=kind==='monthly'?{kind,month}:{kind,year};
  const report=useMemo(()=>buildPayrollReport(runs,period,employees,includePending),[runs,kind,month,year,employees,includePending]); // eslint-disable-line react-hooks/exhaustive-deps
  const[previewing,setPreviewing]=useState(false);
- const canPreview=report.runs.length>0&&showAmounts;
- const hidden=(value:number)=>maskValue(showAmounts,peso(value));
+ const canPreview=report.runs.length>0;
  return <Card className="mt-6 min-w-0 border-blue-100">
   <div className="flex flex-wrap items-start justify-between gap-3">
    <div className="min-w-0"><h2 className="m-0 text-[16px] font-semibold text-gray-900">Payroll Report</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">Monthly or annual totals from saved payroll runs. Open the preview to see every section and print or save it as PDF.</p></div>
-   <Button disabled={!canPreview} title={!report.runs.length?'No payroll runs in this period.':showAmounts?undefined:'Show amounts to preview the report.'} onClick={()=>setPreviewing(true)}><FileText size={15}/>Preview &amp; Print Report</Button>
+   <Button disabled={!canPreview} title={report.runs.length?undefined:'No payroll runs in this period.'} onClick={()=>setPreviewing(true)}><FileText size={15}/>Preview &amp; Print Report</Button>
   </div>
   <div className="mt-4 flex flex-wrap items-end gap-3">
    <Segmented label="Report period" value={kind} onChange={setKind} options={KINDS}/>
@@ -54,12 +53,11 @@ export function PayrollPeriodReport({runs,employees,showAmounts=false}:{runs:Pay
   <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3">
    {report.runs.length?<dl className="m-0 flex flex-wrap gap-x-8 gap-y-2 text-[12px]">
     <div><dt className="text-gray-500">{report.title.split(' · ')[1]}</dt><dd className="m-0 mt-0.5 font-semibold text-gray-900">{report.runs.length} run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</dd></div>
-    <div><dt className="text-gray-500">Gross pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{hidden(report.totals.gross)}</dd></div>
-    <div><dt className="text-gray-500">Total deductions</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{hidden(report.totals.deductions)}</dd></div>
-    <div><dt className="text-gray-500">Net pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{hidden(report.totals.net)}</dd></div>
+    <div><dt className="text-gray-500">Gross pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{peso(report.totals.gross)}</dd></div>
+    <div><dt className="text-gray-500">Total deductions</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{peso(report.totals.deductions)}</dd></div>
+    <div><dt className="text-gray-500">Net pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{peso(report.totals.net)}</dd></div>
    </dl>:<p className="m-0 text-[12px] text-gray-500">{runs.length?`No ${includePending?'approved or pending':'approved'} payroll runs in ${report.title.split(' · ')[1]}.`:'No payroll runs yet. Submit and approve a payroll run first.'}</p>}
    {report.excludedPending>0&&<p className="mb-0 mt-2 text-[12px] text-amber-800">{report.excludedPending} run{report.excludedPending===1?' is':'s are'} still pending approval and {report.excludedPending===1?'is':'are'} not included.</p>}
-   {!showAmounts&&report.runs.length>0&&<p className="mb-0 mt-2 text-[12px] text-gray-500">Amounts are hidden. Use the eye toggle to show amounts, then open the preview.</p>}
   </div>
   {previewing&&canPreview&&<ReportPreview report={report} kind={kind} includePending={includePending} onClose={()=>setPreviewing(false)}/>}
  </Card>;

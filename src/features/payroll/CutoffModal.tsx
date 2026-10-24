@@ -3,7 +3,7 @@ import {Button,Field,Modal,TextInput,ghost,input} from '../../components/common/
 import {cutoffPayDate,runLabel,updateRuns} from './payrollRuns';
 import type {PayrollRun,PayrollRunType} from './payrollRuns';
 import {loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
-import {cutoffFor,cutoffNumberFor,loadHolidays,loadRates,loadRunOptions} from '../settings/payrollSettings';
+import {cutoffContaining,cutoffFor,shortRange,loadHolidays,loadRates,loadRunOptions} from '../settings/payrollSettings';
 import {createWarnings,lockTimesheet,timesheetLocked} from './runChecks';
 import {cutoffSynced} from '../attendance/attendanceService';
 import {getCurrentUser} from '../auth/authService';
@@ -18,9 +18,9 @@ export function CutoffModal({onClose,onCreated}:{onClose:()=>void;onCreated:(run
  const now=new Date();
  const pad=(n:number)=>String(n).padStart(2,'0');
  const[runType,setRunType]=useState<PayrollRunType>('regular');
- const[month,setMonth]=useState(`${now.getFullYear()}-${pad(now.getMonth()+1)}`);
- const rates=loadRates(),strict=loadRunOptions().strictMode;
- const[half,setHalf]=useState<1|2>(()=>cutoffNumberFor(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`,rates));
+ const rates=loadRates(),strict=loadRunOptions().strictMode,current=cutoffContaining(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`,rates);
+ const[month,setMonth]=useState(current.month);
+ const[half,setHalf]=useState<1|2>(current.cutoff);
  const[releaseDate,setReleaseDate]=useState(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`);
  const[busy,setBusy]=useState(false),[error,setError]=useState(''),[,setTick]=useState(0);
  const deadline=releaseDate?releaseDeadlineFor(releaseDate.slice(0,4),loadThirteenthMonthRules()):'';
@@ -45,7 +45,7 @@ export function CutoffModal({onClose,onCreated}:{onClose:()=>void;onCreated:(run
    <Field label="Run Type"><select className={input} value={runType} onChange={event=>setRunType(event.target.value as PayrollRunType)}><option value="regular">Regular Payroll</option><option value="thirteenth-month">13th Month Pay</option></select></Field>
    {regular?<>
     <Field label="Month"><TextInput type="month" value={month} onChange={event=>setMonth(event.target.value)}/></Field>
-    {rates.payPeriodsPerMonth===2&&<Field label="Cutoff"><select className={input} value={half} onChange={event=>setHalf(Number(event.target.value) as 1|2)}><option value={1}>1st Cutoff (1 - {rates.firstCutoffEndDay})</option><option value={2}>2nd Cutoff ({rates.firstCutoffEndDay+1} - End of Month)</option></select></Field>}
+    {rates.payPeriodsPerMonth===2&&<Field label="Cutoff"><select className={input} value={half} onChange={event=>setHalf(Number(event.target.value) as 1|2)}><option value={1}>1st Cutoff ({month?shortRange(cutoffFor(month,1,rates).from,cutoffFor(month,1,rates).to):''})</option><option value={2}>2nd Cutoff ({month?shortRange(cutoffFor(month,2,rates).from,cutoffFor(month,2,rates).to):''})</option></select></Field>}
    </>:<Field label="Release Date"><TextInput type="date" value={releaseDate} max={deadline||undefined} onChange={event=>setReleaseDate(event.target.value)}/></Field>}
    {cutoff&&<div className="grid gap-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-[12px]">
     <div className="flex justify-between gap-3"><span className="text-gray-500">{regular?'Cutoff':'Release'}</span><b className="text-gray-800">{runLabel({runType,...cutoff})}</b></div>

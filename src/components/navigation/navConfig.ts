@@ -21,7 +21,7 @@ export const titles={
  '/settings-privacy':'Settings',
  '/notifications':'Notifications',
  '/help':'Help',
- '/logs-audits':'Logs & Audits',
+ '/logs-audits':'Audit Logs',
  '/finance':'Finance',
  '/payroll-settings':'Payroll Settings',
  '/hr-analytics':'HR Analytics',

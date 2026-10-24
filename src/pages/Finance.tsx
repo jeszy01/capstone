@@ -13,7 +13,7 @@ import type {PayrollRun} from '../features/payroll/payrollRuns';
 import {RECEIPT_ACCEPT,confirmFunding,openReceipt,receiptProblem,replaceReceipt} from '../features/payroll/fundingReceipt';
 import {cell,flushCard,rowHeader,tableHead} from '../components/common/tableUi';
 
-type Action={kind:'Approved'|'Rejected'|'receipt';run:PayrollRun};
+type Action={kind:'Approved'|'Returned'|'Rejected'|'receipt';run:PayrollRun};
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 const netOf=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
 
@@ -37,8 +37,8 @@ export default function Finance(){
   const {kind,run}=action,text=comment.trim();
   setBusy(true);setError('');
   try{
-   if(kind==='Approved'||kind==='Rejected'){
-    if(kind==='Rejected'&&text.length<3)throw new Error('Write a comment (at least 3 characters) to reject this payroll.');
+   if(kind!=='receipt'){
+    if(kind!=='Approved'&&text.length<3)throw new Error(`Write a comment (at least 3 characters) to ${kind==='Returned'?'return':'reject'} this payroll.`);
     await updateRun(run.id,item=>{expectStatus(item,'Pending Approval');const {decisionComment:_previous,...rest}=item;return {...rest,status:kind,decidedBy:user?.name??'Finance',decidedById:user?.id,decidedAt:new Date().toISOString(),...(text?{decisionComment:text}:{})}});
     // The Dashboard's payroll figures read the last approved run's inputs.
     if(kind==='Approved'){const stamp=Date.now();write('payroll:records',run.rows.map((row,index)=>({...row.input,id:stamp+index})))}
@@ -78,11 +78,12 @@ export default function Finance(){
  const receiptLine=(run:PayrollRun)=>run.funding?.receiptId?<div className="mt-1 text-[11px] font-normal text-gray-500">Receipt {run.funding.fileName} · {peso(run.funding.amount)} · by {run.funding.uploadedBy} on {formatDate(run.funding.uploadedAt)}</div>
   :run.funding?<div className="mt-1 text-[11px] font-semibold text-amber-700">No receipt yet · payouts cannot be exported until it is attached</div>:null;
  return <div className="space-y-5">
-  <PageHeader title="Finance" description={canApprove?'Approve submitted payroll, confirm funding, then attach the bank transfer receipt.':'Confirm funding of approved payroll, then attach the bank transfer receipt.'}/>
+  <PageHeader title="Finance" description={canApprove?'Approve, return or reject submitted payroll, confirm funding, then attach the bank transfer receipt.':'Confirm funding of approved payroll, then attach the bank transfer receipt.'}/>
   {error&&!action&&<p role="alert" className="m-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
   {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
   {canApprove&&table('Awaiting approval','Submitted by HR. You cannot approve a payroll you prepared.',pending,'No payroll is waiting for approval.',run=>{const own=Boolean(run.preparedById&&run.preparedById===user?.id);return <>
    <button type="button" className={`${ghost} text-red-700`} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Rejected',run)}>Reject</button>
+   <button type="button" className={ghost} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Returned',run)}>Return</button>
    <button type="button" className={button} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Approved',run)}>Approve</button>
   </>})}
   {table('Awaiting funding','Approved payroll. Confirm once the payroll account is funded.',toFund,'No approved payroll is waiting for funding.',run=><button type="button" className={button} disabled={busy} onClick={()=>void confirm(run)}>{busy?'Confirming…':'Confirm'}</button>)}
@@ -90,11 +91,11 @@ export default function Finance(){
    {run.funding?.receiptId&&<button type="button" className={ghost} onClick={()=>showReceipt(run,false)}>View receipt</button>}
    {runStatus(run)==='Funded'&&<button type="button" className={run.funding?.receiptId?ghost:button} onClick={()=>open('receipt',run)}>{run.funding?.receiptId?'Replace':'Attach receipt'}</button>}
   </>,receiptLine)}
-  {action&&(action.kind==='Approved'||action.kind==='Rejected')&&<Modal title={action.kind==='Approved'?'Approve payroll':'Reject payroll'} onClose={close}>
-   <p className="mt-0 text-[13px] text-gray-600">{action.kind==='Approved'?`Approve ${runLabel(action.run)} (${action.run.rows.length} employees, net ${peso(netOf(action.run))})? Funding is confirmed next, with the receipt.`:'A rejected run is locked; HR creates a new payroll for this cutoff.'}</p>
+  {action&&action.kind!=='receipt'&&<Modal title={action.kind==='Approved'?'Approve payroll':action.kind==='Returned'?'Return for changes':'Reject payroll'} onClose={close}>
+   <p className="mt-0 text-[13px] text-gray-600">{action.kind==='Approved'?`Approve ${runLabel(action.run)} (${action.run.rows.length} employees, net ${peso(netOf(action.run))})? Next, confirm the payroll account is funded.`:action.kind==='Returned'?'HR can fix and recompute the run, then submit it again.':'A rejected run is locked; HR creates a new payroll for this cutoff.'}</p>
    <Field label={action.kind==='Approved'?'Comment (optional)':'Comment (required)'}><textarea className={`${input} min-h-[90px]`} maxLength={500} value={comment} onChange={event=>setComment(event.target.value)}/></Field>
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
-   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={busy} onClick={close}>Cancel</button><button type="button" className={button} disabled={busy||(action.kind==='Rejected'&&comment.trim().length<3)} onClick={()=>void save()}>{busy?'Saving…':action.kind==='Approved'?'Approve':'Reject'}</button></div>
+   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={busy} onClick={close}>Cancel</button><button type="button" className={button} disabled={busy||(action.kind!=='Approved'&&comment.trim().length<3)} onClick={()=>void save()}>{busy?'Saving…':action.kind==='Approved'?'Approve':action.kind==='Returned'?'Return':'Reject'}</button></div>
   </Modal>}
   {action&&action.kind==='receipt'&&<Modal title={action.run.funding?.receiptId?'Replace funding receipt':'Attach funding receipt'} onClose={close}>
    <Field label="Bank transfer receipt (JPG, PNG or PDF, max 5 MB)"><input className={input} type="file" accept={RECEIPT_ACCEPT} onChange={event=>{setError('');setReceipt(event.target.files?.[0]??null)}}/></Field>

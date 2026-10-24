@@ -77,17 +77,19 @@ export function PayScheduleSection({editing,canEdit,onEdit,onDone,onDirty}:Secti
   const after=fromRateDraft(draft,keys);
   saveRates(after);onDone('Pay Schedule saved.');
  });
- const semiMonthly=draft.payPeriodsPerMonth==='2',endDay=Number(draft.firstCutoffEndDay);
- const cutoffs=semiMonthly?`1st: 1 – ${Number.isFinite(endDay)?endDay:'?'} · 2nd: ${Number.isFinite(endDay)?endDay+1:'?'} – end of month`:'1 – end of month';
+ const semiMonthly=draft.payPeriodsPerMonth==='2',endDay=Number(draft.firstCutoffEndDay),endDay2=Number(draft.secondCutoffEndDay);
+ const day=(value:number)=>Number.isFinite(value)?value:'?',last=endDay2>=28?'end of month':day(endDay2),first=endDay2>=28?'1':day(endDay2+1);
+ const cutoffs=semiMonthly?`1st: ${first} – ${day(endDay)} · 2nd: ${day(endDay+1)} – ${last}`:`${first} – ${last}`;
  const rate=(key:keyof PayrollRates,label?:string)=><RateInput field={{...fieldOf('schedule',key),...(label?{label}:{})}} draft={draft} setDraft={setDraft} editing={editing}/>;
  return <SectionShell title="Pay Schedule" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}><div className={grid}>
   <Field label="Pay periods per month"><select className={input} disabled={!editing} value={draft.payPeriodsPerMonth} onChange={event=>setDraft({...draft,payPeriodsPerMonth:event.target.value})}><option value="2">2 (Semi-monthly)</option><option value="1">1 (Monthly)</option></select></Field>
   {semiMonthly&&rate('firstCutoffEndDay')}
+  {rate('secondCutoffEndDay',semiMonthly?undefined:'Cutoff end day')}
   <Field label="Cutoff periods"><TextInput value={cutoffs} readOnly/></Field>
   {semiMonthly&&rate('firstPayDay')}
   {rate('secondPayDay',semiMonthly?undefined:'Pay day')}
  </div>
-  <p className="mb-0 mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-[12px] text-gray-600">Payroll runs set their pay date automatically: the 15th for the 1st cutoff and the last day of the month for the 2nd, moved to the previous working day for a weekend or a holiday in Holiday Pay.</p>
+  <p className="mb-0 mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-[12px] text-gray-600">Cutoffs run 26th – 9th (paid on the 15th) and 10th – 25th (paid on the 30th/31st); set the 2nd cutoff end day to 31 for calendar-month cutoffs. Payroll runs set their pay date automatically: the 15th for a cutoff ending by the 15th and the last day of the month otherwise, moved to the previous working day for a weekend or a holiday in Holiday Pay.</p>
  </SectionShell>;
 }
 

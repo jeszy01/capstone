@@ -4,8 +4,19 @@ import {read,write} from '../../utils/storage';
 // Settings page values. Company-wide ones live under 'settings:' keys (synchronized, Admin only on the server);
 // appearance and the session timeout belong to each user on each device.
 export interface CompanyProfile{name:string;address:string;contactNumber:string;email:string;tin:string;sssNo:string;philhealthNo:string;pagibigNo:string;logo:string}
-export type DateFormat='MMM D, YYYY'|'MM/DD/YYYY'|'DD/MM/YYYY'|'YYYY-MM-DD';
-export interface Regional{dateFormat:DateFormat;currency:'PHP';timeZone:'Asia/Manila';language:'English'}
+export type DateFormat='MMM D, YYYY'|'MMMM D, YYYY'|'D MMM YYYY'|'MM/DD/YYYY'|'DD/MM/YYYY'|'YYYY-MM-DD'|'MM-DD-YYYY'|'DD-MM-YYYY'|'YYYY/MM/DD'|'DD.MM.YYYY';
+export interface Regional{dateFormat:DateFormat;currency:string;timeZone:string;language:string}
+// Regional choices, most common first. Payroll amounts are always computed in Philippine pesos.
+export const DATE_FORMATS:DateFormat[]=['MMM D, YYYY','MMMM D, YYYY','D MMM YYYY','MM/DD/YYYY','DD/MM/YYYY','YYYY-MM-DD','MM-DD-YYYY','DD-MM-YYYY','YYYY/MM/DD','DD.MM.YYYY'];
+export const CURRENCIES:Array<{id:string;label:string}>=[
+ {id:'PHP',label:'Philippine Peso (₱)'},{id:'USD',label:'US Dollar ($)'},{id:'EUR',label:'Euro (€)'},{id:'JPY',label:'Japanese Yen (¥)'},{id:'GBP',label:'British Pound (£)'},{id:'SGD',label:'Singapore Dollar (S$)'},
+ {id:'AUD',label:'Australian Dollar (A$)'},{id:'CAD',label:'Canadian Dollar (C$)'},{id:'HKD',label:'Hong Kong Dollar (HK$)'},{id:'CNY',label:'Chinese Yuan (¥)'},{id:'KRW',label:'South Korean Won (₩)'},{id:'AED',label:'UAE Dirham (د.إ)'},
+];
+export const TIME_ZONES:Array<{id:string;label:string}>=[
+ {id:'Asia/Manila',label:'Asia/Manila (UTC+8)'},{id:'Asia/Singapore',label:'Asia/Singapore (UTC+8)'},{id:'Asia/Hong_Kong',label:'Asia/Hong Kong (UTC+8)'},{id:'Asia/Shanghai',label:'Asia/Shanghai (UTC+8)'},{id:'Asia/Tokyo',label:'Asia/Tokyo (UTC+9)'},{id:'Asia/Seoul',label:'Asia/Seoul (UTC+9)'},
+ {id:'Asia/Dubai',label:'Asia/Dubai (UTC+4)'},{id:'Australia/Sydney',label:'Australia/Sydney (UTC+10)'},{id:'Europe/London',label:'Europe/London (UTC+0)'},{id:'Europe/Paris',label:'Europe/Paris (UTC+1)'},{id:'America/New_York',label:'America/New York (UTC-5)'},{id:'America/Los_Angeles',label:'America/Los Angeles (UTC-8)'},
+];
+export const LANGUAGES=['English','Filipino','Cebuano','Ilocano','Spanish','Chinese (Simplified)','Japanese','Korean','French','German','Arabic','Hindi'];
 export interface Branding{logo:string;headerText:string;footerText:string;logoOnPayslips:boolean;logoOnReports:boolean}
 export interface PrivacySettings{hideSalaryFromHr:boolean;maskGovIds:boolean}
 export interface BackupInfo{lastBackupAt:string;lastBackupBy:string}
@@ -78,8 +89,17 @@ export const saveSessionTimeout=(minutes:number)=>{write(TIMEOUT_KEY,minutes);wi
 /** A YYYY-MM-DD date in the chosen format. */
 export function formatWithSetting(year:number,month:number,day:number,format=loadRegional().dateFormat){
  const mm=String(month).padStart(2,'0'),dd=String(day).padStart(2,'0');
- if(format==='MM/DD/YYYY')return `${mm}/${dd}/${year}`;
- if(format==='DD/MM/YYYY')return `${dd}/${mm}/${year}`;
- if(format==='YYYY-MM-DD')return `${year}-${mm}-${dd}`;
- return new Date(Date.UTC(year,month-1,day)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});
+ const name=(style:'short'|'long')=>new Date(Date.UTC(year,month-1,day)).toLocaleDateString('en-US',{month:style,timeZone:'UTC'});
+ switch(format){
+  case 'MM/DD/YYYY':return `${mm}/${dd}/${year}`;
+  case 'DD/MM/YYYY':return `${dd}/${mm}/${year}`;
+  case 'YYYY-MM-DD':return `${year}-${mm}-${dd}`;
+  case 'MM-DD-YYYY':return `${mm}-${dd}-${year}`;
+  case 'DD-MM-YYYY':return `${dd}-${mm}-${year}`;
+  case 'YYYY/MM/DD':return `${year}/${mm}/${dd}`;
+  case 'DD.MM.YYYY':return `${dd}.${mm}.${year}`;
+  case 'MMMM D, YYYY':return `${name('long')} ${day}, ${year}`;
+  case 'D MMM YYYY':return `${day} ${name('short')} ${year}`;
+  default:return `${name('short')} ${day}, ${year}`;
+ }
 }

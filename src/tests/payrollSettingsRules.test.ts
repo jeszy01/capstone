@@ -11,14 +11,23 @@ const record=(date:string,overrides:Partial<AttendanceRecord>={}):AttendanceReco
 
 describe('pay schedule',()=>{
  it('builds cutoffs and pay dates from the settings',()=>{
-  const rates={...DEFAULT_RATES,firstCutoffEndDay:10,firstPayDay:15,secondPayDay:5};
+  // Default: 26th - 9th paid on the 15th, 10th - 25th paid on the last day.
+  expect(cutoffFor('2026-03',1)).toEqual({from:'2026-02-26',to:'2026-03-09'});
+  expect(cutoffFor('2026-03',2)).toEqual({from:'2026-03-10',to:'2026-03-25'});
+  expect(cutoffFor('2026-01',1)).toEqual({from:'2025-12-26',to:'2026-01-09'});
+  expect(cutoffNumberFor('2026-03-26')).toBe(1);
+  expect(payDateFor('2026-02-26','2026-03-09')).toBe('2026-03-15');
+  expect(payDateFor('2026-03-10','2026-03-25')).toBe('2026-03-31');
+  expect(payDateFor('2026-02-10','2026-02-25')).toBe('2026-02-28');
+  // Calendar-month cutoffs (2nd cutoff end day 31).
+  const rates={...DEFAULT_RATES,firstCutoffEndDay:10,secondCutoffEndDay:31,firstPayDay:15,secondPayDay:5};
   expect(cutoffFor('2026-02',1,rates)).toEqual({from:'2026-02-01',to:'2026-02-10'});
   expect(cutoffFor('2026-02',2,rates)).toEqual({from:'2026-02-11',to:'2026-02-28'});
   expect(cutoffNumberFor('2026-02-11',rates)).toBe(2);
   expect(payDateFor('2026-02-01','2026-02-10',rates)).toBe('2026-02-15');
   expect(payDateFor('2026-12-11','2026-12-31',rates)).toBe('2027-01-05');
-  expect(payDateFor('2026-02-16','2026-02-28',DEFAULT_RATES)).toBe('2026-02-28');
-  expect(cutoffFor('2026-02',2,{...DEFAULT_RATES,payPeriodsPerMonth:1})).toEqual({from:'2026-02-01',to:'2026-02-28'});
+  expect(cutoffFor('2026-02',2,{...DEFAULT_RATES,payPeriodsPerMonth:1})).toEqual({from:'2026-01-26',to:'2026-02-25'});
+  expect(cutoffFor('2026-02',2,{...DEFAULT_RATES,payPeriodsPerMonth:1,secondCutoffEndDay:31})).toEqual({from:'2026-02-01',to:'2026-02-28'});
  });
 });
 
