@@ -80,15 +80,16 @@ export function LogsAudits(){
     <select aria-label="Filter by module" className={filterSelect} value={module} onChange={event=>setModule(event.target.value)}><option value="">All modules</option>{options('module').map(item=><option key={item}>{item}</option>)}</select>
     <select aria-label="Filter by role" className={filterSelect} value={role} onChange={event=>setRole(event.target.value)}><option value="">All roles</option>{options('role').map(item=><option key={item}>{item}</option>)}</select>
    </div>
-   <div className="max-h-[65vh] overflow-auto"><table className="w-full min-w-[900px] table-fixed text-left text-[13px]"><colgroup><col className="w-[150px]"/><col className="w-[190px]"/><col className="w-[180px]"/><col className="w-[140px]"/><col/><col className="w-[150px]"/></colgroup>
+   <div className="max-h-[65vh] overflow-auto"><table className="w-full min-w-[900px] table-fixed text-left text-[13px]"><colgroup><col className="w-[140px]"/><col className="w-[160px]"/><col className="w-[150px]"/><col className="w-[150px]"/><col/><col className="w-[150px]"/></colgroup>
     <thead><tr className="text-[11px] uppercase tracking-wide text-gray-500">{['Date & Time','User','Action','Module','Description','IP / Device'].map(label=><th key={label} scope="col" className={auditHead}>{label}</th>)}</tr></thead>
     <tbody>{loading?<tr><td colSpan={6}><LoadingState>Loading audit events…</LoadingState></td></tr>:!rows.length?<tr><td colSpan={6}><Empty>{error?'Audit events could not be loaded. Use Try again above.':events.length?'No audit events match these filters.':'No audit events have been recorded yet.'}</Empty></td></tr>:rows.map(event=>{const when=auditDate(event.timestamp);return <tr key={event.id} className="border-b border-gray-100 align-top last:border-0 hover:bg-gray-50/60">
-     <td className="px-4 py-3"><time dateTime={event.timestamp} className="block font-medium text-gray-800">{when.day}</time><span className="text-[12px] text-gray-500">{when.time}</span></td>
-     <td className="px-4 py-3"><div className="truncate font-medium text-gray-900" title={event.user}>{event.user}</div><div className="truncate text-[12px] text-gray-500">{event.role}</div></td>
-     <td className="px-4 py-3"><span className="inline-block max-w-full break-words rounded-md bg-blue-50 px-2 py-0.5 text-[12px] font-semibold text-blue-700">{event.action}</span></td>
-     <td className="break-words px-4 py-3 text-gray-600">{event.module}</td>
-     <td className="break-words px-4 py-3 text-gray-700">{event.description}</td>
-     <td className="break-words px-4 py-3 text-[12px] text-gray-500">{event.ipDevice}</td>
+     {/* The app-wide table style keeps cells on one line; in this fixed-width table long text wraps in its own column. */}
+     <td className="px-4 py-3 align-top"><time dateTime={event.timestamp} className="block font-medium text-gray-800">{when.day}</time><span className="text-[12px] text-gray-500">{when.time}</span></td>
+     <td className="whitespace-normal px-4 py-3 align-top"><div className="truncate font-medium text-gray-900" title={event.user}>{event.user}</div><div className="truncate text-[12px] text-gray-500">{event.role}</div></td>
+     <td className="whitespace-normal px-4 py-3 align-top"><span className="inline-block max-w-full break-words rounded-md bg-blue-50 px-2 py-0.5 text-[12px] font-semibold text-blue-700">{event.action}</span></td>
+     <td className="whitespace-normal break-words px-4 py-3 align-top text-gray-600">{event.module}</td>
+     <td className="whitespace-normal break-words px-4 py-3 align-top text-gray-700">{event.description}</td>
+     <td className="whitespace-normal break-words px-4 py-3 align-top text-[12px] text-gray-500">{event.ipDevice}</td>
     </tr>})}</tbody>
    </table></div>
    {!loading&&shown.length>0&&<div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-[12.5px] text-gray-600">
