@@ -9,6 +9,7 @@ import {can} from '../auth/permissions';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
 import {StatusBadge} from '../../components/common/StatusBadge';
 import {formatDate} from '../../utils/date';
+import {documentLogo,loadBranding} from '../settings/systemSettings';
 
 const when=(iso?:string)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'—';
 const Badge=({on,text}:{on:boolean;text?:string})=><StatusBadge status={on?'Released':'Not released'} label={text}/>;
@@ -101,11 +102,12 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
   <div className="divide-y divide-gray-100">{rows.map(([l,v])=><div key={l} className="flex justify-between px-3 py-1.5 text-[12px]"><span>{l}</span><span className="tabular-nums">{v}</span></div>)}</div>
   <div className="flex justify-between border-t border-gray-200 bg-gray-50 px-3 py-2 text-[12px] font-bold"><span>{totalLabel}</span><span className="tabular-nums">{nf(total)}</span></div>
  </div>;
+ const brand=loadBranding();
  return <Modal title="Payslip" wide onClose={onClose}>
   <style>{`@media print{body *{visibility:hidden}.payslip-print,.payslip-print *{visibility:visible}.payslip-print{position:absolute;left:0;top:0;width:100%;border:0!important}.no-print{display:none!important}}`}</style>
   <div className="payslip-print rounded-xl border border-gray-300 bg-white p-6 text-gray-800">
    <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
-    <div className="flex items-center gap-3"><img src="/logo.png" alt="Archon Nell Inc." className="h-10 w-10 object-contain"/><div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INCORPORATED</div><div className="text-[11px] text-gray-500">Payslip</div></div></div>
+    <div className="flex items-center gap-3">{brand.logoOnPayslips&&<img src={documentLogo()} alt="" className="h-10 w-10 object-contain"/>}<div><div className="text-[15px] font-bold uppercase tracking-wide">{brand.headerText}</div><div className="text-[11px] text-gray-500">Payslip</div></div></div>
     <div className="text-right"><div className="text-[13px] font-semibold">{period}</div><span className="mt-1 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Approved</span></div>
    </div>
    <div className="grid gap-1.5 border-b border-gray-200 py-4 text-[12px] sm:grid-cols-2">
@@ -120,6 +122,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
   <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-gray-900"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div><div className="mt-1 text-[11px] italic text-gray-500">{pesoWords(c.net)}</div></div>
    <div className="mt-10 flex justify-end text-[11px]"><div className="w-48 border-t border-gray-500 pt-1 text-center">Received By</div></div>
    <div className="mt-6 text-[11px] text-gray-500">This is a system-generated payslip for {run.from} to {run.to}.</div>
+   {brand.footerText&&<div className="mt-2 border-t border-gray-200 pt-2 text-center text-[11px] text-gray-500">{brand.footerText}</div>}
   </div>
   <button className={`${ghost} no-print mt-4`} onClick={()=>window.print()}>Print / Save as PDF</button>
  </Modal>;

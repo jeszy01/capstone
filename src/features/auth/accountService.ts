@@ -1,12 +1,14 @@
 import {apiClient} from '../../services/api/apiClient';
 
 export interface AccountSession{id:string;device:string;browser:string;createdAt:string;lastActiveAt:string;current:boolean}
-export interface AccountSecurity{otpEnabled:boolean;otpAvailable:boolean;passkeySet:boolean;passkeyLockedUntil:string|null;sessions:AccountSession[]}
+/** One sign-in, kept after it ends: Active, Signed out or Expired. */
+export interface SessionRecord{id:string;device:string;browser:string;createdAt:string;lastActiveAt:string;endedAt:string|null;status:'Active'|'Signed out'|'Expired';current:boolean}
+export interface AccountSecurity{otpEnabled:boolean;otpAvailable:boolean;passkeySet:boolean;passkeyLockedUntil:string|null;sessions:AccountSession[];history:SessionRecord[]}
 export type PasskeyPurpose='export'|'release'|'settings';
 export type PasskeyResult={verified:true}|{verified:false;reason:'not_set'|'locked'|'invalid';attemptsLeft?:number;lockedUntil?:string|null};
-type ServerSecurity={otp_enabled:boolean;otp_available:boolean;passkey_set?:boolean;passkey_locked_until?:string|null;sessions:Array<{id:string;device:string;browser:string;created_at:string;last_active_at:string;current:boolean}>};
+type ServerSecurity={otp_enabled:boolean;otp_available:boolean;passkey_set?:boolean;passkey_locked_until?:string|null;sessions:Array<{id:string;device:string;browser:string;created_at:string;last_active_at:string;current:boolean}>;history?:Array<{id:string;device:string;browser:string;created_at:string;last_active_at:string;ended_at:string|null;status:SessionRecord['status'];current:boolean}>};
 
-const fromServer=(data:ServerSecurity):AccountSecurity=>({otpEnabled:data.otp_enabled,otpAvailable:data.otp_available,passkeySet:Boolean(data.passkey_set),passkeyLockedUntil:data.passkey_locked_until??null,sessions:data.sessions.map(session=>({id:session.id,device:session.device,browser:session.browser,createdAt:session.created_at,lastActiveAt:session.last_active_at,current:session.current}))});
+const fromServer=(data:ServerSecurity):AccountSecurity=>({otpEnabled:data.otp_enabled,otpAvailable:data.otp_available,passkeySet:Boolean(data.passkey_set),passkeyLockedUntil:data.passkey_locked_until??null,sessions:data.sessions.map(session=>({id:session.id,device:session.device,browser:session.browser,createdAt:session.created_at,lastActiveAt:session.last_active_at,current:session.current})),history:(data.history??[]).map(item=>({id:item.id,device:item.device,browser:item.browser,createdAt:item.created_at,lastActiveAt:item.last_active_at,endedAt:item.ended_at,status:item.status,current:item.current}))});
 const verifyPasskey=(passkey:string,purpose:PasskeyPurpose,detail:string)=>apiClient.post<Record<string,unknown>,{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';attempts_left?:number;locked_until?:string|null}}>('/account',{action:'verify_passkey',passkey,purpose,detail}).then(({data}):PasskeyResult=>data.verified?{verified:true}:{verified:false,reason:data.reason??'invalid',attemptsLeft:data.attempts_left,lockedUntil:data.locked_until});
 const post=(payload:Record<string,unknown>)=>apiClient.post<Record<string,unknown>,{data:ServerSecurity}>('/account',payload).then(response=>fromServer(response.data));
 

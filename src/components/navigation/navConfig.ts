@@ -12,13 +12,13 @@ export const modules:NavItem[]=[
  {label:'HMO / Benefits',to:'/hmo-benefits',icon:Heart},
 ];
 export const insights:NavItem[]=[{label:'HR Analytics',to:'/hr-analytics',icon:BarChart3},{label:'Reports',to:'/reports',icon:FileText}];
-export const system:NavItem[]=[{label:'Settings & Privacy',to:'/settings-privacy',icon:Settings},{label:'Audit Logs',to:'/logs-audits',icon:ShieldCheck}];
+export const system:NavItem[]=[{label:'Settings',to:'/settings-privacy',icon:Settings},{label:'Audit Logs',to:'/logs-audits',icon:ShieldCheck}];
 export const titles={
  ...Object.fromEntries([...overview,...modules.flatMap(m=>m.children??[m])].map(i=>[i.to,i.label])),
  ...Object.fromEntries(hmoTabs.map(tab=>[tab.to,tab.label])),
  '/employees':'Employee Directory',
  '/payroll/review':'Review Payroll',
- '/settings-privacy':'Settings & Privacy',
+ '/settings-privacy':'Settings',
  '/notifications':'Notifications',
  '/logs-audits':'Logs & Audits',
  '/finance':'Finance',

@@ -331,6 +331,15 @@ function describeChanges(before, after) {
   }
   return after === null ? 'cleared' : 'updated';
 }
+// Settings page (company, regional, document branding, privacy, backup): readable by everyone, changed only by an Admin.
+const SYSTEM_SETTINGS_LABELS = { 'settings:company': 'Company information', 'settings:regional': 'Regional settings', 'settings:branding': 'Document branding', 'settings:privacy': 'Privacy settings', 'settings:backup': 'Data backup' };
+function systemSettingsEvents(user, key, before, after) {
+  need(user, 'settings.edit', 'Only an Admin can change these settings.');
+  if (stable(before) === stable(after)) return [];
+  // A logo is an image (data URL); the log names the change instead of storing the image.
+  const plain = value => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, typeof v === 'string' && v.startsWith('data:') ? 'uploaded image' : v])) : value;
+  return [['settings.updated', 'Settings', key, `${SYSTEM_SETTINGS_LABELS[key] ?? key}: ${describeChanges(plain(before), plain(after))}.`]];
+}
 function settingsEvents(user, key, before, after) {
   need(user, 'settings.edit', 'Only an Admin can change payroll settings.');
   if (stable(before) === stable(after)) return [];
@@ -351,6 +360,7 @@ export async function appDataEvents(user, key, before, after, existed) {
   if (key.startsWith('notifications:')) throw forbid();
   if (key === 'payroll:records') { if (!can(user.role, 'payroll.generate') && !can(user.role, 'payroll.approve')) throw forbid(); return []; }
   if (isSettingsKey(key)) return settingsEvents(user, key, before, after);
+  if (key.startsWith('settings:')) return systemSettingsEvents(user, key, before, after);
   if (key === 'claims:records') return claimEvents(user, before, after);
   if (key.startsWith('claims:') || key.startsWith('reimbursement:')) { need(user, 'claims.encode'); return []; }
   // HR2 attendance arrives only through POST /integrations/hr2/attendance; nobody changes it from a browser.

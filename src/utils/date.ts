@@ -1,8 +1,9 @@
-/** Formats an ISO date (YYYY-MM-DD) as "Oct 16, 2026". The date is read as written, so there is no day/month swap or time-zone shift. */
+import {formatWithSetting} from '../features/settings/systemSettings';
+/** A YYYY-MM-DD date in the date format chosen in Settings → Regional ("Oct 3, 2026" by default). */
 export function formatDate(iso:string|null|undefined){
  const match=/^(\d{4})-(\d{2})-(\d{2})/.exec(iso??'');
  if(!match)return iso||'—';
- return new Date(Date.UTC(Number(match[1]),Number(match[2])-1,Number(match[3]))).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});
+ return formatWithSetting(Number(match[1]),Number(match[2]),Number(match[3]));
 }
 export const formatDateRange=(from:string,to:string)=>`${formatDate(from)} – ${formatDate(to)}`;
 export const isIsoDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value);

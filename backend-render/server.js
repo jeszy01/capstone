@@ -17,7 +17,7 @@ import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent,
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
 const origins = ['http://localhost:5173', ...ALLOWED_ORIGINS.split(',').filter(Boolean)];
-const PREFIXES = ['admin:','audit:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','notifications:','payroll:','reimbursement:'];
+const PREFIXES = ['admin:','audit:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','notifications:','payroll:','reimbursement:','settings:'];
 
 const b64u = b => Buffer.from(b).toString('base64url');
 const hash = pw => { const s = crypto.randomBytes(16); return `pbkdf2_sha256$210000$${b64u(s)}$${b64u(crypto.pbkdf2Sync(pw, s, 210000, 32, 'sha256'))}`; };
@@ -62,7 +62,7 @@ const auth = async (req, res, next) => {
       const { rows: [s] } = await pool.query('select id, revoked_at, expires_at, last_active_at from user_sessions where id=$1 and user_id=$2', [c.sid, u.id]);
       if (!s || s.revoked_at || new Date(s.expires_at).getTime() <= Date.now()) throw 0;
       req.sessionId = s.id;
-      // Last Active in Settings & Privacy; refreshed at most once a minute.
+      // Last Active in Settings > Security; refreshed at most once a minute.
       if (Date.now() - new Date(s.last_active_at).getTime() > 60_000)
         pool.query('update user_sessions set last_active_at=now() where id=$1', [s.id]).catch(() => undefined);
     }
@@ -80,7 +80,7 @@ app.post('/auth-login', async (req, res) => {
   const { rows: [u] } = await pool.query('select * from users where email=$1', [email]);
   if (!u || u.status !== 'active' || !verify(pw, u.password_hash))
     return fail(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
-  // Each sign-in is a session listed under Settings & Privacy > Active Sessions.
+  // Each sign-in is a session listed under Settings > Security > Active Sessions.
   const agent = String(req.headers['user-agent'] ?? '').slice(0, 500);
   const { rows: [session] } = await pool.query(
     `insert into user_sessions(user_id, device, browser, user_agent, expires_at) values($1, $2, $3, $4, now() + interval '8 hours') returning id`,
@@ -583,7 +583,7 @@ app.post('/audit-logs', auth, async (req, res) => {
   created(res, { recorded: true });
 });
 
-// ---- /account (Settings & Privacy) ----
+// ---- /account (Settings) ----
 const PASSKEY_MAX_ATTEMPTS = 5, PASSKEY_LOCK_MINUTES = 15;
 const sessionActive = (s, userId, now = Date.now()) => Boolean(s && s.user_id === userId && !s.revoked_at && Date.parse(s.expires_at) > now);
 async function accountUser(ctx) {
@@ -623,12 +623,21 @@ async function checkPasskey(user, value, purpose, detail) {
   await audit('account.passkey.failed', user.id, 'users', user.id, { purpose, detail, attempts, locked: Boolean(lock) });
   return lock ? { verified: false, reason: 'locked', locked_until: lock } : { verified: false, reason: 'invalid', attempts_left: PASSKEY_MAX_ATTEMPTS - attempts };
 }
+// Every sign-in is kept (sign-outs only set revoked_at), so Settings can list the session history.
+async function sessionHistory(userId, now = Date.now()) {
+  try {
+    return (await listRows('user_sessions', { user_id: userId })).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 100)
+      .map(s => ({ id: s.id, device: s.device, browser: s.browser, created_at: s.created_at, last_active_at: s.last_active_at, ended_at: s.revoked_at ?? (Date.parse(s.expires_at) <= now ? s.expires_at : null),
+        status: s.revoked_at ? 'Signed out' : Date.parse(s.expires_at) <= now ? 'Expired' : 'Active' }));
+  } catch { return []; }
+}
 async function accountOverview(ctx) {
   const user = await accountUser(ctx);
-  const sessions = await activeSessions(user.id);
+  const [sessions, history] = await Promise.all([activeSessions(user.id), sessionHistory(user.id)]);
   return { otp_enabled: user.otp_enabled !== false, otp_available: false, passkey_set: Boolean(user.passkey_hash),
     passkey_locked_until: lockedUntil(user), current_session_id: ctx.sessionId ?? null,
-    sessions: sessions.map(s => ({ id: s.id, device: s.device, browser: s.browser, created_at: s.created_at, last_active_at: s.last_active_at, current: s.id === ctx.sessionId })) };
+    sessions: sessions.map(s => ({ id: s.id, device: s.device, browser: s.browser, created_at: s.created_at, last_active_at: s.last_active_at, current: s.id === ctx.sessionId })),
+    history: history.map(s => ({ ...s, current: s.id === ctx.sessionId })) };
 }
 function passwordProblems(password) {
   const problems = [];
@@ -722,7 +731,7 @@ app.post('/account', auth, async (req, res) => {
   throw new HttpError(400, 'UNKNOWN_ACTION', 'Unsupported account action.');
 });
 
-// ---- Payslips: generated after the signed-in user's own passkey (Settings & Privacy > Passkey) is verified ----
+// ---- Payslips: generated after the signed-in user's own passkey (Settings > Security > Passkey) is verified ----
 // The same passkey confirms CSV exports and payroll settings; wrong entries count toward its 15-minute lock.
 async function checkPayslipPasskey(req, passkey, payrollRun, detail = `Generate payslips for ${runPeriod(payrollRun)}`) {
   const user = await accountUser(ctxOf(req));

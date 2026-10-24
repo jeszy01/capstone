@@ -111,6 +111,15 @@
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
+/* Settings → Appearance. The UI colour replaces the blue scale that buttons, links, tabs and highlights use. */
+:root[data-ui-color="green"] { --color-blue-50: oklch(97.9% 0.021 166.113); --color-blue-100: oklch(95% 0.052 163.051); --color-blue-200: oklch(90.5% 0.093 164.15); --color-blue-300: oklch(84.5% 0.143 164.978); --color-blue-400: oklch(76.5% 0.177 163.223); --color-blue-500: oklch(69.6% 0.17 162.48); --color-blue-600: oklch(59.6% 0.145 163.225); --color-blue-700: oklch(50.8% 0.118 165.612); --color-blue-800: oklch(43.2% 0.095 166.913); --color-blue-900: oklch(37.8% 0.077 168.94); }
+:root[data-ui-color="purple"] { --color-blue-50: oklch(96.9% 0.016 293.756); --color-blue-100: oklch(94.3% 0.029 294.588); --color-blue-200: oklch(89.4% 0.057 293.283); --color-blue-300: oklch(81.1% 0.111 293.571); --color-blue-400: oklch(70.2% 0.183 293.541); --color-blue-500: oklch(60.6% 0.25 292.717); --color-blue-600: oklch(54.1% 0.281 293.009); --color-blue-700: oklch(49.1% 0.27 292.581); --color-blue-800: oklch(43.2% 0.232 292.759); --color-blue-900: oklch(38% 0.189 293.745); }
+:root[data-ui-color="orange"] { --color-blue-50: oklch(98% 0.016 73.684); --color-blue-100: oklch(95.4% 0.038 75.164); --color-blue-200: oklch(90.1% 0.076 70.697); --color-blue-300: oklch(83.7% 0.128 66.29); --color-blue-400: oklch(75% 0.183 55.934); --color-blue-500: oklch(70.5% 0.213 47.604); --color-blue-600: oklch(64.6% 0.222 41.116); --color-blue-700: oklch(55.3% 0.195 38.402); --color-blue-800: oklch(47% 0.157 37.304); --color-blue-900: oklch(40.8% 0.123 38.172); }
+:root[data-ui-color="rose"] { --color-blue-50: oklch(96.9% 0.015 12.422); --color-blue-100: oklch(94.1% 0.03 12.58); --color-blue-200: oklch(89.2% 0.058 10.001); --color-blue-300: oklch(81% 0.117 11.638); --color-blue-400: oklch(71.2% 0.194 13.428); --color-blue-500: oklch(64.5% 0.246 16.439); --color-blue-600: oklch(58.6% 0.253 17.585); --color-blue-700: oklch(51.4% 0.222 16.935); --color-blue-800: oklch(45.5% 0.188 13.697); --color-blue-900: oklch(41% 0.159 10.272); }
+/* The font size scales the page area (the sidebar keeps its size). */
+:root[data-font-size="small"] .pbms-content { zoom: 0.92; }
+:root[data-font-size="large"] .pbms-content { zoom: 1.08; }
+
 /* Chart colours (HR Analytics), checked for colour-blind separation and contrast in each theme. */
 :root { --chart-1: #6366f1; --chart-2: #14b8a6; --chart-3: #f59e0b; --chart-4: #ec4899; --chart-1-soft: #c7d2fe; --chart-grid: #eef2f7; --chart-axis: #94a3b8; --chart-surface: #ffffff; }
 .pbms-dark { --chart-2: #0d9488; --chart-3: #d97706; --chart-1-soft: #a5b4fc; --chart-grid: #1c1c22; --chart-axis: #8b8b96; --chart-surface: #101014; }

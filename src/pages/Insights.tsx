@@ -16,6 +16,7 @@ import type {PayrollRun} from '../features/payroll/payrollRuns';
 import {read} from '../utils/storage';
 import {MONTHS,REPORTS,buildReport,reportCsv,reportExcel} from '../features/reports/reportBuilders';
 import type {Report,ReportId} from '../features/reports/reportBuilders';
+import {documentLogo,loadBranding,loadCompany} from '../features/settings/systemSettings';
 
 /** Insights → HR Analytics: payroll cost figures and charts from the approved payroll runs, HMO enrollments and claims. */
 export function HrAnalytics(){
@@ -104,6 +105,7 @@ function ReportWindow({report,onClose}:{report:Report;onClose:()=>void}){
   win.document.write(`<!doctype html><html><head><title>${report.title}</title>${styles}<style>body{background:#fff;padding:24px;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body class="pbms-shell">${doc.current.outerHTML}</body></html>`);
   win.document.close();win.addEventListener('load',()=>{win.focus();win.print()});
  };
+ const brand=loadBranding(),company=loadCompany();
  const generated=new Date().toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});
  const small=`${ghost} !px-3 !py-1.5 !text-[12px]`;
  return <Modal title={report.title} onClose={onClose} wide>
@@ -118,7 +120,7 @@ function ReportWindow({report,onClose}:{report:Report;onClose:()=>void}){
   <div ref={doc} className="overflow-hidden rounded-xl border border-gray-200 bg-white">
    <div className="bg-gradient-to-r from-[#0B1F3A] to-[#2B4A87] px-6 py-5 text-white">
     <div className="flex flex-wrap items-start justify-between gap-3">
-     <div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg bg-white p-0.5"><img src="/logo.png" alt="" className="h-full w-full object-contain"/></span><div><div className="text-[13px] font-bold">ARCHON NELL INCORPORATED</div><div className="text-[11px] text-blue-200">Payroll &amp; Benefits</div></div></div>
+     <div className="flex items-center gap-3">{brand.logoOnReports&&<span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg bg-white p-0.5"><img src={documentLogo()} alt="" className="h-full w-full object-contain"/></span>}<div><div className="text-[13px] font-bold uppercase">{brand.headerText}</div><div className="text-[11px] text-blue-200">{[company.address,company.tin&&`TIN ${company.tin}`].filter(Boolean).join(' · ')||'Payroll & Benefits'}</div></div></div>
      <div className="text-right"><div className="text-[11px] text-blue-200">Report Generated</div><div className="text-[13px] font-bold">{generated}</div></div>
     </div>
     <div className="my-4 border-t border-white/15"/>
@@ -135,6 +137,7 @@ function ReportWindow({report,onClose}:{report:Report;onClose:()=>void}){
      <tbody>{report.rows.length?report.rows.map((row,index)=><tr key={index}>{row.map((cell,i)=><td key={i} className={report.numeric.includes(i)?'!text-right tabular-nums':''}>{cell}</td>)}</tr>)
       :[0,1].map(i=><tr key={i}>{report.columns.map(column=><td key={column}>—</td>)}</tr>)}</tbody>
     </table></div>
+    {brand.footerText&&<p className="mb-0 mt-5 border-t border-gray-100 pt-3 text-center text-[11px] text-gray-500">{brand.footerText}</p>}
    </div>
   </div>
  </Modal>;

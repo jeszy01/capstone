@@ -5,7 +5,7 @@ import {soundHoldMs} from '../../features/notifications/notificationSound';
 
 type PendingWrite={raw?:string;deleted?:boolean};
 // Logs & Audit is kept by the server, so 'audit:' keys are no longer synchronized.
-const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','notifications:','payroll:','reimbursement:'];
+const PREFIXES=['admin:','attendance:','benefits:','claims:','compensation:','deductions:','leave:','notifications:','payroll:','reimbursement:','settings:'];
 const synced=(key:string)=>PREFIXES.some(prefix=>key.startsWith(prefix));
 // Payroll Settings keys: every 'payroll:' key except the payroll data HR keeps, plus the legacy 13th month rules key.
 const PAYROLL_DATA_KEYS=['payroll:runs','payroll:records','payroll:payouts','payroll:timesheet-locks'];

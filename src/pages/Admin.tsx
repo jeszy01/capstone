@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react';
-import {Check,ClipboardList,Pencil,Plus,Power,RefreshCw,Save,ShieldCheck,Trash2,UserPlus,UserRound} from 'lucide-react';
+import {ClipboardList,Pencil,Plus,Power,RefreshCw,Save,Trash2,UserPlus} from 'lucide-react';
 import {Button,Card,ConfirmDialog,Empty,ErrorAlert,Field,LoadingState,Modal,PageHeader,TextInput,button,ghost,input} from '../components/common/ui';
-import {getCurrentUser,profileName,updateCurrentUser} from '../features/auth/authService';
+import {getCurrentUser} from '../features/auth/authService';
 import {accountService} from '../features/auth/accountService';
 import {can} from '../features/auth/permissions';
 import {userService} from '../features/auth/userService';
@@ -22,21 +22,8 @@ const auditHead='sticky top-0 z-10 bg-gray-50 px-3 py-3 shadow-[inset_0_-1px_0_#
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
 type AccountDraft={account:ManagedUser;name:string;email:string;role:User['role']};
 
-/** Account Settings tab of Settings & Privacy. */
-export function AccountSettings(){
- const user=getCurrentUser();
- const[displayName,setDisplayName]=useState(()=>profileName(user));
- const[saved,setSaved]=useState(false),[saving,setSaving]=useState(false),[saveError,setSaveError]=useState('');
- // The display name belongs to the signed-in account only; the header updates as soon as it is saved.
- const save=async(event:React.FormEvent)=>{event.preventDefault();const nextName=displayName.trim();if(!nextName){setSaveError('Enter a display name.');return}setSaving(true);setSaveError('');try{const savedName=await accountService.setDisplayName(nextName);updateCurrentUser({displayName:savedName});setDisplayName(savedName);recordAudit({action:'Updated profile',module:'Account Settings',description:`Changed display name to ${savedName}.`});setSaved(true);window.setTimeout(()=>setSaved(false),2200)}catch(cause){setSaveError(errorText(cause,'The display name could not be saved.'))}finally{setSaving(false)}};
- return <div>
-  <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,1fr)]"><Card><div className="mb-5 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600"><UserRound size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">Profile details</h2><p className="m-0 mt-1 text-[12px] text-gray-500">These details identify your account.</p></div></div><form onSubmit={save} className="space-y-4"><label className="block text-[12px] font-semibold text-gray-600">Display name<div className="mt-1.5"><TextInput value={displayName} onChange={event=>setDisplayName(event.target.value)} aria-label="Display name"/></div></label><label className="block text-[12px] font-semibold text-gray-600">Account ID<div className="mt-1.5"><TextInput value={user?.employeeId||'Unavailable'} readOnly aria-label="Account ID" className="bg-gray-50"/></div></label><div className="flex items-center gap-3"><button type="submit" className={button} disabled={saving}><Save size={15}/>{saving?'Saving…':'Save changes'}</button>{saved&&<span role="status" className="inline-flex items-center gap-1 text-[12px] font-medium text-emerald-700"><Check size={15}/>Saved</span>}</div>{saveError&&<p role="alert" className="m-0 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{saveError}</p>}</form></Card><Card><div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-50 text-emerald-600"><ShieldCheck size={21}/></span><div><h2 className="m-0 text-[16px] font-semibold">Access</h2><p className="m-0 mt-1 text-[12px] text-gray-500">Current account permissions.</p></div></div><dl className="space-y-3 text-[13px]"><div className="flex justify-between gap-4"><dt className="text-gray-500">Name</dt><dd className="m-0 font-semibold text-gray-800">{user?.name||'Admin'}</dd></div><div className="flex justify-between gap-4"><dt className="text-gray-500">Role</dt><dd className="m-0 font-semibold text-gray-800">{user?.role||'Admin'}</dd></div><div className="flex justify-between gap-4"><dt className="text-gray-500">Session</dt><dd className="m-0 font-semibold text-emerald-700">Active</dd></div></dl></Card></div>
-  {can('users.manage')&&<UserAccounts/>}
- </div>;
-}
-
 /** Company-issued Admin, HR Staff and Finance accounts. Account changes are logged by the server. */
-function UserAccounts(){
+export function UserAccounts(){
  const user=getCurrentUser();
  const[showAddUser,setShowAddUser]=useState(false),[users,setUsers]=useState<ManagedUser[]>(()=>fallbackUsers(user)),[loadingUsers,setLoadingUsers]=useState(true),[userError,setUserError]=useState('');
  const[newUser,setNewUser]=useState({name:'',displayName:'',email:'',password:'',role:'HR Staff' as User['role']});
