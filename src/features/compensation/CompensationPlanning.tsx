@@ -88,12 +88,12 @@ export default function CompensationPlanning(){
           <PanelHeader id="compensation-summary-heading" title="Compensation Summary" subtitle="Monthly basic pay, allowances, gross pay and total cost per employee"/>
           <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-[13px]">
             <thead><tr className={theadClass}>{['Employee','Basic Pay','Allowances','Gross Pay','Employer Cost'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${head==='Employee'?'':'text-right'}`}>{head}</th>)}</tr></thead>
-            <tbody>{loading?<MessageRow colSpan={5}>Loading compensation…</MessageRow>:!rows.length?<MessageRow colSpan={5}>No active salaries yet.</MessageRow>:rows.map((row,index)=><tr key={row.employeeId} className="border-b border-slate-100 last:border-0">
-              <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={row.name} index={index}/><div><div className="font-semibold text-slate-900">{row.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.position||'—'}</div></div></div></td>
-              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-slate-800">{peso(row.basic)}</td>
-              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-slate-800">{peso(row.allowance)}</td>
-              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-semibold text-slate-900">{peso(row.gross)}</td>
-              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-slate-900">{peso(row.employerCost)}</td>
+            <tbody>{loading?<MessageRow colSpan={5}>Loading compensation…</MessageRow>:!rows.length?<MessageRow colSpan={5}>No active salaries yet.</MessageRow>:rows.map((row,index)=><tr key={row.employeeId} className="border-b border-gray-100 last:border-0">
+              <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={row.name} index={index}/><div><div className="font-semibold text-gray-900">{row.name}</div><div className="mt-0.5 text-[12px] text-gray-500">{row.position||'—'}</div></div></div></td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-gray-800">{peso(row.basic)}</td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-gray-800">{peso(row.allowance)}</td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-semibold text-gray-900">{peso(row.gross)}</td>
+              <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-gray-900">{peso(row.employerCost)}</td>
             </tr>)}</tbody>
           </table></div>
         </section>

@@ -14,7 +14,7 @@ const when=(iso?:string)=>iso?new Date(iso).toLocaleString('en-PH',{dateStyle:'m
 const Badge=({on,text}:{on:boolean;text?:string})=><StatusBadge status={on?'Released':'Not released'} label={text}/>;
 const progressBadge=(done:number,total:number)=><StatusBadge status={done===0?'Not released':done<total?'Partially released':'Released'} label={`${done} of ${total} departments`}/>;
 const th='px-4 py-3';
-const head='border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500';
+const head='border-b bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500';
 
 export function PayslipPanel({employees}:{employees:Employee[]}){
  // Payslips exist once a run is Paid (every employee paid); the date shown is when it was paid.
@@ -48,8 +48,8 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
   const rows=run.rows.filter(r=>deptOf(r)===dept);
   return <section className="mt-6 space-y-4">
    <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setDept('')}>Back</button><Badge on={Boolean(run.released?.[dept])}/></div>
-   <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="m-0 text-[17px] font-semibold text-[#17345b]">{dept}</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{runLabel(run)} · {rows.length} employees</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">Paid payroll</span></div>
-    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Employee','Gross Pay','Deductions','Net Pay','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.input.empId} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{row.input.name}</div><div className="text-[11px] text-slate-400">{row.input.empId}</div></td><td className="px-4 py-3 tabular-nums">{peso(row.result.gross)}</td><td className="px-4 py-3 tabular-nums text-rose-700">{peso(row.result.deductions)}</td><td className="px-4 py-3 tabular-nums font-semibold text-[#17345b]">{peso(row.result.net)}</td><td className="px-4 py-3"><button className={ghost} onClick={()=>setSlip(row)}>View Payslip</button></td></tr>)}</tbody></table></div>
+   <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="m-0 text-[17px] font-semibold text-gray-900">{dept}</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">{runLabel(run)} · {rows.length} employees</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">Paid payroll</span></div>
+    <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Employee','Gross Pay','Deductions','Net Pay','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.input.empId} className="border-b border-gray-100 transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-gray-800">{row.input.name}</div><div className="text-[11px] text-gray-400">{row.input.empId}</div></td><td className="px-4 py-3 tabular-nums">{peso(row.result.gross)}</td><td className="px-4 py-3 tabular-nums text-rose-700">{peso(row.result.deductions)}</td><td className="px-4 py-3 tabular-nums font-semibold text-gray-900">{peso(row.result.net)}</td><td className="px-4 py-3"><button className={ghost} onClick={()=>setSlip(row)}>View Payslip</button></td></tr>)}</tbody></table></div>
    </Card>
    {slip&&<SlipModal run={run} row={slip} dept={dept} onClose={()=>setSlip(null)}/>}
   </section>;
@@ -60,12 +60,12 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
   const depts=deptsOf(run);
   return <section className="mt-6 space-y-4">
   <div className="flex items-center justify-between"><button className={ghost} onClick={()=>setRunId('')}>Back</button>{releasable&&depts.some(d=>!run.released?.[d])&&<Button onClick={()=>setConfirm(depts.filter(d=>!run.released?.[d]))}>Release All to ESS</Button>}</div>
-   <Card><h2 className="m-0 text-[16px] font-semibold">Release payslips to ESS</h2><p className="mb-4 mt-1 text-[12px] text-slate-500">{runLabel(run)} · Release each department so its employees can view their payslips in ESS, The run closes once every department is released.</p>
-    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-[#eef1f6]"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{releasable&&!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release to ESS</Button>}</div></td></tr>)}</tbody></table></div>
+   <Card><h2 className="m-0 text-[16px] font-semibold">Release payslips to ESS</h2><p className="mb-4 mt-1 text-[12px] text-gray-500">{runLabel(run)} · Release each department so its employees can view their payslips in ESS, The run closes once every department is released.</p>
+    <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Department','Employees','Status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{depts.map(d=><tr key={d} className="border-b border-gray-100"><td className="px-4 py-3 font-semibold">{d}</td><td className="px-4 py-3">{run.rows.filter(r=>deptOf(r)===d).length}</td><td className="px-4 py-3"><Badge on={Boolean(run.released?.[d])}/></td><td className="px-4 py-3"><div className="flex gap-2"><button className={ghost} onClick={()=>setDept(d)}>View</button>{releasable&&!run.released?.[d]&&<Button onClick={()=>setConfirm([d])}>Release to ESS</Button>}</div></td></tr>)}</tbody></table></div>
    </Card>
    {confirm&&<Modal title="Release payslips to ESS" onClose={closeConfirm}>
  <p className="text-[13px]">Release payslips of <b>{confirm.join(', ')}</b> for {runLabel(run)} to ESS?</p>
- <p className="mt-1 text-[12px] text-slate-500">Employees will be able to view their payslips. This cannot be undone.</p>
+ <p className="mt-1 text-[12px] text-gray-500">Employees will be able to view their payslips. This cannot be undone.</p>
  <div className="mt-4"><Field label="Passkey"><TextInput type="password" autoComplete="off" autoFocus value={releasePasskey} onChange={event=>setReleasePasskey(event.target.value)} onKeyDown={event=>{if(event.key==='Enter')void doRelease()}}/></Field></div>
  {releaseError&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{releaseError}</p>}
  <div className="mt-6 flex justify-end gap-2"><button className={ghost} disabled={releaseBusy} onClick={closeConfirm}>Cancel</button><Button disabled={!releasePasskey||releaseBusy} onClick={()=>void doRelease()}>Confirm Release</Button></div>
@@ -75,8 +75,8 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
 
  // Level 1: approved runs
   return <section className="mt-6 space-y-4" aria-label="Payslip records">
-  <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll documents</div><h2 className="mb-0 mt-1 text-[18px] font-semibold text-[#17345b]">Payslips</h2></div><span className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700">{runs.length} {runs.length===1?"run":"runs"}</span></div>
-   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Generated','Released to ESS','Run status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={5}><Empty>No payslips yet. They are generated once every employee in a run is Paid.</Empty></td></tr>:runs.map(r=>{return <tr key={r.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40"><td className="whitespace-nowrap px-4 py-3 font-semibold text-[#17345b]">{runLabel(r)}</td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{when(generatedAt(r))}</td><td className="px-4 py-3">{(()=>{const depts=deptsOf(r);return progressBadge(depts.filter(d=>r.released?.[d]).length,depts.length)})()}</td><td className="px-4 py-3"><StatusBadge status={runStatus(r)}/></td><td className="px-4 py-3"><div className="flex gap-2 whitespace-nowrap"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button></div></td></tr>})}</tbody></table></div>
+  <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">Payroll documents</div><h2 className="mb-0 mt-1 text-[18px] font-semibold text-gray-900">Payslips</h2></div><span className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-semibold text-blue-700">{runs.length} {runs.length===1?"run":"runs"}</span></div>
+   <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Cutoff','Generated','Released to ESS','Run status','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{!runs.length?<tr><td colSpan={5}><Empty>No payslips yet. They are generated once every employee in a run is Paid.</Empty></td></tr>:runs.map(r=>{return <tr key={r.id} className="border-b border-gray-100 transition-colors hover:bg-blue-50/40"><td className="whitespace-nowrap px-4 py-3 font-semibold text-gray-900">{runLabel(r)}</td><td className="whitespace-nowrap px-4 py-3 text-gray-500">{when(generatedAt(r))}</td><td className="px-4 py-3">{(()=>{const depts=deptsOf(r);return progressBadge(depts.filter(d=>r.released?.[d]).length,depts.length)})()}</td><td className="px-4 py-3"><StatusBadge status={runStatus(r)}/></td><td className="px-4 py-3"><div className="flex gap-2 whitespace-nowrap"><button className={ghost} onClick={()=>setRunId(r.id)}>View payslips</button></div></td></tr>})}</tbody></table></div>
   </Card>
  </section>;
 }
@@ -95,20 +95,20 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
  const earnings:[string,string][] = breakdown.earnings.map(line=>[line.label,dash(line.amount)]);
  const deductions:[string,string][] = breakdown.deductions.map(line=>[line.label,dash(line.amount)]);
  const period=runLabel(run);
- const info=(l:string,v:string)=><div className="flex gap-2"><span className="text-slate-500">{l}:</span><span className="font-semibold text-slate-800">{v}</span></div>;
- const table=(title:string,rows:[string,string][],totalLabel:string,total:number)=><div className="overflow-hidden rounded-lg border border-slate-200">
-  <div className="flex justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600"><span>{title}</span><span>Amount (PHP)</span></div>
-  <div className="divide-y divide-slate-100">{rows.map(([l,v])=><div key={l} className="flex justify-between px-3 py-1.5 text-[12px]"><span>{l}</span><span className="tabular-nums">{v}</span></div>)}</div>
-  <div className="flex justify-between border-t border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-bold"><span>{totalLabel}</span><span className="tabular-nums">{nf(total)}</span></div>
+ const info=(l:string,v:string)=><div className="flex gap-2"><span className="text-gray-500">{l}:</span><span className="font-semibold text-gray-800">{v}</span></div>;
+ const table=(title:string,rows:[string,string][],totalLabel:string,total:number)=><div className="overflow-hidden rounded-lg border border-gray-200">
+  <div className="flex justify-between bg-gray-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-gray-600"><span>{title}</span><span>Amount (PHP)</span></div>
+  <div className="divide-y divide-gray-100">{rows.map(([l,v])=><div key={l} className="flex justify-between px-3 py-1.5 text-[12px]"><span>{l}</span><span className="tabular-nums">{v}</span></div>)}</div>
+  <div className="flex justify-between border-t border-gray-200 bg-gray-50 px-3 py-2 text-[12px] font-bold"><span>{totalLabel}</span><span className="tabular-nums">{nf(total)}</span></div>
  </div>;
  return <Modal title="Payslip" wide onClose={onClose}>
   <style>{`@media print{body *{visibility:hidden}.payslip-print,.payslip-print *{visibility:visible}.payslip-print{position:absolute;left:0;top:0;width:100%;border:0!important}.no-print{display:none!important}}`}</style>
-  <div className="payslip-print rounded-xl border border-slate-300 bg-white p-6 text-slate-800">
-   <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-    <div className="flex items-center gap-3"><img src="/logo.png" alt="Archon Nell Inc." className="h-10 w-10 object-contain"/><div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INCORPORATED</div><div className="text-[11px] text-slate-500">Payslip</div></div></div>
+  <div className="payslip-print rounded-xl border border-gray-300 bg-white p-6 text-gray-800">
+   <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
+    <div className="flex items-center gap-3"><img src="/logo.png" alt="Archon Nell Inc." className="h-10 w-10 object-contain"/><div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INCORPORATED</div><div className="text-[11px] text-gray-500">Payslip</div></div></div>
     <div className="text-right"><div className="text-[13px] font-semibold">{period}</div><span className="mt-1 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Approved</span></div>
    </div>
-   <div className="grid gap-1.5 border-b border-slate-200 py-4 text-[12px] sm:grid-cols-2">
+   <div className="grid gap-1.5 border-b border-gray-200 py-4 text-[12px] sm:grid-cols-2">
     <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}</div>
     <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',formatDate(run.payDate??run.paidAt))}{info('Payment Method',run.payouts?.[row.input.empId]?.method??run.paymentMethod??'—')}</div>
    </div>
@@ -117,9 +117,9 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
     {table('Earnings',earnings,'Total Salary',c.gross)}
     {table('Deductions',deductions,'Total Deductions',c.deductions)}
    </div>
-  <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-[#17345b]"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div><div className="mt-1 text-[11px] italic text-slate-500">{pesoWords(c.net)}</div></div>
-   <div className="mt-10 flex justify-end text-[11px]"><div className="w-48 border-t border-slate-500 pt-1 text-center">Received By</div></div>
-   <div className="mt-6 text-[11px] text-slate-500">This is a system-generated payslip for {run.from} to {run.to}.</div>
+  <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-gray-900"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div><div className="mt-1 text-[11px] italic text-gray-500">{pesoWords(c.net)}</div></div>
+   <div className="mt-10 flex justify-end text-[11px]"><div className="w-48 border-t border-gray-500 pt-1 text-center">Received By</div></div>
+   <div className="mt-6 text-[11px] text-gray-500">This is a system-generated payslip for {run.from} to {run.to}.</div>
   </div>
   <button className={`${ghost} no-print mt-4`} onClick={()=>window.print()}>Print / Save as PDF</button>
  </Modal>;

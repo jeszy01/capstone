@@ -15,7 +15,7 @@ export function PayoutDetailsFields({value,onChange}:{value:PayoutDetails;onChan
   <Field label="Payout method"><select className={input} value={value.method} onChange={event=>onChange({...value,method:event.target.value as PayoutMethod})}>{PAYOUT_METHODS.map(method=><option key={method} value={method}>{method==='Bank'?'Bank transfer':method==='E-wallet'?'E-wallet':'Cash'}</option>)}</select></Field>
   {value.method==='Bank'&&<><Field label="Bank"><TextInput value={value.bankName??''} maxLength={80} onChange={event=>onChange({...value,bankName:event.target.value})}/></Field><Field label="Account number"><TextInput value={value.accountNumber??''} maxLength={40} inputMode="numeric" onChange={event=>onChange({...value,accountNumber:event.target.value})}/></Field></>}
   {value.method==='E-wallet'&&<><Field label="Provider"><select className={input} value={value.provider??''} onChange={event=>onChange({...value,provider:event.target.value})}><option value="">Select</option>{E_WALLET_PROVIDERS.map(provider=><option key={provider} value={provider}>{provider}</option>)}</select></Field><Field label="Mobile / wallet number"><TextInput value={value.walletNumber??''} maxLength={20} inputMode="tel" onChange={event=>onChange({...value,walletNumber:event.target.value})}/></Field></>}
-  {value.method==='Cash'&&<p className="m-0 text-[12px] text-slate-500">Paid in cash; the employee signs the cash list when they receive it.</p>}
+  {value.method==='Cash'&&<p className="m-0 text-[12px] text-gray-500">Paid in cash; the employee signs the cash list when they receive it.</p>}
  </div>;
 }
 
@@ -43,16 +43,16 @@ export function PayoutDetailsPanel({employees}:{employees:Employee[]}){
  return <section className="min-w-0">
   <Card className={flushCard}>
    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-50 px-5 py-4">
-    <div><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">Payout details</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">How each employee receives their net pay. A payroll run copies these when it is computed.</p></div>
+    <div><h2 className="m-0 text-[16px] font-semibold text-gray-900">Payout details</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">How each employee receives their net pay. A payroll run copies these when it is computed.</p></div>
     <TextInput className="max-w-[260px]" placeholder="Search employee" value={search} onChange={event=>setSearch(event.target.value)}/>
    </div>
    <div role="region" aria-label="Payout details table" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-[13px]">
     <thead><tr className={tableHead}>{['Employee','Method','Account','Status',''].map(label=><th key={label||'action'} scope="col" className="px-4 py-3.5">{label}</th>)}</tr></thead>
     <tbody>{!list.length?<tr><td colSpan={5}><Empty>No employees found.</Empty></td></tr>:list.map(employee=>{
      const details=payoutDetailsFor(employee.employeeNo,employee,saved),missing=missingPayout(details);
-     return <tr key={employee.id} className="border-b border-slate-100">
-      <th scope="row" className={rowHeader}>{employee.name}<div className="mt-0.5 text-[11px] font-normal text-slate-500">{employee.employeeNo} · {employee.department||'Unassigned'}</div></th>
-      <td className={cell}>{details.method}{!saved[employee.employeeNo]&&<div className="text-[11px] text-slate-400">From employee record</div>}</td>
+     return <tr key={employee.id} className="border-b border-gray-100">
+      <th scope="row" className={rowHeader}>{employee.name}<div className="mt-0.5 text-[11px] font-normal text-gray-500">{employee.employeeNo} · {employee.department||'Unassigned'}</div></th>
+      <td className={cell}>{details.method}{!saved[employee.employeeNo]&&<div className="text-[11px] text-gray-400">From employee record</div>}</td>
       <td className={cell}>{payoutAccount(details)||'—'}</td>
       <td className={cell}>{missing?<StatusBadge status="Pending" label={`Missing ${missing}`}/>:<StatusBadge status="Active" label="Ready"/>}</td>
       <td className={`${cell} text-right`}>{canEdit&&<button type="button" className={ghost} onClick={()=>setEditing(employee)}>Edit</button>}</td>

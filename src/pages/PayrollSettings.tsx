@@ -93,13 +93,13 @@ export default function PayrollSettings(){
   <PageHeader title="Payroll Settings"/>
   <div className="mt-6 grid gap-6 sm:grid-cols-[220px_minmax(0,1fr)]">
    <div className="sm:hidden"><Field label="Section"><select className={input} value={section} onChange={event=>setSection(event.target.value as SectionId)}>{SECTIONS.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></Field></div>
-   <nav aria-label="Payroll settings sections" className="hidden sm:block"><ul className="m-0 grid list-none gap-1 p-0">{SECTIONS.map(item=><li key={item.id}><button type="button" aria-current={section===item.id?'page':undefined} onClick={()=>setSection(item.id)} className={`w-full rounded-xl px-3.5 py-2.5 text-left text-[13px] font-medium transition ${section===item.id?'bg-[#203f69] text-white':'text-slate-600 hover:bg-slate-100'}`}>{item.label}</button></li>)}</ul></nav>
+   <nav aria-label="Payroll settings sections" className="hidden sm:block"><ul className="m-0 grid list-none gap-1 p-0">{SECTIONS.map(item=><li key={item.id}><button type="button" aria-current={section===item.id?'page':undefined} onClick={()=>setSection(item.id)} className={`w-full rounded-xl px-3.5 py-2.5 text-left text-[13px] font-medium transition ${section===item.id?'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-600/30':'text-gray-600 hover:bg-gray-100'}`}>{item.label}</button></li>)}</ul></nav>
    <div className="min-w-0 space-y-6">
     {tables(section).map(table=><Card key={table.title} className="min-w-0">
-     <h2 className="m-0 mb-4 text-[17px] font-semibold text-slate-900">{table.title}</h2>
-     <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[520px] text-left text-[13px]">
-      <thead><tr className="border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500">{table.columns.map(column=><th key={column} className="px-4 py-3">{column}</th>)}</tr></thead>
-      <tbody>{table.rows.map((row,index)=><tr key={index} className="border-b border-[#eef1f6] last:border-0">{row.map((cell,i)=><td key={i} className={`px-4 py-3 ${i===0?'font-medium text-slate-800':i===row.length-1?'text-[12px] text-slate-500':'text-slate-700'}`}>{cell}</td>)}</tr>)}</tbody>
+     <h2 className="m-0 mb-4 text-[17px] font-semibold text-gray-900">{table.title}</h2>
+     <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full min-w-[520px] text-left text-[13px]">
+      <thead><tr className="border-b bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">{table.columns.map(column=><th key={column} className="px-4 py-3">{column}</th>)}</tr></thead>
+      <tbody>{table.rows.map((row,index)=><tr key={index} className="border-b border-gray-100 last:border-0">{row.map((cell,i)=><td key={i} className={`px-4 py-3 ${i===0?'font-medium text-gray-800':i===row.length-1?'text-[12px] text-gray-500':'text-gray-700'}`}>{cell}</td>)}</tr>)}</tbody>
      </table></div>
     </Card>)}
    </div>

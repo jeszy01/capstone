@@ -34,8 +34,8 @@ export default function Reimbursement(){
     <Card className={flushCard}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-50 px-5 py-4">
         <div className="min-w-0">
-          <h2 className="m-0 flex flex-wrap items-center gap-2 text-[15px] font-semibold text-[#17345b]">{view==='forReimbursement'?'Ready for reimbursement':'Reimbursement history'}<span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{list.length} {list.length===1?'claim':'claims'}</span></h2>
-          <p className="mb-0 mt-1 text-[12px] text-slate-500">{view==='forReimbursement'?<>Approved claims awaiting payment · <span className="font-semibold tabular-nums text-[#17345b]">{peso(outstanding)}</span> outstanding</>:'Claims that have been reimbursed.'}</p>
+          <h2 className="m-0 flex flex-wrap items-center gap-2 text-[15px] font-semibold text-gray-900">{view==='forReimbursement'?'Ready for reimbursement':'Reimbursement history'}<span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{list.length} {list.length===1?'claim':'claims'}</span></h2>
+          <p className="mb-0 mt-1 text-[12px] text-gray-500">{view==='forReimbursement'?<>Approved claims awaiting payment · <span className="font-semibold tabular-nums text-gray-900">{peso(outstanding)}</span> outstanding</>:'Claims that have been reimbursed.'}</p>
         </div>
         <Segmented label="Reimbursement views" value={view} onChange={setView} options={VIEWS}/>
       </div>
@@ -50,12 +50,12 @@ export default function Reimbursement(){
 function ForReimbursement({claims,employees,onProcess}:{claims:ExpenseClaim[];employees:Employee[];onProcess:(claim:ExpenseClaim)=>void}){
   return <div role="region" aria-label="Claims ready for reimbursement table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[820px] text-left text-[13px]"><caption className="sr-only">Approved claims waiting for reimbursement, with employee, type, date, amount, status, and processing action.</caption>
     <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Action'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
-    <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No approved claims are waiting for reimbursement.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
+    <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No approved claims are waiting for reimbursement.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-gray-100 transition-colors hover:bg-blue-50/35">
       <th scope="row" className={rowHeader}>{claim.claimNumber}</th>
       <td className={cell}><EmployeeCell employees={employees} claim={claim}/></td>
-      <td className={`${cell} whitespace-nowrap text-slate-700`}>{claim.claimType}</td>
-      <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.date)}</td>
-      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
+      <td className={`${cell} whitespace-nowrap text-gray-700`}>{claim.claimType}</td>
+      <td className={`${cell} whitespace-nowrap text-gray-600`}>{claimDate(claim.date)}</td>
+      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{peso(claim.amount)}</td>
       <td className={cell}><ClaimStatusBadge claim={claim}/></td>
       <td className={cell}>{can('claims.pay')&&<Button onClick={()=>onProcess(claim)}><Check size={14}/>Process</Button>}</td>
     </tr>)}</tbody></table></div>;
@@ -64,13 +64,13 @@ function ForReimbursement({claims,employees,onProcess}:{claims:ExpenseClaim[];em
 function ReimbursementHistory({claims,employees}:{claims:ExpenseClaim[];employees:Employee[]}){
   return <div role="region" aria-label="Reimbursement history table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[820px] text-left text-[13px]"><caption className="sr-only">Completed reimbursements with claim number, employee, type, expense date, amount, status, and payment date.</caption>
     <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Expense Date','Amount','Status','Paid On'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
-    <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No reimbursement history yet.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-slate-100 transition-colors hover:bg-blue-50/35">
+    <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No reimbursement history yet.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-gray-100 transition-colors hover:bg-blue-50/35">
       <th scope="row" className={rowHeader}>{claim.claimNumber}</th>
       <td className={cell}><EmployeeCell employees={employees} claim={claim}/></td>
-      <td className={`${cell} whitespace-nowrap text-slate-700`}>{claim.claimType}</td>
-      <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.date)}</td>
-      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(claim.amount)}</td>
+      <td className={`${cell} whitespace-nowrap text-gray-700`}>{claim.claimType}</td>
+      <td className={`${cell} whitespace-nowrap text-gray-600`}>{claimDate(claim.date)}</td>
+      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{peso(claim.amount)}</td>
       <td className={cell}><ClaimStatusBadge claim={claim}/></td>
-      <td className={`${cell} whitespace-nowrap text-slate-600`}>{claimDate(claim.paymentDate)}</td>
+      <td className={`${cell} whitespace-nowrap text-gray-600`}>{claimDate(claim.paymentDate)}</td>
     </tr>)}</tbody></table></div>;
 }

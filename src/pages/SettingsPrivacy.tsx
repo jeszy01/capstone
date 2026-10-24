@@ -22,7 +22,7 @@ function PasswordConfirmDialog({title,message,confirmLabel,danger=false,onCancel
  const [password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const confirm=async()=>{if(!password){setError('Enter your current password.');return}setBusy(true);setError('');try{await onConfirm(password)}catch(cause){setError(errorText(cause,'The change could not be saved.'));setBusy(false)}};
  return <Modal title={title} onClose={()=>{if(!busy)onCancel()}}>
-  <p className="m-0 text-[13px] leading-relaxed text-slate-600">{message}</p>
+  <p className="m-0 text-[13px] leading-relaxed text-gray-600">{message}</p>
   <div className="mt-4"><Field label="Current password"><TextInput type="password" autoComplete="current-password" autoFocus value={password} onChange={event=>setPassword(event.target.value)} onKeyDown={event=>{if(event.key==='Enter')void confirm()}}/></Field></div>
   {error&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={busy} onClick={onCancel}>Cancel</button>{danger?<button type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={busy} onClick={()=>void confirm()}>{busy?'Saving…':confirmLabel}</button>:<Button disabled={busy} onClick={()=>void confirm()}>{busy?'Saving…':confirmLabel}</Button>}</div>
@@ -30,14 +30,14 @@ function PasswordConfirmDialog({title,message,confirmLabel,danger=false,onCancel
 }
 
 function SectionCard({title,editing,canEdit,onEdit,onCancel,onSave,actions,editLabel='Edit',children}:{title:string;editing:boolean;canEdit:boolean;onEdit:()=>void;onCancel:()=>void;onSave:()=>void;actions?:ReactNode;editLabel?:string;children:ReactNode}){
- return <Card className="min-w-0"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-slate-900">{title}</h2><div className="flex flex-wrap gap-2">{actions}{editing?<><button type="button" className={ghost} onClick={onCancel}>Cancel</button><Button onClick={onSave}>Save</Button></>:canEdit&&<button type="button" className={ghost} onClick={onEdit}><Pencil size={15}/>{editLabel}</button>}</div></div>{children}</Card>;
+ return <Card className="min-w-0"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-gray-900">{title}</h2><div className="flex flex-wrap gap-2">{actions}{editing?<><button type="button" className={ghost} onClick={onCancel}>Cancel</button><Button onClick={onSave}>Save</Button></>:canEdit&&<button type="button" className={ghost} onClick={onEdit}><Pencil size={15}/>{editLabel}</button>}</div></div>{children}</Card>;
 }
 
 /** Saved per user on this device and applied right away. */
 function NotificationSoundCard(){
  const [on,setOn]=useState(notificationSoundOn);
- return <Card className="min-w-0"><h2 className="m-0 mb-5 text-[16px] font-semibold text-slate-900">Notifications</h2><div className="grid gap-4 sm:grid-cols-3">
-  <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-[13px] font-semibold text-slate-600"><input type="checkbox" role="switch" className="h-4 w-4 rounded border-slate-300 text-blue-600" checked={on} onChange={event=>{setOn(event.target.checked);setNotificationSoundOn(event.target.checked)}}/>Notification sound</label>
+ return <Card className="min-w-0"><h2 className="m-0 mb-5 text-[16px] font-semibold text-gray-900">Notifications</h2><div className="grid gap-4 sm:grid-cols-3">
+  <label className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2.5 text-[13px] font-semibold text-gray-600"><input type="checkbox" role="switch" className="h-4 w-4 rounded border-gray-300 text-blue-600" checked={on} onChange={event=>{setOn(event.target.checked);setNotificationSoundOn(event.target.checked)}}/>Notification sound</label>
  </div></Card>;
 }
 
@@ -137,14 +137,14 @@ function PrivacySettings({onDirty}:{onDirty:(dirty:boolean)=>void}){
   <SectionCard title="Two-Factor Authentication (OTP)" editing={editing==='otp'} canEdit={editing===null&&security.otpAvailable} onEdit={()=>startEdit('otp')} onCancel={stopEdit} onSave={()=>{if(otpDraft===security.otpEnabled)stopEdit();else setConfirmingOtp(true)}}>
    <div className="grid gap-4 sm:grid-cols-3">
     <Field label="Status"><TextInput value={security.otpAvailable?(security.otpEnabled?'On':'Off'):'Unavailable'} readOnly/></Field>
-    <label className="flex items-center gap-3 self-end rounded-lg border border-slate-200 px-3 py-2.5 text-[13px] font-semibold text-slate-600"><input type="checkbox" role="switch" className="h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-60" disabled={editing!=='otp'} checked={editing==='otp'?otpDraft:security.otpEnabled} onChange={event=>setOtpDraft(event.target.checked)}/>Require a code at sign-in</label>
+    <label className="flex items-center gap-3 self-end rounded-lg border border-gray-200 px-3 py-2.5 text-[13px] font-semibold text-gray-600"><input type="checkbox" role="switch" className="h-4 w-4 rounded border-gray-300 text-blue-600 disabled:opacity-60" disabled={editing!=='otp'} checked={editing==='otp'?otpDraft:security.otpEnabled} onChange={event=>setOtpDraft(event.target.checked)}/>Require a code at sign-in</label>
    </div>
   </SectionCard>
   <NotificationSoundCard/>
   <Card className="min-w-0">
-   <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-slate-900">Active Sessions</h2><button type="button" className={ghost} disabled={!others.length} onClick={()=>setSigningOut('others')}><LogOut size={15}/>Sign out all other devices</button></div>
-   <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[560px] text-left text-[13px]"><thead><tr className="border-b bg-[#f3f5f9] text-[11px] uppercase tracking-wide text-slate-500"><th className="px-4 py-3">Device</th><th className="px-4 py-3">Browser</th><th className="px-4 py-3">Last Active</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody>
-    {!security.sessions.length?<tr><td colSpan={4}><Empty>No active sessions.</Empty></td></tr>:security.sessions.map(session=><tr key={session.id} className="border-b border-[#eef1f6] last:border-0">
+   <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 text-[16px] font-semibold text-gray-900">Active Sessions</h2><button type="button" className={ghost} disabled={!others.length} onClick={()=>setSigningOut('others')}><LogOut size={15}/>Sign out all other devices</button></div>
+   <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full min-w-[560px] text-left text-[13px]"><thead><tr className="border-b bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500"><th className="px-4 py-3">Device</th><th className="px-4 py-3">Browser</th><th className="px-4 py-3">Last Active</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody>
+    {!security.sessions.length?<tr><td colSpan={4}><Empty>No active sessions.</Empty></td></tr>:security.sessions.map(session=><tr key={session.id} className="border-b border-gray-100 last:border-0">
      <td className="px-4 py-3 font-medium">{session.device}{session.current&&<span className="ml-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">This device</span>}</td>
      <td className="px-4 py-3">{session.browser}</td><td className="whitespace-nowrap px-4 py-3">{when(session.lastActiveAt)}</td>
      <td className="px-4 py-3 text-right">{!session.current&&<button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Sign out ${session.device}`} onClick={()=>setSigningOut(session)}><LogOut size={14}/><span className="max-sm:sr-only">Sign out</span></button>}</td>

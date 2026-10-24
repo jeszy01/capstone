@@ -63,19 +63,19 @@ export default function Finance(){
  };
  const showReceipt=(run:PayrollRun,download:boolean)=>{setError('');openReceipt(run,download).catch(cause=>setError(message(cause,'The receipt could not be opened.')))};
  const table=(title:string,hint:string,list:PayrollRun[],empty:string,actions:(run:PayrollRun)=>ReactNode,extra?:(run:PayrollRun)=>ReactNode)=><Card className={flushCard}>
-  <div className="border-b border-blue-50 px-5 py-4"><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">{title}</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">{hint}</p></div>
+  <div className="border-b border-blue-50 px-5 py-4"><h2 className="m-0 text-[16px] font-semibold text-gray-900">{title}</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">{hint}</p></div>
   <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-[13px]">
    <thead><tr className={tableHead}>{['Payroll','Employees','Net Pay','Status','Actions'].map(label=><th key={label} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${['Employees','Net Pay','Actions'].includes(label)?'text-right':''}`}>{label}</th>)}</tr></thead>
-   <tbody>{!list.length?<tr><td colSpan={5}><Empty>{empty}</Empty></td></tr>:list.map(run=><tr key={run.id} className="border-b border-slate-100">
-    <th scope="row" className={rowHeader}><Link className="text-[#17345b] hover:underline" to={`/payroll/review?run=${run.id}`}>{runLabel(run)}</Link><div className="mt-0.5 text-[11px] font-normal text-slate-500">PR-{run.id.slice(0,8).toUpperCase()} · Pay date {formatDate(run.payDate??run.to)} · Prepared by {run.preparedBy}</div>{extra?.(run)}</th>
+   <tbody>{!list.length?<tr><td colSpan={5}><Empty>{empty}</Empty></td></tr>:list.map(run=><tr key={run.id} className="border-b border-gray-100">
+    <th scope="row" className={rowHeader}><Link className="text-gray-900 hover:underline" to={`/payroll/review?run=${run.id}`}>{runLabel(run)}</Link><div className="mt-0.5 text-[11px] font-normal text-gray-500">PR-{run.id.slice(0,8).toUpperCase()} · Pay date {formatDate(run.payDate??run.to)} · Prepared by {run.preparedBy}</div>{extra?.(run)}</th>
     <td className={`${cell} text-right tabular-nums`}>{run.rows.length}</td>
-    <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-[#17345b]`}>{peso(netOf(run))}</td>
+    <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{peso(netOf(run))}</td>
     <td className={cell}><StatusBadge status={runStatus(run)}/></td>
     <td className={`${cell} text-right`}><div className="flex justify-end gap-2 whitespace-nowrap">{actions(run)}</div></td>
    </tr>)}</tbody>
   </table></div>
  </Card>;
- const receiptLine=(run:PayrollRun)=>run.funding?.receiptId?<div className="mt-1 text-[11px] font-normal text-slate-500">Receipt {run.funding.fileName} · {peso(run.funding.amount)} · by {run.funding.uploadedBy} on {formatDate(run.funding.uploadedAt)}</div>
+ const receiptLine=(run:PayrollRun)=>run.funding?.receiptId?<div className="mt-1 text-[11px] font-normal text-gray-500">Receipt {run.funding.fileName} · {peso(run.funding.amount)} · by {run.funding.uploadedBy} on {formatDate(run.funding.uploadedAt)}</div>
   :run.funding?<div className="mt-1 text-[11px] font-semibold text-amber-700">No receipt yet · payouts cannot be exported until it is attached</div>:null;
  return <div className="space-y-5">
   <PageHeader title="Finance" description={canApprove?'Approve submitted payroll, confirm funding, then attach the bank transfer receipt.':'Confirm funding of approved payroll, then attach the bank transfer receipt.'}/>
@@ -91,14 +91,14 @@ export default function Finance(){
    {runStatus(run)==='Funded'&&<button type="button" className={run.funding?.receiptId?ghost:button} onClick={()=>open('receipt',run)}>{run.funding?.receiptId?'Replace':'Attach receipt'}</button>}
   </>,receiptLine)}
   {action&&(action.kind==='Approved'||action.kind==='Rejected')&&<Modal title={action.kind==='Approved'?'Approve payroll':'Reject payroll'} onClose={close}>
-   <p className="mt-0 text-[13px] text-slate-600">{action.kind==='Approved'?`Approve ${runLabel(action.run)} (${action.run.rows.length} employees, net ${peso(netOf(action.run))})? Funding is confirmed next, with the receipt.`:'A rejected run is locked; HR creates a new payroll for this cutoff.'}</p>
+   <p className="mt-0 text-[13px] text-gray-600">{action.kind==='Approved'?`Approve ${runLabel(action.run)} (${action.run.rows.length} employees, net ${peso(netOf(action.run))})? Funding is confirmed next, with the receipt.`:'A rejected run is locked; HR creates a new payroll for this cutoff.'}</p>
    <Field label={action.kind==='Approved'?'Comment (optional)':'Comment (required)'}><textarea className={`${input} min-h-[90px]`} maxLength={500} value={comment} onChange={event=>setComment(event.target.value)}/></Field>
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={busy} onClick={close}>Cancel</button><button type="button" className={button} disabled={busy||(action.kind==='Rejected'&&comment.trim().length<3)} onClick={()=>void save()}>{busy?'Saving…':action.kind==='Approved'?'Approve':'Reject'}</button></div>
   </Modal>}
   {action&&action.kind==='receipt'&&<Modal title={action.run.funding?.receiptId?'Replace funding receipt':'Attach funding receipt'} onClose={close}>
    <Field label="Bank transfer receipt (JPG, PNG or PDF, max 5 MB)"><input className={input} type="file" accept={RECEIPT_ACCEPT} onChange={event=>{setError('');setReceipt(event.target.files?.[0]??null)}}/></Field>
-   {receipt&&<p className={`mb-0 mt-2 text-[12px] ${receiptProblem(receipt)?'text-red-700':'text-slate-600'}`}>{receipt.name} · {(receipt.size/1024/1024).toFixed(2)} MB{receiptProblem(receipt)?` — ${receiptProblem(receipt)}`:''}</p>}
+   {receipt&&<p className={`mb-0 mt-2 text-[12px] ${receiptProblem(receipt)?'text-red-700':'text-gray-600'}`}>{receipt.name} · {(receipt.size/1024/1024).toFixed(2)} MB{receiptProblem(receipt)?` — ${receiptProblem(receipt)}`:''}</p>}
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={busy} onClick={close}>Cancel</button><button type="button" className={button} disabled={busy||!receipt||Boolean(receiptProblem(receipt))} onClick={()=>void save()}>{busy?'Saving…':action.run.funding?.receiptId?'Replace receipt':'Attach receipt'}</button></div>
   </Modal>}

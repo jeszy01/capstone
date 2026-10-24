@@ -2,22 +2,22 @@ import {Link} from 'react-router-dom';
 import {Card,Empty} from '../../components/common/ui';
 import type {DashboardSummary,EmployeeOverview,PendingRow} from '../../../backend-render/dashboardRules.js';
 
-const RECORD_DOTS:Record<string,string>={'Active':'bg-emerald-500','Inactive':'bg-slate-400','On Leave':'bg-amber-400','Resigned':'bg-rose-400'};
+const RECORD_DOTS:Record<string,string>={'Active':'bg-emerald-500','Inactive':'bg-gray-400','On Leave':'bg-amber-400','Resigned':'bg-rose-400'};
 /**
  * Employee overview: record status and employment type as counted by the server; each section adds up to the total.
  * Every record status is listed; employment types with no employees are left out.
  */
 export function EmployeeOverviewCard({data,loading,error}:{data:EmployeeOverview|null;loading:boolean;error:string}){
  const types=data?.employmentType.filter(item=>item.count>0)??[];
- return <Card><h2 className="m-0 text-[16px] font-semibold">Employee overview</h2><p className="mt-1 text-[12px] text-slate-500">{data?`${data.total.toLocaleString()} ${data.total===1?'employee':'employees'}`:'Record status and employment type'}</p>
-  {loading?<div role="status" className="py-8 text-[13px] text-slate-500">Loading overview…</div>
+ return <Card><h2 className="m-0 text-[16px] font-semibold">Employee overview</h2><p className="mt-1 text-[12px] text-gray-500">{data?`${data.total.toLocaleString()} ${data.total===1?'employee':'employees'}`:'Record status and employment type'}</p>
+  {loading?<div role="status" className="py-8 text-[13px] text-gray-500">Loading overview…</div>
    :error?<Empty>Employee overview unavailable.</Empty>
    :!data?.total?<Empty>No employee records yet.</Empty>
    :<>
-    <h3 className="mb-0 mt-5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Record status</h3>
-    <dl className="mt-2 space-y-3">{data.recordStatus.map(item=><div key={item.name} className="flex items-center justify-between border-b border-slate-100 pb-3"><dt className="flex items-center gap-2 text-[13px] text-slate-500"><span aria-hidden="true" className={`h-2 w-2 rounded-full ${RECORD_DOTS[item.name]??'bg-slate-300'}`}/>{item.name}</dt><dd className="m-0 text-[18px] font-semibold text-slate-800">{item.count}</dd></div>)}</dl>
-    <h3 className="mb-0 mt-6 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Employment type</h3>
-    <dl className="mt-2 space-y-2">{types.map(item=><div key={item.name} className="flex items-center justify-between border-b border-slate-100 pb-2"><dt className="text-[13px] text-slate-500">{item.name}</dt><dd className="m-0 text-[15px] font-semibold text-slate-800">{item.count}</dd></div>)}</dl>
+    <h3 className="mb-0 mt-5 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Record status</h3>
+    <dl className="mt-2 space-y-3">{data.recordStatus.map(item=><div key={item.name} className="flex items-center justify-between border-b border-gray-100 pb-3"><dt className="flex items-center gap-2 text-[13px] text-gray-500"><span aria-hidden="true" className={`h-2 w-2 rounded-full ${RECORD_DOTS[item.name]??'bg-gray-300'}`}/>{item.name}</dt><dd className="m-0 text-[18px] font-semibold text-gray-800">{item.count}</dd></div>)}</dl>
+    <h3 className="mb-0 mt-6 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Employment type</h3>
+    <dl className="mt-2 space-y-2">{types.map(item=><div key={item.name} className="flex items-center justify-between border-b border-gray-100 pb-2"><dt className="text-[13px] text-gray-500">{item.name}</dt><dd className="m-0 text-[15px] font-semibold text-gray-800">{item.count}</dd></div>)}</dl>
    </>}
  </Card>;
 }
@@ -26,14 +26,14 @@ export function EmployeeOverviewCard({data,loading,error}:{data:EmployeeOverview
 export function PendingApprovalsCard({rows,loading,error}:{rows:PendingRow[];loading:boolean;error:string}){
  const total=rows.reduce((sum,row)=>sum+row.count,0);
  return <Card className="min-w-0">
-  <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4"><div><h2 className="m-0 text-[16px] font-semibold">Pending approvals</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">What is waiting for you</p></div>{!loading&&!error&&total>0&&<span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">{total} pending</span>}</div>
-  {loading?<div role="status" className="py-8 text-[13px] text-slate-500">Loading…</div>
+  <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-4"><div><h2 className="m-0 text-[16px] font-semibold">Pending approvals</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">What is waiting for you</p></div>{!loading&&!error&&total>0&&<span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">{total} pending</span>}</div>
+  {loading?<div role="status" className="py-8 text-[13px] text-gray-500">Loading…</div>
    :error?<Empty>Pending approvals are unavailable. {error}</Empty>
    :!total?<Empty>Nothing pending</Empty>
-   :<ul className="m-0 mt-2 list-none divide-y divide-slate-100 p-0">{rows.map(row=><li key={row.key} className="flex items-center justify-between gap-3 py-3">
-    <div className="min-w-0"><div className="text-[13px] font-semibold text-slate-800">{row.label}</div><div className={`text-[12px] ${row.count?'text-slate-600':'text-slate-400'}`}>{row.detail}</div></div>
-    <div className="flex shrink-0 items-center gap-3"><span className={`min-w-[28px] rounded-full px-2 py-0.5 text-center text-[12px] font-semibold tabular-nums ${row.count?'bg-amber-50 text-amber-800':'bg-slate-100 text-slate-400'}`}>{row.count}</span>
-     {row.count>0?<Link to={row.link} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-50">{row.action}</Link>:<span className="w-[62px]"/>}</div>
+   :<ul className="m-0 mt-2 list-none divide-y divide-gray-100 p-0">{rows.map(row=><li key={row.key} className="flex items-center justify-between gap-3 py-3">
+    <div className="min-w-0"><div className="text-[13px] font-semibold text-gray-800">{row.label}</div><div className={`text-[12px] ${row.count?'text-gray-600':'text-gray-400'}`}>{row.detail}</div></div>
+    <div className="flex shrink-0 items-center gap-3"><span className={`min-w-[28px] rounded-full px-2 py-0.5 text-center text-[12px] font-semibold tabular-nums ${row.count?'bg-amber-50 text-amber-800':'bg-gray-100 text-gray-400'}`}>{row.count}</span>
+     {row.count>0?<Link to={row.link} className="rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-50">{row.action}</Link>:<span className="w-[62px]"/>}</div>
    </li>)}</ul>}
  </Card>;
 }
@@ -50,8 +50,8 @@ export function DepartmentDonut({data,loading,error}:{data:DashboardSummary['dep
   offset+=length;return arc;
  });
  return <Card className="min-w-0">
-  <div className="border-b border-slate-100 pb-4"><h2 className="m-0 text-[16px] font-semibold">Employees by department</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Active employees</p></div>
-  {loading?<div role="status" className="py-8 text-[13px] text-slate-500">Loading…</div>
+  <div className="border-b border-gray-100 pb-4"><h2 className="m-0 text-[16px] font-semibold">Employees by department</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">Active employees</p></div>
+  {loading?<div role="status" className="py-8 text-[13px] text-gray-500">Loading…</div>
    :error?<Empty>The department chart is unavailable. {error}</Empty>
    :!data||!data.total?<Empty>No active employees yet.</Empty>
    :<div className="mt-4 flex flex-wrap items-center justify-center gap-6">
@@ -59,11 +59,11 @@ export function DepartmentDonut({data,loading,error}:{data:DashboardSummary['dep
      <g transform="rotate(-90 100 100)">{arcs.map(arc=><circle key={arc.name} cx="100" cy="100" r={R} fill="none" stroke={arc.color} strokeWidth={STROKE} strokeDasharray={`${Math.max(arc.length-(arcs.length>1?1.5:0),0)} ${C}`} strokeDashoffset={-arc.start}><title>{`${arc.name}: ${arc.count} (${arc.percent}%)`}</title></circle>)}</g>
      {arcs.map(arc=>{if(arc.percent<6)return null;const angle=(arc.start+arc.length/2)/C*2*Math.PI-Math.PI/2;return <text key={arc.name} x={100+R*Math.cos(angle)} y={100+R*Math.sin(angle)} textAnchor="middle" dominantBaseline="central" className="fill-white text-[11px] font-semibold">{arc.percent}%</text>})}
      <text x="100" y="94" textAnchor="middle" className="fill-[#17345b] text-[30px] font-semibold">{data.total.toLocaleString()}</text>
-     <text x="100" y="118" textAnchor="middle" className="fill-slate-500 text-[11px]">active employees</text>
+     <text x="100" y="118" textAnchor="middle" className="fill-gray-500 text-[11px]">active employees</text>
     </svg>
     <ul className="m-0 min-w-[180px] flex-1 list-none space-y-2 p-0" aria-label="Departments">{arcs.map(arc=><li key={arc.name} className="flex items-center justify-between gap-3 text-[13px]">
-     <span className="flex min-w-0 items-center gap-2"><span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{background:arc.color}}/><span className="truncate text-slate-700" title={arc.departments?`${arc.departments} more departments`:undefined}>{arc.name}</span></span>
-     <span className="shrink-0 tabular-nums text-slate-500"><span className="font-semibold text-slate-800">{arc.count}</span> · {arc.percent}%</span>
+     <span className="flex min-w-0 items-center gap-2"><span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{background:arc.color}}/><span className="truncate text-gray-700" title={arc.departments?`${arc.departments} more departments`:undefined}>{arc.name}</span></span>
+     <span className="shrink-0 tabular-nums text-gray-500"><span className="font-semibold text-gray-800">{arc.count}</span> · {arc.percent}%</span>
     </li>)}</ul>
    </div>}
  </Card>;

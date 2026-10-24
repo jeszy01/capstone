@@ -47,10 +47,10 @@ export function CutoffModal({onClose,onCreated}:{onClose:()=>void;onCreated:(run
     <Field label="Month"><TextInput type="month" value={month} onChange={event=>setMonth(event.target.value)}/></Field>
     {rates.payPeriodsPerMonth===2&&<Field label="Cutoff"><select className={input} value={half} onChange={event=>setHalf(Number(event.target.value) as 1|2)}><option value={1}>1st Cutoff (1 - {rates.firstCutoffEndDay})</option><option value={2}>2nd Cutoff ({rates.firstCutoffEndDay+1} - End of Month)</option></select></Field>}
    </>:<Field label="Release Date"><TextInput type="date" value={releaseDate} max={deadline||undefined} onChange={event=>setReleaseDate(event.target.value)}/></Field>}
-   {cutoff&&<div className="grid gap-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px]">
-    <div className="flex justify-between gap-3"><span className="text-slate-500">{regular?'Cutoff':'Release'}</span><b className="text-slate-800">{runLabel({runType,...cutoff})}</b></div>
-    <div className="flex justify-between gap-3"><span className="text-slate-500">Pay date</span><b className="text-slate-800">{formatDate(payDate)}</b></div>
-    {regular&&<p className="m-0 text-[11px] text-slate-500">Set automatically: 1st cutoff on the 15th, 2nd cutoff on the last day of the month, moved to the previous working day for a weekend or holiday.</p>}
+   {cutoff&&<div className="grid gap-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-[12px]">
+    <div className="flex justify-between gap-3"><span className="text-gray-500">{regular?'Cutoff':'Release'}</span><b className="text-gray-800">{runLabel({runType,...cutoff})}</b></div>
+    <div className="flex justify-between gap-3"><span className="text-gray-500">Pay date</span><b className="text-gray-800">{formatDate(payDate)}</b></div>
+    {regular&&<p className="m-0 text-[11px] text-gray-500">Set automatically: 1st cutoff on the 15th, 2nd cutoff on the last day of the month, moved to the previous working day for a weekend or holiday.</p>}
    </div>}
   </div>
   {warnings.length>0&&<div role="alert" className={`mt-3 rounded-lg border p-3 text-[12px] ${strict?'border-red-200 bg-red-50 text-red-800':'border-amber-200 bg-amber-50 text-amber-900'}`}>

@@ -37,7 +37,7 @@ function useRecords(cutoff:Cutoff|undefined){
 
 type Row={key:string;name:string;worked:number;regular:number;rest:number;holiday:number;special:number;paidHours:number;paidTypes:Set<string>;unpaidDays:number;absent:number;total:number};
 const fmt=(value:number)=>value?value.toFixed(1):'—';
-const dash=<span className="text-slate-300">—</span>;
+const dash=<span className="text-gray-300">—</span>;
 const chip='inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium';
 
 const VIEWS=[{id:'timesheet',label:'Timesheet'},{id:'history',label:'History'}] as const;
@@ -93,10 +93,10 @@ function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employe
   <Card className="mt-4 min-w-0 overflow-hidden border-blue-100 !p-0 shadow-sm">
    <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-[13px]">
     <thead><tr className="border-b border-blue-100 bg-blue-50/70 text-[10px] uppercase tracking-wider text-blue-700">{heads.map(label=><th key={label} className={`whitespace-nowrap px-5 py-3.5 font-semibold ${align(label)}`}>{label}</th>)}</tr></thead>
-    <tbody>{loading?<tr><td colSpan={heads.length}><LoadingState/></td></tr>:!rows.length?<tr><td colSpan={heads.length}><Empty>No attendance records for this cutoff.</Empty></td></tr>:rows.map(row=><tr key={row.key} className="border-b border-slate-100 transition hover:bg-blue-50/40">
-     <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-800">{row.name}</td>
-     <td className="px-5 py-4 text-right tabular-nums text-slate-700">{row.worked}</td>
-     {[row.regular,row.rest,row.holiday,row.special].map((value,i)=><td key={i} className="px-5 py-4 text-right tabular-nums text-slate-700">{value?value.toFixed(1):dash}</td>)}
+    <tbody>{loading?<tr><td colSpan={heads.length}><LoadingState/></td></tr>:!rows.length?<tr><td colSpan={heads.length}><Empty>No attendance records for this cutoff.</Empty></td></tr>:rows.map(row=><tr key={row.key} className="border-b border-gray-100 transition hover:bg-blue-50/40">
+     <td className="whitespace-nowrap px-5 py-4 font-semibold text-gray-800">{row.name}</td>
+     <td className="px-5 py-4 text-right tabular-nums text-gray-700">{row.worked}</td>
+     {[row.regular,row.rest,row.holiday,row.special].map((value,i)=><td key={i} className="px-5 py-4 text-right tabular-nums text-gray-700">{value?value.toFixed(1):dash}</td>)}
      <td className="px-5 py-4"><div className="flex flex-wrap gap-1">
       {row.paidHours>0&&<span className={`${chip} bg-emerald-50 text-emerald-700`}>Paid · {row.paidTypes.size===1?`${[...row.paidTypes][0]} `:''}{row.paidHours.toFixed(1)}</span>}
       {row.unpaidDays>0&&<span className={`${chip} bg-red-50 text-red-600`}>Unpaid · {row.unpaidDays} day{row.unpaidDays===1?'':'s'}</span>}

@@ -60,7 +60,7 @@ function PasskeyModal({request,onDone}:{request:PasskeyRequest;onDone:(verified:
  };
  return <Modal title={title} onClose={()=>{if(!busy)onDone(false)}}>
   {status==='checking'?<LoadingState>Checking passkey…</LoadingState>:<>
-   <p className="m-0 text-[13px] leading-relaxed text-slate-600">{request.detail}</p>
+   <p className="m-0 text-[13px] leading-relaxed text-gray-600">{request.detail}</p>
    {status==='ready'&&<div className="mt-4"><Field label="Passkey"><TextInput type="password" autoComplete="off" autoFocus value={passkey} onChange={event=>setPasskey(event.target.value)} onKeyDown={event=>{if(event.key==='Enter')void confirm()}}/></Field></div>}
    {error&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error===NOT_SET?<>Set a passkey in <Link to="/settings-privacy?tab=privacy" className="font-semibold underline" onClick={()=>onDone(false)}>Settings &amp; Privacy &gt; Privacy</Link>.</>:error}</p>}
   </>}

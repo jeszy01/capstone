@@ -11,7 +11,7 @@ import {isPaidLeave,leaveDays,leaveStatuses,leaveTypes,loadLeaves,overlaps,saveL
 import type {LeaveRecord,LeaveType} from './leaveService';
 import {StatusBadge} from '../../components/common/StatusBadge';
 
-const head='border-b border-[#e3e7ef] bg-slate-50/80 text-[10px] uppercase tracking-wide text-[#6b7794]';
+const head='border-b border-gray-100 bg-gray-50/80 text-[10px] uppercase tracking-wide text-gray-500';
 const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 const shortDate=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
@@ -31,18 +31,18 @@ export default function Leave(){
  const headers=['Employee','Leave Type','From','To','Days','Paid/Unpaid','Status','Actions'];
  return <div className="space-y-1">
   <PageHeader title="Leave" actions={canEncode&&<Button disabled={loading||!employees.length} onClick={()=>setAdding(true)}><Plus size={15}/>Add Leave</Button>}/>
-  <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-[#f2f7ff] via-white to-[#f8fbff] p-4 shadow-sm">
-   <div className="flex min-w-[210px] flex-1 items-center gap-2 rounded-lg border border-[#e3e7ef] bg-white px-3 py-3 max-sm:min-w-full"><Search size={16} className="text-slate-400"/><input aria-label="Employee Search" placeholder="Search employee..." value={q} onChange={event=>setQ(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"/></div>
+  <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 via-white to-white p-4 shadow-sm">
+   <div className="flex min-w-[210px] flex-1 items-center gap-2 rounded-lg border border-gray-100 bg-white px-3 py-3 max-sm:min-w-full"><Search size={16} className="text-gray-400"/><input aria-label="Employee Search" placeholder="Search employee..." value={q} onChange={event=>setQ(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"/></div>
    <select aria-label="Leave status filter" className={`${input} !w-auto min-w-[150px] !py-3 max-sm:flex-1`} value={status} onChange={event=>setStatus(event.target.value)}><option value="">All Status</option>{leaveStatuses.map(value=><option key={value} value={value}>{value}</option>)}</select>
   </div>
   {error&&<ErrorAlert title="Employee records unavailable." onRetry={load}>{error}</ErrorAlert>}
-  <Card className="mt-4 overflow-hidden border-slate-200/80 p-0 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><h2 className="m-0 text-[14px] font-semibold text-[#17345b]">Leave Records</h2><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-semibold text-blue-700">{status||'All Status'}</span></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]"><thead><tr className={head}>{headers.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>
-   {loading?<tr><td colSpan={headers.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={headers.length}><Empty>{leaves.length?'No leave records match this search.':'No leave records yet.'}</Empty></td></tr>:shown.map(item=>{const employee=employeeFor(item.employeeId);return <tr key={item.id} className="border-b border-[#eef1f6] transition-colors hover:bg-blue-50/40">
-    <td className="px-4 py-3"><div className="font-semibold text-slate-800">{employee?.name??item.employeeId}</div><div className="text-[11px] text-[#6b7794]">{employee?.employeeNo??''}</div></td>
+  <Card className="mt-4 overflow-hidden border-gray-200/80 p-0 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4"><h2 className="m-0 text-[14px] font-semibold text-gray-900">Leave Records</h2><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-semibold text-blue-700">{status||'All Status'}</span></div><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]"><thead><tr className={head}>{headers.map(h=><th key={h} className="px-4 py-3">{h}</th>)}</tr></thead><tbody>
+   {loading?<tr><td colSpan={headers.length}><LoadingState/></td></tr>:!shown.length?<tr><td colSpan={headers.length}><Empty>{leaves.length?'No leave records match this search.':'No leave records yet.'}</Empty></td></tr>:shown.map(item=>{const employee=employeeFor(item.employeeId);return <tr key={item.id} className="border-b border-gray-100 transition-colors hover:bg-blue-50/40">
+    <td className="px-4 py-3"><div className="font-semibold text-gray-800">{employee?.name??item.employeeId}</div><div className="text-[11px] text-gray-500">{employee?.employeeNo??''}</div></td>
     <td className="px-4 py-3">{item.leaveType}</td><td className="whitespace-nowrap px-4 py-3">{shortDate(item.from)}</td><td className="whitespace-nowrap px-4 py-3">{shortDate(item.to)}</td>
     <td className="px-4 py-3 tabular-nums">{item.days}</td><td className="px-4 py-3">{item.paid?'Paid':'Unpaid'}</td>
     <td className="px-4 py-3"><StatusBadge status={item.status}/></td>
-    <td className="px-4 py-3">{canApprove&&item.status==='Pending'?<div className="flex gap-2"><Button onClick={()=>setDeciding({leave:item,status:'Approved'})}><Check size={14}/>Approve</Button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} onClick={()=>setDeciding({leave:item,status:'Rejected'})}><X size={14}/>Reject</button></div>:<span className="text-[12px] text-slate-400">—</span>}</td>
+    <td className="px-4 py-3">{canApprove&&item.status==='Pending'?<div className="flex gap-2"><Button onClick={()=>setDeciding({leave:item,status:'Approved'})}><Check size={14}/>Approve</Button><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} onClick={()=>setDeciding({leave:item,status:'Rejected'})}><X size={14}/>Reject</button></div>:<span className="text-[12px] text-gray-400">—</span>}</td>
    </tr>})}
   </tbody></table></div></Card>
   {adding&&<LeaveModal employees={employees} onClose={()=>setAdding(false)} onSave={add}/>}

@@ -344,32 +344,32 @@ function PlanCard({ plan, provider, onOpen }: { plan: HmoPlan; provider?: HmoPro
           onOpen();
         }
       }}
-      className="block w-full cursor-pointer rounded-2xl border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 text-left shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition hover:border-blue-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+      className="block w-full cursor-pointer rounded-2xl border border-gray-100 bg-gradient-to-r from-blue-50 to-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
     >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#dce9fb] bg-[#e4efff] px-1 text-center text-[10px] font-extrabold tracking-tight text-[#0862df]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-100 bg-blue-50 px-1 text-center text-[10px] font-extrabold tracking-tight text-blue-600">
               {(provider?.name ?? "HMO").toUpperCase()}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-[12px] text-[#647796]">{provider?.name ?? "Provider unavailable"}</div>
-              <div className="truncate text-[15px] font-semibold text-[#142b50]">{plan.name}</div>
+              <div className="truncate text-[12px] text-gray-500">{provider?.name ?? "Provider unavailable"}</div>
+              <div className="truncate text-[15px] font-semibold text-gray-900">{plan.name}</div>
             </div>
           </div>
-          <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${active ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-700"}`}>
             {active ? "Active" : "Inactive"}
           </span>
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px]">
           <div>
-            <dt className="text-[#647796]">Coverage Period</dt>
-            <dd className="m-0 mt-1 font-semibold text-[#142b50]">
+            <dt className="text-gray-500">Coverage Period</dt>
+            <dd className="m-0 mt-1 font-semibold text-gray-900">
               {formatHmoDate(plan.coverageStart)} – {formatHmoDate(plan.coverageEnd)}
             </dd>
           </div>
           <div>
-            <dt className="text-[#647796]">Annual Benefit Limit</dt>
-            <dd className="m-0 mt-1 flex items-center justify-between gap-2 font-semibold text-[#142b50]">
+            <dt className="text-gray-500">Annual Benefit Limit</dt>
+            <dd className="m-0 mt-1 flex items-center justify-between gap-2 font-semibold text-gray-900">
               <span className="min-w-0 truncate">{maskValue(shown, money(plan.annualBenefitLimit))}</span>
               <RevealToggle inline shown={shown} onToggle={() => setShown((value) => !value)} />
             </dd>
@@ -398,11 +398,11 @@ function PlanSection({
     hidden(premium != null && share != null
       ? `${money((premium * share) / 100)} (${share}%)`
       : `Unavailable (${share == null ? "share unavailable" : share + "%"})`);
-  const sectionTitle = "text-[16px] font-semibold text-[#142b50]";
-  const muted = "text-[12px] text-[#647796]";
+  const sectionTitle = "text-[16px] font-semibold text-gray-900";
+  const muted = "text-[12px] text-gray-500";
   const tableLabel =
-    "bg-[#f3f6fb] px-3 py-2.5 text-[12px] font-medium text-[#526987] sm:w-[30%]";
-  const tableValue = "px-3 py-2.5 text-[13px] text-[#142b50]";
+    "bg-gray-50 px-3 py-2.5 text-[12px] font-medium text-gray-500 sm:w-[30%]";
+  const tableValue = "px-3 py-2.5 text-[13px] text-gray-900";
   const coveragePeriod = `${formatHmoDate(plan.coverageStart)} – ${formatHmoDate(plan.coverageEnd)}`;
   const benefits = [
     {
@@ -443,42 +443,42 @@ function PlanSection({
           )}
         </div>
       </div>{" "}
-      <Card className="overflow-hidden border border-[#dce7f7] bg-gradient-to-r from-[#f1f7ff] to-white p-4 sm:p-5">
+      <Card className="overflow-hidden border border-gray-100 bg-gradient-to-r from-blue-50 to-white p-4 sm:p-5">
         {" "}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1.35fr)_minmax(260px,1fr)] md:items-center">
           {" "}
           <div className="flex min-w-0 items-center gap-4">
             {" "}
-            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border border-[#dce9fb] bg-[#e4efff] px-2 text-center text-[18px] font-extrabold tracking-tight text-[#0862df]">
+            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border border-gray-100 bg-blue-50 px-2 text-center text-[18px] font-extrabold tracking-tight text-blue-600">
               {(provider?.name ?? "HMO").toUpperCase()}
             </div>{" "}
             <div className="min-w-0">
               {" "}
               <div className={muted}>HMO Provider</div>{" "}
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <h2 className="m-0 text-2xl font-bold text-[#142b50]">
+                <h2 className="m-0 text-2xl font-bold text-gray-900">
                   {provider?.name ?? "Provider unavailable"}
                 </h2>
                 <span
-                  className={`rounded-full px-3 py-1 text-[11px] font-semibold ${provider?.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold ${provider?.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-700"}`}
                 >
                   {provider?.status ?? "Unknown status"}
                 </span>
               </div>{" "}
-              <div className="mt-1 text-lg font-semibold text-[#142b50]">
+              <div className="mt-1 text-lg font-semibold text-gray-900">
                 {plan.name}
               </div>{" "}
             </div>{" "}
           </div>{" "}
-          <div className="grid gap-4 border-t border-[#d7e4f5] pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0">
+          <div className="grid gap-4 border-t border-gray-100 pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0">
             {" "}
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e1edff] text-[#0862df]">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                 <CalendarDays size={19} />
               </div>
               <div>
                 <div className={muted}>Coverage Period</div>
-                <div className="mt-1 text-[14px] font-semibold text-[#142b50]">
+                <div className="mt-1 text-[14px] font-semibold text-gray-900">
                   {coveragePeriod}
                 </div>
               </div>
@@ -489,7 +489,7 @@ function PlanSection({
               </div>
               <div>
                 <div className={muted}>Annual Benefit Limit</div>
-                <div className="mt-1 text-[18px] font-bold text-[#142b50]">
+                <div className="mt-1 text-[18px] font-bold text-gray-900">
                   {hidden(money(plan.annualBenefitLimit))}
                 </div>
               </div>
@@ -507,14 +507,14 @@ function PlanSection({
           {benefits.map((benefit) => (
             <div
               key={benefit.label}
-              className="rounded-xl border border-[#e1e9f5] bg-white p-3"
+              className="rounded-xl border border-gray-100 bg-white p-3"
             >
               <div className="flex items-start justify-between gap-2">
-                <h3 className="m-0 text-[13px] font-semibold text-[#142b50]">
+                <h3 className="m-0 text-[13px] font-semibold text-gray-900">
                   {benefit.label}
                 </h3>
                 <span
-                  className={`rounded-full px-2 py-1 text-[10px] font-semibold ${benefit.included ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
+                  className={`rounded-full px-2 py-1 text-[10px] font-semibold ${benefit.included ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}
                 >
                   {benefit.included ? "Included" : "Not included"}
                 </span>
@@ -534,21 +534,21 @@ function PlanSection({
         </div>{" "}
         <div className="grid gap-3 lg:grid-cols-2">
           {" "}
-          <div className="overflow-hidden rounded-lg border border-[#e2eaf5]">
+          <div className="overflow-hidden rounded-lg border border-gray-100">
             <table className="w-full border-collapse text-left">
               <tbody>
                 {" "}
-                <tr className="border-b border-[#e2eaf5]">
+                <tr className="border-b border-gray-100">
                   <th className={tableLabel}>Plan Name</th>
                   <td className={tableValue}>{plan.name}</td>
                 </tr>{" "}
-                <tr className="border-b border-[#e2eaf5]">
+                <tr className="border-b border-gray-100">
                   <th className={tableLabel}>Provider</th>
                   <td className={tableValue}>
                     {provider?.name ?? "Unavailable"}
                   </td>
                 </tr>{" "}
-                <tr className="border-b border-[#e2eaf5]">
+                <tr className="border-b border-gray-100">
                   <th className={tableLabel}>Plan Type</th>
                   <td className={tableValue}>HMO Plan</td>
                 </tr>{" "}
@@ -561,23 +561,23 @@ function PlanSection({
               </tbody>
             </table>
           </div>{" "}
-          <div className="overflow-hidden rounded-lg border border-[#e2eaf5]">
+          <div className="overflow-hidden rounded-lg border border-gray-100">
             <table className="w-full border-collapse text-left">
               <tbody>
                 {" "}
-                <tr className="border-b border-[#e2eaf5]">
+                <tr className="border-b border-gray-100">
                   <th className={tableLabel}>Coverage Start</th>
                   <td className={tableValue}>
                     {formatHmoDate(plan.coverageStart)}
                   </td>
                 </tr>{" "}
-                <tr className="border-b border-[#e2eaf5]">
+                <tr className="border-b border-gray-100">
                   <th className={tableLabel}>Coverage End</th>
                   <td className={tableValue}>
                     {formatHmoDate(plan.coverageEnd)}
                   </td>
                 </tr>{" "}
-                <tr className="border-b border-[#e2eaf5]">
+                <tr className="border-b border-gray-100">
                   <th className={tableLabel}>Annual Benefit Limit</th>
                   <td className={tableValue}>
                     {hidden(money(plan.annualBenefitLimit))}
@@ -587,7 +587,7 @@ function PlanSection({
                   <th className={tableLabel}>Status</th>
                   <td className={tableValue}>
                     <span
-                      className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${plan.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}
+                      className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${plan.status === "Active" ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-700"}`}
                     >
                       {plan.status}
                     </span>
@@ -610,21 +610,21 @@ function PlanSection({
         </div>{" "}
         <div className="grid gap-4 lg:grid-cols-2">
           {" "}
-          <div className="rounded-xl border border-[#e1eaf7] bg-[#f7faff] p-4">
+          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
             {" "}
-            <h3 className="m-0 text-[14px] font-semibold text-[#142b50]">
+            <h3 className="m-0 text-[14px] font-semibold text-gray-900">
               Employee's Own HMO Premium
             </h3>
             <p className={`mt-1 ${muted}`}>Monthly premium for the employee.</p>{" "}
-            <div className="mt-4 text-2xl font-bold text-[#142b50]">
+            <div className="mt-4 text-2xl font-bold text-gray-900">
               {hidden(money(plan.employeeMonthlyPremium))}
-              <span className="ml-1 text-[12px] font-medium text-[#647796]">
+              <span className="ml-1 text-[12px] font-medium text-gray-500">
                 / month
               </span>
             </div>{" "}
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-200">
               <div
-                className="h-full bg-[#3284f6]"
+                className="h-full bg-blue-500"
                 style={{
                   width: `${Math.max(0, Math.min(100, plan.employeeCompanyShare ?? 0))}%`,
                 }}
@@ -633,7 +633,7 @@ function PlanSection({
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
                 <div className={muted}>Employee Share</div>
-                <div className="mt-1 text-[13px] font-semibold text-[#142b50]">
+                <div className="mt-1 text-[13px] font-semibold text-gray-900">
                   {contribution(
                     plan.employeeMonthlyPremium,
                     plan.employeeMemberShare,
@@ -642,7 +642,7 @@ function PlanSection({
               </div>
               <div className="text-right">
                 <div className={muted}>Company Share</div>
-                <div className="mt-1 text-[13px] font-semibold text-[#142b50]">
+                <div className="mt-1 text-[13px] font-semibold text-gray-900">
                   {contribution(
                     plan.employeeMonthlyPremium,
                     plan.employeeCompanyShare,
@@ -651,9 +651,9 @@ function PlanSection({
               </div>
             </div>{" "}
           </div>{" "}
-          <div className="rounded-xl border border-[#e1eaf7] bg-white p-4">
+          <div className="rounded-xl border border-gray-100 bg-white p-4">
             {" "}
-            <h3 className="m-0 text-[14px] font-semibold text-[#142b50]">
+            <h3 className="m-0 text-[14px] font-semibold text-gray-900">
               Dependent Premiums
             </h3>
             <p className={`mt-1 ${muted}`}>
@@ -737,7 +737,7 @@ function EnrollmentSection({
       <Card className="mt-4 overflow-x-auto">
       <table className="w-full min-w-[1120px] text-left text-[13px]">
         <thead>
-          <tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
+          <tr className="border-b border-gray-100 text-[11px] uppercase tracking-wide text-gray-500">
             {[
               "Employee",
               "Plan",
@@ -776,7 +776,7 @@ function EnrollmentSection({
                       ? "Employee not active for coverage start"
                       : "Eligibility not verified"
                 : "Hire date unavailable; eligibility cannot be calculated";
-              return <tr key={e.id} className="border-b border-[#eef1f6]">
+              return <tr key={e.id} className="border-b border-gray-100">
                 <td className="px-4 py-3 font-semibold">
                   {employeeMap.get(e.employeeId)?.name ?? e.employeeId}
                 </td>
@@ -784,8 +784,8 @@ function EnrollmentSection({
                   {plans.find((p) => p.id === e.planId)?.name ?? "Unavailable"}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="font-medium text-[#142b50]">{formatHmoDate(eligibilityDate)}</div>
-                  <div className={`mt-1 max-w-[210px] text-[11px] leading-snug ${eligibilityDate ? "text-[#6b7794]" : "text-amber-700"}`}>{eligibilityDetail}</div>
+                  <div className="font-medium text-gray-900">{formatHmoDate(eligibilityDate)}</div>
+                  <div className={`mt-1 max-w-[210px] text-[11px] leading-snug ${eligibilityDate ? "text-gray-500" : "text-amber-700"}`}>{eligibilityDetail}</div>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">{formatHmoDate(e.effectiveDate)}</td>
                 <td className="px-4 py-3">
@@ -867,18 +867,18 @@ function EnrollmentViewModal({
   ];
   return (
     <Modal title="Enrollment Details" onClose={onClose}>
-      <div className="grid gap-3 text-[13px] text-[#142b50]">
-        <div className="rounded-xl border border-[#e3e7ef] bg-[#f8fafc] p-3">
-          <div className="text-[11px] uppercase tracking-wide text-[#6b7794]">Enrollment Status</div>
+      <div className="grid gap-3 text-[13px] text-gray-900">
+        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500">Enrollment Status</div>
           <div className="mt-1 font-semibold">{enrollmentDisplayStatus(enrollment)}</div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div><div className="text-[11px] text-[#6b7794]">Employee</div><div className="font-medium">{employee?.name ?? enrollment.employeeId}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Plan</div><div className="font-medium">{plan?.name ?? "Unavailable"}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Eligibility Date</div><div className="font-medium">{formatHmoDate(enrollment.eligibilityDate)}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Coverage Period</div><div className="font-medium">{formatHmoDate(enrollment.effectiveDate)} – {formatHmoDate(enrollment.expirationDate)}</div></div>
+          <div><div className="text-[11px] text-gray-500">Employee</div><div className="font-medium">{employee?.name ?? enrollment.employeeId}</div></div>
+          <div><div className="text-[11px] text-gray-500">Plan</div><div className="font-medium">{plan?.name ?? "Unavailable"}</div></div>
+          <div><div className="text-[11px] text-gray-500">Eligibility Date</div><div className="font-medium">{formatHmoDate(enrollment.eligibilityDate)}</div></div>
+          <div><div className="text-[11px] text-gray-500">Coverage Period</div><div className="font-medium">{formatHmoDate(enrollment.effectiveDate)} – {formatHmoDate(enrollment.expirationDate)}</div></div>
         </div>
-        {enrollment.maxicareReference && <div><div className="text-[11px] text-[#6b7794]">Maxicare Reference</div><div className="font-medium">{enrollment.maxicareReference}</div></div>}
+        {enrollment.maxicareReference && <div><div className="text-[11px] text-gray-500">Maxicare Reference</div><div className="font-medium">{enrollment.maxicareReference}</div></div>}
         {enrollment.rejectionReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{enrollment.rejectionReason}</div></div>}
       </div>
       <WorkflowActions steps={steps} onDone={onChanged} onClose={onClose} />
@@ -913,7 +913,7 @@ function DependentSection({
     <Card className="mt-4 overflow-x-auto">
       <table className="w-full min-w-[1050px] text-left text-[13px]">
         <thead>
-          <tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
+          <tr className="border-b border-gray-100 text-[11px] uppercase tracking-wide text-gray-500">
             {[
               "Employee",
               "Dependent Name",
@@ -942,7 +942,7 @@ function DependentSection({
             dependents.map((d) => {
               const e = enrollments.find((x) => x.id === d.enrollmentId);
               return (
-                <tr key={d.id} className="border-b border-[#eef1f6]">
+                <tr key={d.id} className="border-b border-gray-100">
                   <td className="px-4 py-3">
                     {e
                       ? (employeeMap.get(e.employeeId)?.name ?? e.employeeId)
@@ -960,7 +960,7 @@ function DependentSection({
                   <td className="px-4 py-3">{money(d.companyShare)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={dependentDisplayStatus(d)}/>
-                    <div className="mt-1 text-[11px] text-[#6b7794]">
+                    <div className="mt-1 text-[11px] text-gray-500">
                       {d.eligibilityStatus}
                     </div>
                   </td>
@@ -1044,20 +1044,20 @@ function DependentViewModal({
   ];
   return (
     <Modal title="Dependent Details" onClose={onClose}>
-      <div className="grid gap-3 text-[13px] text-[#142b50]">
-        <div className="rounded-xl border border-[#e3e7ef] bg-[#f8fafc] p-3">
-          <div className="text-[11px] uppercase tracking-wide text-[#6b7794]">Enrollment Status</div>
+      <div className="grid gap-3 text-[13px] text-gray-900">
+        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500">Enrollment Status</div>
           <div className="mt-1 font-semibold">{dependentDisplayStatus(dependent)}</div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div><div className="text-[11px] text-[#6b7794]">Employee</div><div className="font-medium">{employee?.name ?? "Unavailable"}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Dependent</div><div className="font-medium">{dependent.name}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Relationship</div><div className="font-medium">{dependent.relationship}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Date of Birth</div><div className="font-medium">{formatHmoDate(dependent.dateOfBirth)}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Coverage Period</div><div className="font-medium">{formatHmoDate(dependent.effectiveDate)} – {formatHmoDate(dependent.expirationDate ?? enrollment?.expirationDate)}</div></div>
-          <div><div className="text-[11px] text-[#6b7794]">Sponsorship</div><div className="font-medium">{dependent.companySponsored ? "Company-sponsored" : "Employee-paid"}</div></div>
+          <div><div className="text-[11px] text-gray-500">Employee</div><div className="font-medium">{employee?.name ?? "Unavailable"}</div></div>
+          <div><div className="text-[11px] text-gray-500">Dependent</div><div className="font-medium">{dependent.name}</div></div>
+          <div><div className="text-[11px] text-gray-500">Relationship</div><div className="font-medium">{dependent.relationship}</div></div>
+          <div><div className="text-[11px] text-gray-500">Date of Birth</div><div className="font-medium">{formatHmoDate(dependent.dateOfBirth)}</div></div>
+          <div><div className="text-[11px] text-gray-500">Coverage Period</div><div className="font-medium">{formatHmoDate(dependent.effectiveDate)} – {formatHmoDate(dependent.expirationDate ?? enrollment?.expirationDate)}</div></div>
+          <div><div className="text-[11px] text-gray-500">Sponsorship</div><div className="font-medium">{dependent.companySponsored ? "Company-sponsored" : "Employee-paid"}</div></div>
         </div>
-        {dependent.maxicareReference && <div><div className="text-[11px] text-[#6b7794]">Maxicare Reference</div><div className="font-medium">{dependent.maxicareReference}</div></div>}
+        {dependent.maxicareReference && <div><div className="text-[11px] text-gray-500">Maxicare Reference</div><div className="font-medium">{dependent.maxicareReference}</div></div>}
         {dependent.rejectionReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{dependent.rejectionReason}</div></div>}
         {!coverageActive && open && <p className="m-0 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">The employee's own HMO enrollment must be approved and active with Maxicare before this dependent can be reviewed.</p>}
       </div>
@@ -1095,10 +1095,10 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
     <>
       {error && <p role="alert" className="mb-0 mt-4 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
       {active ? (
-        <div className="mt-5 rounded-xl border border-[#e3e7ef] bg-[#f8fafc] p-4">
+        <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50 p-4">
           {active.needs === "reason" && <Field label="Reason for rejection"><textarea className={`${input} min-h-20`} maxLength={500} autoFocus value={value} onChange={(e) => setValue(e.target.value)} /></Field>}
           {active.needs === "reference" && <Field label="Maxicare reference no."><TextInput autoFocus maxLength={100} value={value} onChange={(e) => setValue(e.target.value)} placeholder="Reference from the Maxicare approval" /></Field>}
-          {active.confirm && <p className="m-0 text-[13px] text-[#526079]">{active.confirm}</p>}
+          {active.confirm && <p className="m-0 text-[13px] text-gray-500">{active.confirm}</p>}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <button type="button" className={ghost} disabled={saving} onClick={() => setActive(null)}>Back</button>
             <Button className={active.danger ? "!bg-red-600 hover:!bg-red-700" : ""} disabled={saving || Boolean(active.needs && !value.trim())} onClick={() => void run(active)}>{saving ? "Saving…" : active.label}</Button>
@@ -1106,7 +1106,7 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
         </div>
       ) : (
         <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
-          {waitingForAdmin && <p className="m-0 mr-auto text-[12px] text-[#526079]">Waiting for an Admin to approve or reject this request.</p>}
+          {waitingForAdmin && <p className="m-0 mr-auto text-[12px] text-gray-500">Waiting for an Admin to approve or reject this request.</p>}
           {allowed.map((step) => step.danger
             ? <button key={step.key} type="button" className={`${ghost} border-red-200 text-red-700 hover:bg-red-50`} disabled={saving} onClick={() => open(step)}>{step.label}</button>
             : <Button key={step.key} disabled={saving} onClick={() => open(step)}>{saving ? "Saving…" : step.label}</Button>)}
@@ -1363,7 +1363,7 @@ function PlanFormModal({
             ).map(([key, label]) => (
               <label
                 key={key}
-                className="flex items-center gap-2 rounded-lg border border-[#e3e7ef] p-3"
+                className="flex items-center gap-2 rounded-lg border border-gray-100 p-3"
               >
                 <input
                   type="checkbox"
@@ -1375,7 +1375,7 @@ function PlanFormModal({
             ))}
           </div>
         </div>{" "}
-        <div className="rounded-xl border border-[#e3e7ef] p-3">
+        <div className="rounded-xl border border-gray-100 p-3">
           <div className="mb-3 text-[13px] font-semibold">
             Contribution Policy (%)
           </div>
@@ -1434,7 +1434,7 @@ function PlanFormModal({
             />
             Collect employee-paid HMO share through payroll
           </label>
-          <p className="mt-2 text-[11px] text-[#6b7794]">
+          <p className="mt-2 text-[11px] text-gray-500">
             The company must cover 100% of the employee’s own HMO premium. One
             eligible spouse or child is company-sponsored; other dependents
             split the dependent premium by the two dependent shares above.
@@ -1602,7 +1602,7 @@ function EnrollmentModal({
           />
         </Field>
         {!validExpiration && <p role="alert" className="text-[12px] text-amber-800">Expiration must be on or after the effective date and within the plan coverage period.</p>}
-        <p className="text-[12px] text-[#6b7794]">
+        <p className="text-[12px] text-gray-500">
           Enrollment is submitted for HR approval. Maxicare confirmation is required before it becomes Active.
         </p>
         {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">{error}</div>}
@@ -1723,7 +1723,7 @@ function DependentModal({
         <Field label="Coverage Effective Date">
           <TextInput type="date" value={effectiveDate} readOnly />
         </Field>
-        <p className="text-[12px] text-[#6b7794]">
+        <p className="text-[12px] text-gray-500">
           Coverage starts with the employee&apos;s active HMO enrollment. Only a
           spouse or child can be submitted as an eligible dependent.
         </p>
@@ -1822,7 +1822,7 @@ function HmoRecordsSection({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="m-0 text-[16px] font-semibold">HMO Records</h2>
-          <p className="mt-1 text-[12px] text-[#6b7794]">
+          <p className="mt-1 text-[12px] text-gray-500">
             Accurate employee enrollment summary, coverage, dependents, and contribution shares.
           </p>
         </div>
@@ -1836,7 +1836,7 @@ function HmoRecordsSection({
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[1250px] text-left text-[13px]">
             <thead>
-              <tr className="border-b border-[#e3e7ef] text-[11px] uppercase tracking-wide text-[#6b7794]">
+              <tr className="border-b border-gray-100 text-[11px] uppercase tracking-wide text-gray-500">
                 {[
                   "Employee",
                   "Department",
@@ -1852,7 +1852,7 @@ function HmoRecordsSection({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.enrollment.id} className="border-b border-[#eef1f6]">
+                <tr key={row.enrollment.id} className="border-b border-gray-100">
                   <td className="px-3 py-3 font-semibold">{row.employee?.name ?? row.enrollment.employeeId}</td>
                   <td className="px-3 py-3">{row.employee?.department ?? "Unavailable"}</td>
                   <td className="px-3 py-3">{row.plan?.name ?? "Unavailable"}</td>

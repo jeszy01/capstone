@@ -55,27 +55,27 @@ export function AwardsPanel({employees,rewards,proposals,assignments,loading,onC
  return <div className="space-y-5">
   <section aria-label="Bonuses and incentives summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(card=><SummaryCard key={card.label} {...card} value={loading?'—':card.value} caption={loading?'Loading…':card.caption}/>)}</section>
   <section aria-labelledby="awards-heading" className={panelClass}>
-   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5">
-    <div><h2 id="awards-heading" className="m-0 text-[16px] font-semibold text-slate-900">Bonus, Incentive &amp; Merit Register</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">One-time payouts flow through payroll; merit increases change basic salary</p></div>
+   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-6 py-5">
+    <div><h2 id="awards-heading" className="m-0 text-[16px] font-semibold text-gray-900">Bonus, Incentive &amp; Merit Register</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">One-time payouts flow through payroll; merit increases change basic salary</p></div>
     {canManage&&<Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={loading} onClick={()=>{setError('');setCreating(true)}}><Plus size={15}/>New Award</Button>}
    </div>
    <div className="px-6 py-4"><Segmented label="Filter awards by type" options={FILTERS.map(id=>({id,label:id}))} value={filter} onChange={setFilter}/></div>
    {error&&!creating&&!rejecting&&!deleting&&<p role="alert" className="mx-6 mb-4 mt-0 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-[13px]">
-    <thead><tr className="border-y border-slate-100 bg-slate-50/70 text-[11px] uppercase tracking-wide text-slate-500">{['Reference','Employee','Type','Award','Amount','Period','Status','Action'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${head==='Amount'||head==='Action'?'text-right':''}`}>{head}</th>)}</tr></thead>
-    <tbody>{loading?<tr><td colSpan={8} className="px-5 py-10 text-center text-slate-500">Loading awards…</td></tr>:!shown.length?<tr><td colSpan={8} className="px-5 py-10 text-center text-slate-500">{awards.length?'No awards of this type.':'No bonuses, incentives or merit increases yet.'}</td></tr>:shown.map((award,index)=>{
+    <thead><tr className="border-y border-gray-100 bg-gray-50/70 text-[11px] uppercase tracking-wide text-gray-500">{['Reference','Employee','Type','Award','Amount','Period','Status','Action'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${head==='Amount'||head==='Action'?'text-right':''}`}>{head}</th>)}</tr></thead>
+    <tbody>{loading?<tr><td colSpan={8} className="px-5 py-10 text-center text-gray-500">Loading awards…</td></tr>:!shown.length?<tr><td colSpan={8} className="px-5 py-10 text-center text-gray-500">{awards.length?'No awards of this type.':'No bonuses, incentives or merit increases yet.'}</td></tr>:shown.map((award,index)=>{
      const employee=employeeOf(award),name=employee?.name??award.employeeId,mine=award.createdBy===userId;
-     return <tr key={award.id} className="border-b border-slate-100 last:border-0 align-middle">
-      <td className="px-5 py-4"><div className="font-semibold text-slate-900">{award.reference}</div><div className="mt-0.5 text-[12px] text-slate-500">{shortDate(award.createdAt)}</div></td>
-      <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={name} index={index}/><div className="min-w-0"><div className="font-semibold text-slate-900">{name}</div><div className="mt-0.5 text-[12px] text-slate-500">{[employee?.employeeNo,employee?.position].filter(Boolean).join(' · ')}</div></div></div></td>
+     return <tr key={award.id} className="border-b border-gray-100 last:border-0 align-middle">
+      <td className="px-5 py-4"><div className="font-semibold text-gray-900">{award.reference}</div><div className="mt-0.5 text-[12px] text-gray-500">{shortDate(award.createdAt)}</div></td>
+      <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={name} index={index}/><div className="min-w-0"><div className="font-semibold text-gray-900">{name}</div><div className="mt-0.5 text-[12px] text-gray-500">{[employee?.employeeNo,employee?.position].filter(Boolean).join(' · ')}</div></div></div></td>
       <td className="px-5 py-4"><span className={`inline-block rounded-full px-3 py-1 text-[12px] font-semibold ${TYPE_TONE[award.type]}`}>{award.type}</span></td>
-      <td className="max-w-[240px] px-5 py-4"><div className="font-semibold text-slate-900">{award.title}</div>{award.description&&<div className="mt-0.5 text-[12px] text-slate-500">{award.description}</div>}</td>
-      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-slate-900">{award.source==='proposal'?`+${peso(award.amount)}/mo`:peso(award.amount)}</td>
-      <td className="whitespace-nowrap px-5 py-4 text-slate-600">{award.period}</td>
+      <td className="max-w-[240px] px-5 py-4"><div className="font-semibold text-gray-900">{award.title}</div>{award.description&&<div className="mt-0.5 text-[12px] text-gray-500">{award.description}</div>}</td>
+      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-gray-900">{award.source==='proposal'?`+${peso(award.amount)}/mo`:peso(award.amount)}</td>
+      <td className="whitespace-nowrap px-5 py-4 text-gray-600">{award.period}</td>
       <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold ${STATUS_TONE[award.status]}`}><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current"/>{award.status}</span></td>
       <td className="px-5 py-4"><div className="flex items-center justify-end gap-2">
-       {award.status==='Pending'&&canApprove&&!mine&&<><button type="button" disabled={saving} onClick={()=>approve(award)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"><Check size={15}/>Approve</button><button type="button" aria-label={`Reject ${award.reference}`} title="Reject" disabled={saving} onClick={()=>{setError('');setRejecting(award)}} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-red-600 hover:bg-red-50"><X size={16}/></button></>}
-       {award.status==='Pending'&&award.source==='reward'&&canManage&&<button type="button" aria-label={`Delete ${award.reference}`} title="Delete" disabled={saving} onClick={()=>{setError('');setDeleting(award)}} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"><Trash2 size={16}/></button>}
+       {award.status==='Pending'&&canApprove&&!mine&&<><button type="button" disabled={saving} onClick={()=>approve(award)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"><Check size={15}/>Approve</button><button type="button" aria-label={`Reject ${award.reference}`} title="Reject" disabled={saving} onClick={()=>{setError('');setRejecting(award)}} className="grid h-9 w-9 place-items-center rounded-xl border border-gray-200 text-red-600 hover:bg-red-50"><X size={16}/></button></>}
+       {award.status==='Pending'&&award.source==='reward'&&canManage&&<button type="button" aria-label={`Delete ${award.reference}`} title="Delete" disabled={saving} onClick={()=>{setError('');setDeleting(award)}} className="grid h-9 w-9 place-items-center rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50"><Trash2 size={16}/></button>}
       </div></td>
      </tr>;
     })}</tbody>
@@ -83,7 +83,7 @@ export function AwardsPanel({employees,rewards,proposals,assignments,loading,onC
   </section>
   {creating&&<NewAwardModal employees={employees} assignments={assignments} saving={saving} error={error} onClose={()=>{if(!saving)setCreating(false)}} onSave={work=>void run(work,'The award could not be saved.').then(done=>{if(done)setCreating(false)})}/>}
   {rejecting&&<RejectModal award={rejecting} saving={saving} error={error} onClose={()=>{if(!saving)setRejecting(null)}} onReject={reason=>void run(()=>rejecting.source==='reward'?compensationService.reviewReward(rejecting.id,'reject'):compensationService.reviewProposal(rejecting.id,'reject',reason),'The award could not be rejected.').then(done=>{if(done)setRejecting(null)})}/>}
-  {deleting&&<Modal title="Delete award?" onClose={()=>{if(!saving)setDeleting(null)}}><p className="mt-0 text-[13px] text-slate-600">Delete {deleting.reference} ({deleting.title}, {peso(deleting.amount)})? This cannot be undone.</p>{error&&<p role="alert" className="text-[12px] text-red-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setDeleting(null)}>Cancel</button><Button className="!bg-red-600 hover:!bg-red-700" disabled={saving} onClick={()=>void run(()=>compensationService.deleteReward(deleting.id),'The award could not be deleted.').then(done=>{if(done)setDeleting(null)})}>{saving?'Deleting…':'Delete'}</Button></div></Modal>}
+  {deleting&&<Modal title="Delete award?" onClose={()=>{if(!saving)setDeleting(null)}}><p className="mt-0 text-[13px] text-gray-600">Delete {deleting.reference} ({deleting.title}, {peso(deleting.amount)})? This cannot be undone.</p>{error&&<p role="alert" className="text-[12px] text-red-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={()=>setDeleting(null)}>Cancel</button><Button className="!bg-red-600 hover:!bg-red-700" disabled={saving} onClick={()=>void run(()=>compensationService.deleteReward(deleting.id),'The award could not be deleted.').then(done=>{if(done)setDeleting(null)})}>{saving?'Deleting…':'Delete'}</Button></div></Modal>}
  </div>;
 }
 
@@ -91,7 +91,7 @@ function RejectModal({award,saving,error,onClose,onReject}:{award:Award;saving:b
  const [reason,setReason]=useState('');
  const needsReason=award.source==='proposal';
  return <Modal title={`Reject ${award.reference}?`} onClose={onClose}>
-  <p className="mt-0 text-[13px] text-slate-600">{award.title} · {award.source==='proposal'?`+${peso(award.amount)}/mo`:peso(award.amount)}</p>
+  <p className="mt-0 text-[13px] text-gray-600">{award.title} · {award.source==='proposal'?`+${peso(award.amount)}/mo`:peso(award.amount)}</p>
   {needsReason&&<Field label="Reason for rejection"><textarea className={`${input} min-h-20`} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}/></Field>}
   {error&&<p role="alert" className="text-[12px] text-red-700">{error}</p>}
   <div className="mt-5 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-red-600 hover:!bg-red-700" disabled={saving||(needsReason&&!reason.trim())} onClick={()=>onReject(reason.trim())}>{saving?'Saving…':'Reject'}</Button></div>
@@ -138,11 +138,11 @@ function NewAwardModal({employees,assignments,saving,error,onClose,onSave}:{empl
     ?<Field label="Effective date"><TextInput type="date" value={form.effectiveDate} onChange={set('effectiveDate')}/></Field>
     :<Field label="Pay in cutoff"><select className={input} value={form.cutoff} onChange={set('cutoff')}>{cutoffs.map(cutoff=><option key={cutoff.from} value={cutoff.from}>{periodLabel(cutoff.from,cutoff.to)}</option>)}</select></Field>}
    {merit
-    ?<div className="self-end rounded-xl bg-slate-50 p-3 text-[12px] text-slate-600">{current?<>Basic salary {peso(current.fixedSalary)} → <b className="text-slate-900">{peso(newSalary)}</b></>:'Select an employee with a salary.'}</div>
-    :<label className="flex items-center gap-2 self-end pb-2 text-[13px] text-slate-700"><input type="checkbox" checked={form.taxable} onChange={set('taxable')}/>Taxable</label>}
+    ?<div className="self-end rounded-xl bg-gray-50 p-3 text-[12px] text-gray-600">{current?<>Basic salary {peso(current.fixedSalary)} → <b className="text-gray-900">{peso(newSalary)}</b></>:'Select an employee with a salary.'}</div>
+    :<label className="flex items-center gap-2 self-end pb-2 text-[13px] text-gray-700"><input type="checkbox" checked={form.taxable} onChange={set('taxable')}/>Taxable</label>}
   </div>
   <div className="mt-4"><Field label="Description"><textarea className={`${input} min-h-20`} maxLength={300} value={form.description} onChange={set('description')} placeholder="Why this award is given"/></Field></div>
-  <p className="mb-0 mt-3 text-[12px] text-slate-500">{merit?'An Admin approves the merit increase; the new basic salary applies from the effective date.':'An Admin approves the award; it is then paid in the selected payroll cutoff.'}</p>
+  <p className="mb-0 mt-3 text-[12px] text-gray-500">{merit?'An Admin approves the merit increase; the new basic salary applies from the effective date.':'An Admin approves the award; it is then paid in the selected payroll cutoff.'}</p>
   {error&&<p role="alert" className="mb-0 text-[12px] text-red-700">{error}</p>}
   <div className="mt-5 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={saving||!valid} onClick={submit}>{saving?'Saving…':'Submit for approval'}</Button></div>
  </Modal>;

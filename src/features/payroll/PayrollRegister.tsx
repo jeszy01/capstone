@@ -29,17 +29,17 @@ export function PayrollRegister({runId,refresh}:{runId:string;refresh:number}){
  },[runId,refresh]);
  return <Card className="register-print min-w-0 !p-0">
   <style>{STYLE}</style>
-  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
-   <div><div className="text-[15px] font-bold tracking-wide text-[#17345b]">{register?.company??'Payroll Register'}</div><div className="text-[12px] font-semibold text-slate-600">PAYROLL REGISTER</div></div>
-   {register&&<dl className="m-0 grid grid-cols-[auto_auto] gap-x-3 text-[12px]"><dt className="text-slate-500">Cutoff</dt><dd className="m-0 font-semibold">{register.cutoff}</dd><dt className="text-slate-500">Pay date</dt><dd className="m-0 font-semibold">{register.payDate}</dd><dt className="text-slate-500">Run ID</dt><dd className="m-0 font-semibold">{register.runId}</dd></dl>}
-   <button type="button" className="no-print rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700" onClick={()=>window.print()}>Print</button>
+  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
+   <div><div className="text-[15px] font-bold tracking-wide text-gray-900">{register?.company??'Payroll Register'}</div><div className="text-[12px] font-semibold text-gray-600">PAYROLL REGISTER</div></div>
+   {register&&<dl className="m-0 grid grid-cols-[auto_auto] gap-x-3 text-[12px]"><dt className="text-gray-500">Cutoff</dt><dd className="m-0 font-semibold">{register.cutoff}</dd><dt className="text-gray-500">Pay date</dt><dd className="m-0 font-semibold">{register.payDate}</dd><dt className="text-gray-500">Run ID</dt><dd className="m-0 font-semibold">{register.runId}</dd></dl>}
+   <button type="button" className="no-print rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700" onClick={()=>window.print()}>Print</button>
   </div>
   {error?<p role="alert" className="m-4 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>
-   :!register?<p className="m-4 text-[12px] text-slate-500">Loading…</p>
-   :!register.lines.length?<p className="m-4 text-[12px] text-slate-500">No figures yet. Compute the payroll first.</p>
+   :!register?<p className="m-4 text-[12px] text-gray-500">Loading…</p>
+   :!register.lines.length?<p className="m-4 text-[12px] text-gray-500">No figures yet. Compute the payroll first.</p>
    :<div className="register-scroll overflow-x-auto" role="region" aria-label="Payroll register" tabIndex={0}><table className="register w-max min-w-full border-collapse">
     <thead><tr><th className="emp" scope="col">Employee</th>{register.columns.map(column=><th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
-    <tbody>{register.lines.map(line=><tr key={line.empId}><th className="emp" scope="row"><div className="font-semibold text-slate-800">{line.name}</div><div className="text-[10px] font-normal text-slate-500">{line.empId}{line.position?` · ${line.position}`:''}</div></th>{register.columns.map(column=><td key={column.key} className={['gross','totalDeductions','net'].includes(column.key)?'key':undefined}>{nf(line[column.key])}</td>)}</tr>)}</tbody>
+    <tbody>{register.lines.map(line=><tr key={line.empId}><th className="emp" scope="row"><div className="font-semibold text-gray-800">{line.name}</div><div className="text-[10px] font-normal text-gray-500">{line.empId}{line.position?` · ${line.position}`:''}</div></th>{register.columns.map(column=><td key={column.key} className={['gross','totalDeductions','net'].includes(column.key)?'key':undefined}>{nf(line[column.key])}</td>)}</tr>)}</tbody>
     <tfoot><tr><td className="emp">Total ({register.lines.length})</td>{register.columns.map(column=><td key={column.key}>{nf(register.totals[column.key])}</td>)}</tr></tfoot>
    </table></div>}
  </Card>;

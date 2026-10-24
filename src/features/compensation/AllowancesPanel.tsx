@@ -59,18 +59,18 @@ export function AllowancesPanel({employees,rewards,assignments,daysPerMonth,load
   <section aria-labelledby="allowances-heading" className={panelClass}>
    <PanelHeader id="allowances-heading" title={head[0]} subtitle={head[1]} action={view==='policy'&&canManage&&<span className="rounded-full bg-indigo-50 px-3 py-1 text-[12px] font-semibold text-indigo-700">HR editable</span>}/>
    <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"><Segmented label="Allowances views" options={VIEWS} value={view} onChange={next=>{setView(next);setSearch('')}}/>
-    {view==='register'&&<label className="relative block w-full max-w-xs"><span className="sr-only">Search employees</span><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" placeholder="Search employee" value={search} onChange={event=>setSearch(event.target.value)}/></label>}
+    {view==='register'&&<label className="relative block w-full max-w-xs"><span className="sr-only">Search employees</span><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10" placeholder="Search employee" value={search} onChange={event=>setSearch(event.target.value)}/></label>}
    </div>
 
    {view==='policy'&&<div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left text-[13px]">
     <thead><tr className={theadClass}>{['Allowance','Tax Treatment','Default','Employees','Monthly Cost','Share',''].map((label,index)=><th key={label||index} scope="col" className={`px-5 py-3 font-semibold ${['Default','Employees','Monthly Cost','Share'].includes(label)?'text-right':''}`}>{label}</th>)}</tr></thead>
-    <tbody>{policy.map(type=>{const total=totals.find(row=>row.id===type.id)!;return <tr key={type.id} className="border-b border-slate-100 last:border-0">
-     <td className="px-5 py-4"><div className="font-semibold text-slate-900">{type.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{type.code} · Fixed monthly</div></td>
+    <tbody>{policy.map(type=>{const total=totals.find(row=>row.id===type.id)!;return <tr key={type.id} className="border-b border-gray-100 last:border-0">
+     <td className="px-5 py-4"><div className="font-semibold text-gray-900">{type.name}</div><div className="mt-0.5 text-[12px] text-gray-500">{type.code} · Fixed monthly</div></td>
      <td className="px-5 py-4"><span className={`inline-block rounded-full px-3 py-1 text-[12px] font-semibold ${type.taxTreatment==='taxable'?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700'}`}>{type.taxTreatment==='taxable'?'Taxable':'Non-taxable'}</span></td>
-     <td className="px-5 py-4 text-right tabular-nums font-semibold text-slate-900">{peso(type.defaultAmount)}</td>
-     <td className="px-5 py-4 text-right tabular-nums text-slate-800">{total.employees}</td>
-     <td className="px-5 py-4 text-right tabular-nums font-bold text-slate-900">{peso(total.monthly)}</td>
-     <td className="px-5 py-4 text-right tabular-nums text-slate-700">{total.share.toFixed(1)}%</td>
+     <td className="px-5 py-4 text-right tabular-nums font-semibold text-gray-900">{peso(type.defaultAmount)}</td>
+     <td className="px-5 py-4 text-right tabular-nums text-gray-800">{total.employees}</td>
+     <td className="px-5 py-4 text-right tabular-nums font-bold text-gray-900">{peso(total.monthly)}</td>
+     <td className="px-5 py-4 text-right tabular-nums text-gray-700">{total.share.toFixed(1)}%</td>
      <td className="px-5 py-4 text-right">{canManage&&<button type="button" className={ghost} onClick={()=>setEditingType(type)}><Pencil size={14}/>Edit</button>}</td>
     </tr>})}</tbody>
    </table></div>}
@@ -79,9 +79,9 @@ export function AllowancesPanel({employees,rewards,assignments,daysPerMonth,load
     <thead><tr className={theadClass}>{['Employee',...policy.map(type=>shortName(type.name)),'Total','Action'].map((label,index)=><th key={`${label}-${index}`} scope="col" className={`px-5 py-3 font-semibold ${index>0?'text-right':''}`}>{label}</th>)}</tr></thead>
     <tbody>{loading?<MessageRow colSpan={policy.length+3}>Loading allowances…</MessageRow>:!shown.length?<MessageRow colSpan={policy.length+3}>{activeEmployees.length?'No employees match this search.':'No active employees yet.'}</MessageRow>:shown.map((employee,index)=>{
      const amounts=matrixFor(employee),total=policy.reduce((sum,type)=>sum+(amounts[type.id]??0),0);
-     return <tr key={employee.id} className="border-b border-slate-100 last:border-0 even:bg-slate-50/50">
-      <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={employee.name} index={index}/><div><div className="font-semibold text-slate-900">{employee.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{gradeLabel(employee)}</div></div></div></td>
-      {policy.map(type=><td key={type.id} className={`px-5 py-4 text-right tabular-nums ${amounts[type.id]?'font-semibold text-slate-900':'text-slate-400'}`}>{peso(amounts[type.id]??0)}</td>)}
+     return <tr key={employee.id} className="border-b border-gray-100 last:border-0 even:bg-gray-50/50">
+      <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={employee.name} index={index}/><div><div className="font-semibold text-gray-900">{employee.name}</div><div className="mt-0.5 text-[12px] text-gray-500">{gradeLabel(employee)}</div></div></div></td>
+      {policy.map(type=><td key={type.id} className={`px-5 py-4 text-right tabular-nums ${amounts[type.id]?'font-semibold text-gray-900':'text-gray-400'}`}>{peso(amounts[type.id]??0)}</td>)}
       <td className="px-5 py-4 text-right tabular-nums font-bold text-indigo-600">{peso(total)}</td>
       <td className="px-5 py-4 text-right">{canManage&&<button type="button" onClick={()=>setAssigning(employee)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-indigo-50 px-3.5 py-2 text-[13px] font-semibold text-indigo-700 hover:bg-indigo-100"><Pencil size={14}/>Assign</button>}</td>
      </tr>;
@@ -139,13 +139,13 @@ function CoverageTable({policy,employees,activeEmployees,allowances,canManage,on
   <PanelHeader id="allowance-coverage-heading" title="Allowance Coverage" subtitle="Monthly amount per allowance type, for all employees or custom"/>
   <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-[13px]">
    <thead><tr className={theadClass}><th scope="col" className="px-5 py-3 font-semibold">Allowance Type</th><th scope="col" className="px-5 py-3 text-right font-semibold">Monthly</th><th scope="col" className="px-5 py-3 font-semibold"><label className="inline-flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-indigo-600" disabled={!canManage||saving} checked={allTicked} onChange={event=>setForm(Object.fromEntries(policy.map(type=>[type.id,{...form[type.id],all:event.target.checked}])))}/>All Employees</label></th></tr></thead>
-   <tbody>{policy.map(type=><tr key={type.id} className="border-b border-slate-100 last:border-0">
-    <td className="px-5 py-3 font-semibold text-slate-900">{type.name}</td>
-    <td className="px-5 py-3 text-right">{canManage?<input aria-label={`${type.name} monthly`} type="number" min="0" step="0.01" placeholder="0.00" disabled={saving} className={`${input} ml-auto max-w-[160px] text-right tabular-nums`} value={form[type.id].monthly} onChange={event=>setForm({...form,[type.id]:{...form[type.id],monthly:event.target.value}})}/>:<span className="tabular-nums font-semibold text-slate-900">{peso(type.defaultAmount)}</span>}</td>
-    <td className="px-5 py-3"><label className="inline-flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-indigo-600" disabled={!canManage||saving} checked={form[type.id].all} onChange={event=>setForm({...form,[type.id]:{...form[type.id],all:event.target.checked}})}/><span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${form[type.id].all?'bg-indigo-50 text-indigo-700':'bg-slate-100 text-slate-600'}`}>{form[type.id].all?'All employees':'Custom'}</span></label></td>
+   <tbody>{policy.map(type=><tr key={type.id} className="border-b border-gray-100 last:border-0">
+    <td className="px-5 py-3 font-semibold text-gray-900">{type.name}</td>
+    <td className="px-5 py-3 text-right">{canManage?<input aria-label={`${type.name} monthly`} type="number" min="0" step="0.01" placeholder="0.00" disabled={saving} className={`${input} ml-auto max-w-[160px] text-right tabular-nums`} value={form[type.id].monthly} onChange={event=>setForm({...form,[type.id]:{...form[type.id],monthly:event.target.value}})}/>:<span className="tabular-nums font-semibold text-gray-900">{peso(type.defaultAmount)}</span>}</td>
+    <td className="px-5 py-3"><label className="inline-flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-indigo-600" disabled={!canManage||saving} checked={form[type.id].all} onChange={event=>setForm({...form,[type.id]:{...form[type.id],all:event.target.checked}})}/><span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${form[type.id].all?'bg-indigo-50 text-indigo-700':'bg-gray-100 text-gray-600'}`}>{form[type.id].all?'All employees':'Custom'}</span></label></td>
    </tr>)}</tbody>
   </table></div>
-  {canManage&&<div className="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-3">{error&&<p role="alert" className="m-0 mr-auto text-[12px] text-red-700">{error}</p>}<button type="button" className={ghost} disabled={!changed||saving} onClick={()=>setForm(initial())}>Reset</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={!changed||saving} onClick={()=>void save()}>{saving?'Saving…':'Save'}</Button></div>}
+  {canManage&&<div className="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">{error&&<p role="alert" className="m-0 mr-auto text-[12px] text-red-700">{error}</p>}<button type="button" className={ghost} disabled={!changed||saving} onClick={()=>setForm(initial())}>Reset</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={!changed||saving} onClick={()=>void save()}>{saving?'Saving…':'Save'}</Button></div>}
  </section>;
 }
 
@@ -167,6 +167,6 @@ function AssignModal({employee,employees,policy,allowances,amounts,onClose,onDon
  return <Modal title={`Assign allowances · ${employee.name}`} onClose={()=>{if(!saving)onClose()}}><div className="grid gap-4">
   <div className="grid gap-4 sm:grid-cols-2">{policy.map(type=><Field key={type.id} label={`${type.name} (monthly ₱)`}><TextInput type="number" min="0" step="0.01" value={form[type.id]??''} placeholder="0.00" onChange={event=>setForm({...form,[type.id]:event.target.value})}/></Field>)}</div>
   <Field label="Effective date"><TextInput type="date" value={effectiveDate} onChange={event=>setEffectiveDate(event.target.value)}/></Field>
-  <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-[13px]"><span className="text-slate-600">Total per month</span><b className="tabular-nums text-indigo-600">{peso(total)}</b></div>
+  <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3 text-[13px]"><span className="text-gray-600">Total per month</span><b className="tabular-nums text-indigo-600">{peso(total)}</b></div>
  </div>{error&&<p role="alert" className="mb-0 mt-3 text-[12px] text-red-700">{error}</p>}<div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={saving} onClick={onClose}>Cancel</button><Button className="!bg-indigo-600 hover:!bg-indigo-700" disabled={saving||!effectiveDate} onClick={()=>void save()}>{saving?'Saving…':'Save'}</Button></div></Modal>;
 }

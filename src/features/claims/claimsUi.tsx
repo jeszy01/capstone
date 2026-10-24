@@ -19,5 +19,5 @@ export function ClaimStatusBadge({claim}:{claim:ExpenseClaim}){return <StatusBad
 export function EmployeeCell({employees,claim}:{employees:Employee[];claim:ExpenseClaim}){
  const employee=employees.find(item=>item.id===claim.employeeId);
  const detail=[employee?.employeeNo,claim.department].filter(Boolean).join(' · ');
- return <div className="min-w-0"><div className="whitespace-nowrap font-medium text-slate-800">{employee?.name??employeeName(employees,claim.employeeId)}</div>{detail&&<div className="mt-0.5 whitespace-nowrap text-[12px] text-slate-500">{detail}</div>}</div>;
+ return <div className="min-w-0"><div className="whitespace-nowrap font-medium text-gray-800">{employee?.name??employeeName(employees,claim.employeeId)}</div>{detail&&<div className="mt-0.5 whitespace-nowrap text-[12px] text-gray-500">{detail}</div>}</div>;
 }

@@ -41,25 +41,25 @@ export function PayrollPeriodReport({runs,employees,showAmounts=false}:{runs:Pay
  const hidden=(value:number)=>maskValue(showAmounts,peso(value));
  return <Card className="mt-6 min-w-0 border-blue-100">
   <div className="flex flex-wrap items-start justify-between gap-3">
-   <div className="min-w-0"><h2 className="m-0 text-[16px] font-semibold text-[#17345b]">Payroll Report</h2><p className="mb-0 mt-1 text-[12px] text-slate-500">Monthly or annual totals from saved payroll runs. Open the preview to see every section and print or save it as PDF.</p></div>
+   <div className="min-w-0"><h2 className="m-0 text-[16px] font-semibold text-gray-900">Payroll Report</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">Monthly or annual totals from saved payroll runs. Open the preview to see every section and print or save it as PDF.</p></div>
    <Button disabled={!canPreview} title={!report.runs.length?'No payroll runs in this period.':showAmounts?undefined:'Show amounts to preview the report.'} onClick={()=>setPreviewing(true)}><FileText size={15}/>Preview &amp; Print Report</Button>
   </div>
   <div className="mt-4 flex flex-wrap items-end gap-3">
    <Segmented label="Report period" value={kind} onChange={setKind} options={KINDS}/>
    {kind==='monthly'
-    ?<label className="block text-[12px] font-semibold text-slate-600">Month<input type="month" className={`${input} mt-1.5 !w-auto`} value={month} max={today.slice(0,7)} onChange={e=>e.target.value&&setMonth(e.target.value)}/></label>
-    :<label className="block text-[12px] font-semibold text-slate-600">Year<select className={`${input} mt-1.5 !w-auto`} value={year} onChange={e=>setYear(e.target.value)}>{years.map(item=><option key={item}>{item}</option>)}</select></label>}
-   <label className="flex items-center gap-2 pb-2.5 text-[12px] text-slate-600"><input type="checkbox" checked={includePending} onChange={e=>setIncludePending(e.target.checked)}/>Include runs pending approval</label>
+    ?<label className="block text-[12px] font-semibold text-gray-600">Month<input type="month" className={`${input} mt-1.5 !w-auto`} value={month} max={today.slice(0,7)} onChange={e=>e.target.value&&setMonth(e.target.value)}/></label>
+    :<label className="block text-[12px] font-semibold text-gray-600">Year<select className={`${input} mt-1.5 !w-auto`} value={year} onChange={e=>setYear(e.target.value)}>{years.map(item=><option key={item}>{item}</option>)}</select></label>}
+   <label className="flex items-center gap-2 pb-2.5 text-[12px] text-gray-600"><input type="checkbox" checked={includePending} onChange={e=>setIncludePending(e.target.checked)}/>Include runs pending approval</label>
   </div>
-  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3">
    {report.runs.length?<dl className="m-0 flex flex-wrap gap-x-8 gap-y-2 text-[12px]">
-    <div><dt className="text-slate-500">{report.title.split(' · ')[1]}</dt><dd className="m-0 mt-0.5 font-semibold text-[#17345b]">{report.runs.length} run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</dd></div>
-    <div><dt className="text-slate-500">Gross pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-[#17345b]">{hidden(report.totals.gross)}</dd></div>
-    <div><dt className="text-slate-500">Total deductions</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-[#17345b]">{hidden(report.totals.deductions)}</dd></div>
-    <div><dt className="text-slate-500">Net pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-[#17345b]">{hidden(report.totals.net)}</dd></div>
-   </dl>:<p className="m-0 text-[12px] text-slate-500">{runs.length?`No ${includePending?'approved or pending':'approved'} payroll runs in ${report.title.split(' · ')[1]}.`:'No payroll runs yet. Submit and approve a payroll run first.'}</p>}
+    <div><dt className="text-gray-500">{report.title.split(' · ')[1]}</dt><dd className="m-0 mt-0.5 font-semibold text-gray-900">{report.runs.length} run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</dd></div>
+    <div><dt className="text-gray-500">Gross pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{hidden(report.totals.gross)}</dd></div>
+    <div><dt className="text-gray-500">Total deductions</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{hidden(report.totals.deductions)}</dd></div>
+    <div><dt className="text-gray-500">Net pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{hidden(report.totals.net)}</dd></div>
+   </dl>:<p className="m-0 text-[12px] text-gray-500">{runs.length?`No ${includePending?'approved or pending':'approved'} payroll runs in ${report.title.split(' · ')[1]}.`:'No payroll runs yet. Submit and approve a payroll run first.'}</p>}
    {report.excludedPending>0&&<p className="mb-0 mt-2 text-[12px] text-amber-800">{report.excludedPending} run{report.excludedPending===1?' is':'s are'} still pending approval and {report.excludedPending===1?'is':'are'} not included.</p>}
-   {!showAmounts&&report.runs.length>0&&<p className="mb-0 mt-2 text-[12px] text-slate-500">Amounts are hidden. Use the eye toggle to show amounts, then open the preview.</p>}
+   {!showAmounts&&report.runs.length>0&&<p className="mb-0 mt-2 text-[12px] text-gray-500">Amounts are hidden. Use the eye toggle to show amounts, then open the preview.</p>}
   </div>
   {previewing&&canPreview&&<ReportPreview report={report} kind={kind} includePending={includePending} onClose={()=>setPreviewing(false)}/>}
  </Card>;
@@ -77,28 +77,28 @@ function ReportPreview({report,kind,includePending,onClose}:{report:Report;kind:
   recordAudit({action:'Printed payroll report',module:'Payroll',description:`Printed the ${report.title}.`});
   window.print();
  };
- return createPortal(<div className="report-preview fixed inset-0 z-50 flex justify-center bg-slate-950/45 p-3 backdrop-blur-sm sm:p-6" onClick={onClose}>
+ return createPortal(<div className="report-preview fixed inset-0 z-50 flex justify-center bg-black/50 p-3 backdrop-blur-sm sm:p-6" onClick={onClose}>
   <style>{PRINT_CSS}</style>
-  <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={report.title} className="report-preview-panel flex h-full w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e=>e.stopPropagation()}>
-   <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
-    <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">Report preview</div><div className="text-[15px] font-semibold text-[#17345b]">{report.title}</div></div>
+  <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={report.title} className="report-preview-panel flex h-full w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl" onClick={e=>e.stopPropagation()}>
+   <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-3">
+    <div className="min-w-0"><div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">Report preview</div><div className="text-[15px] font-semibold text-gray-900">{report.title}</div></div>
     <div className="flex gap-2"><Button onClick={print}><Printer size={15}/>Print / Save as PDF</Button><button type="button" className={ghost} onClick={onClose} aria-label="Close preview"><X size={15}/>Close</button></div>
    </div>
    <div className="report-preview-panel min-h-0 flex-1 overflow-auto px-5 pb-6 sm:px-8">
   {/* A fixed-width page, like the printout: on a narrow window the whole page scrolls instead of each table. */}
-  <div className="payroll-report mx-auto min-w-[1100px] max-w-[1160px] select-text pt-5 text-slate-800">
-   <header className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-slate-800 pb-3">
-    <div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[13px] font-semibold">{report.title}</div><div className="text-[11px] text-slate-500">{kind==='monthly'?'All payroll runs whose cutoff ends in this month.':'All payroll runs whose cutoff ends in this year.'} {includePending?'Includes runs pending approval.':'Approved runs only.'} Table amounts are in Philippine pesos (₱).</div>{report.excludedPending>0&&<div className="text-[11px] text-slate-500">Not included: {report.excludedPending} run{report.excludedPending===1?'':'s'} pending approval.</div>}</div>
-    <div className="text-right text-[11px] text-slate-500"><div>Generated {new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div><div>{report.runs.length} payroll run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</div></div>
+  <div className="payroll-report mx-auto min-w-[1100px] max-w-[1160px] select-text pt-5 text-gray-800">
+   <header className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-gray-800 pb-3">
+    <div><div className="text-[15px] font-bold tracking-wide">ARCHON NELL INC.</div><div className="text-[13px] font-semibold">{report.title}</div><div className="text-[11px] text-gray-500">{kind==='monthly'?'All payroll runs whose cutoff ends in this month.':'All payroll runs whose cutoff ends in this year.'} {includePending?'Includes runs pending approval.':'Approved runs only.'} Table amounts are in Philippine pesos (₱).</div>{report.excludedPending>0&&<div className="text-[11px] text-gray-500">Not included: {report.excludedPending} run{report.excludedPending===1?'':'s'} pending approval.</div>}</div>
+    <div className="text-right text-[11px] text-gray-500"><div>Generated {new Date().toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div><div>{report.runs.length} payroll run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</div></div>
    </header>
    <>
     <ReportSection title="Summary"><table className="w-full max-w-[560px] text-[12px]"><tbody>
-     {([['Gross pay',report.totals.gross],['Total deductions',report.totals.deductions],['Net pay',report.totals.net],['Government contributions (employee share)',report.totals.sss+report.totals.phil+report.totals.pagibig],['Withholding tax',report.totals.tax]] as const).map(([label,value])=><tr key={label} className="border-b border-slate-100"><th className="!py-1 pr-4 text-left font-medium text-slate-600">{label}</th><td className="!py-1 text-right font-semibold tabular-nums">{peso(value)}</td></tr>)}
+     {([['Gross pay',report.totals.gross],['Total deductions',report.totals.deductions],['Net pay',report.totals.net],['Government contributions (employee share)',report.totals.sss+report.totals.phil+report.totals.pagibig],['Withholding tax',report.totals.tax]] as const).map(([label,value])=><tr key={label} className="border-b border-gray-100"><th className="!py-1 pr-4 text-left font-medium text-gray-600">{label}</th><td className="!py-1 text-right font-semibold tabular-nums">{peso(value)}</td></tr>)}
     </tbody></table></ReportSection>
     {kind==='annual'?<ReportSection title="By month"><TotalsTable first="Month" lines={report.byMonth} totals={report.totals}/></ReportSection>:<ReportSection title="By payroll run"><TotalsTable first="Cutoff" lines={report.byRun} totals={report.totals}/></ReportSection>}
     <ReportSection title="By employee"><TotalsTable first="Employee" lines={report.byEmployee} totals={report.totals} showCount={false}/></ReportSection>
     <ReportSection title="By department"><TotalsTable first="Department" lines={report.byDepartment} totals={report.totals}/></ReportSection>
-    <div className="mt-8 grid grid-cols-3 gap-6">{[['Prepared by',user?.name??'Payroll Officer'],['Reviewed by','HR Head'],['Approved by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[56px] flex-col justify-end border-t border-slate-700 pt-1.5 text-[11px] text-slate-500"><b className="text-slate-800">{label}</b>{name} · Date: ________</div>)}</div>
+    <div className="mt-8 grid grid-cols-3 gap-6">{[['Prepared by',user?.name??'Payroll Officer'],['Reviewed by','HR Head'],['Approved by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[56px] flex-col justify-end border-t border-gray-700 pt-1.5 text-[11px] text-gray-500"><b className="text-gray-800">{label}</b>{name} · Date: ________</div>)}</div>
    </>
   </div>
    </div>
@@ -106,7 +106,7 @@ function ReportPreview({report,kind,includePending,onClose}:{report:Report;kind:
  </div>,document.body);
 }
 
-function ReportSection({title,children}:{title:string;children:React.ReactNode}){return <section className="mt-5"><h3 className="m-0 mb-2 text-[13px] font-semibold text-[#17345b]">{title}</h3>{children}</section>}
+function ReportSection({title,children}:{title:string;children:React.ReactNode}){return <section className="mt-5"><h3 className="m-0 mb-2 text-[13px] font-semibold text-gray-900">{title}</h3>{children}</section>}
 
 // Table amounts are plain numbers (the report states they are in pesos) so all columns fit one landscape page.
 const amount=(value:number)=>value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -115,11 +115,11 @@ function TotalsTable({first,lines,totals,showCount=true}:{first:string;lines:Rep
  // app's global table cell padding.
  const cell='whitespace-nowrap !px-1.5 !py-1 text-right tabular-nums';
  const head='whitespace-nowrap px-1.5 py-1.5';
- return <div className="rounded-lg border border-slate-200"><table className="w-full text-[11px]">
-  <thead><tr className="border-b border-slate-200 bg-[#f3f8ff] text-[9.5px] uppercase tracking-wide text-[#536987]"><th className={`${head} text-left`}>{first}</th>{showCount&&<th className={`${head} text-right`}>Emp.</th>}{COLUMNS.map(([key,label])=><th key={key} className={`${head} text-right`}>{label}</th>)}</tr></thead>
+ return <div className="rounded-lg border border-gray-200"><table className="w-full text-[11px]">
+  <thead><tr className="border-b border-gray-200 bg-gray-50 text-[9.5px] uppercase tracking-wide text-gray-500"><th className={`${head} text-left`}>{first}</th>{showCount&&<th className={`${head} text-right`}>Emp.</th>}{COLUMNS.map(([key,label])=><th key={key} className={`${head} text-right`}>{label}</th>)}</tr></thead>
   <tbody>
-   {lines.map(line=><tr key={line.key} className={`border-b border-slate-100 ${line.totals.gross===0&&line.totals.employees===0?'text-slate-400':''}`}><th className="!px-1.5 !py-1 text-left font-medium"><div className="whitespace-nowrap">{line.label}</div>{line.detail&&<div className="whitespace-nowrap text-[9.5px] font-normal text-slate-500">{line.detail}</div>}</th>{showCount&&<td className={cell}>{line.totals.employees||'—'}</td>}{COLUMNS.map(([key])=><td key={key} className={`${cell} ${key==='net'||key==='gross'?'font-semibold':''}`}>{line.totals[key]?amount(line.totals[key]):'—'}</td>)}</tr>)}
-   <tr className="border-t-2 border-slate-800 font-bold"><th className="!px-1.5 !py-1 text-left">Total</th>{showCount&&<td className={cell}>{totals.employees}</td>}{COLUMNS.map(([key])=><td key={key} className={cell}>{amount(totals[key])}</td>)}</tr>
+   {lines.map(line=><tr key={line.key} className={`border-b border-gray-100 ${line.totals.gross===0&&line.totals.employees===0?'text-gray-400':''}`}><th className="!px-1.5 !py-1 text-left font-medium"><div className="whitespace-nowrap">{line.label}</div>{line.detail&&<div className="whitespace-nowrap text-[9.5px] font-normal text-gray-500">{line.detail}</div>}</th>{showCount&&<td className={cell}>{line.totals.employees||'—'}</td>}{COLUMNS.map(([key])=><td key={key} className={`${cell} ${key==='net'||key==='gross'?'font-semibold':''}`}>{line.totals[key]?amount(line.totals[key]):'—'}</td>)}</tr>)}
+   <tr className="border-t-2 border-gray-800 font-bold"><th className="!px-1.5 !py-1 text-left">Total</th>{showCount&&<td className={cell}>{totals.employees}</td>}{COLUMNS.map(([key])=><td key={key} className={cell}>{amount(totals[key])}</td>)}</tr>
   </tbody>
  </table></div>;
 }

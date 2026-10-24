@@ -80,61 +80,61 @@ export function PayrollSummaryModal({run,employees,onClose}:{run:PayrollRun;empl
     ['Company deductions',data.companyTotal,COLORS.co],
   ] as const;
 
-  const lines=(items:[string,number][])=>items.map(([label,value])=><div key={label} className="flex justify-between border-b border-slate-100 py-1.5 text-[12px]"><span>{label}</span><span className="tabular-nums">{peso(value)}</span></div>);
-  const total=(label:string,value:number)=><div className="flex justify-between border-t-2 border-slate-800 pt-2 text-[13px] font-bold"><span>{label}</span><span className="tabular-nums">{peso(value)}</span></div>;
-  const group=(label:string,color:string,items:[string,number][])=><div className="mt-3"><div className="mb-1 flex items-center gap-2 text-[12px] font-semibold text-slate-600"><span className="h-2.5 w-2.5 rounded-sm" style={{background:color}}/>{label} · {peso(items.reduce((t,r)=>t+r[1],0))}</div>{lines(items)}</div>;
-  const th='px-3 py-2 text-right text-[11px] font-medium text-slate-500 first:text-left';
+  const lines=(items:[string,number][])=>items.map(([label,value])=><div key={label} className="flex justify-between border-b border-gray-100 py-1.5 text-[12px]"><span>{label}</span><span className="tabular-nums">{peso(value)}</span></div>);
+  const total=(label:string,value:number)=><div className="flex justify-between border-t-2 border-gray-800 pt-2 text-[13px] font-bold"><span>{label}</span><span className="tabular-nums">{peso(value)}</span></div>;
+  const group=(label:string,color:string,items:[string,number][])=><div className="mt-3"><div className="mb-1 flex items-center gap-2 text-[12px] font-semibold text-gray-600"><span className="h-2.5 w-2.5 rounded-sm" style={{background:color}}/>{label} · {peso(items.reduce((t,r)=>t+r[1],0))}</div>{lines(items)}</div>;
+  const th='px-3 py-2 text-right text-[11px] font-medium text-gray-500 first:text-left';
   const td='px-3 py-2 text-right tabular-nums first:text-left';
 
   return <Modal title="Payroll summary" wide onClose={onClose}>
     <style>{`@media print{body *{visibility:hidden}.summary-print,.summary-print *{visibility:visible}.summary-print{position:absolute;left:0;top:0;width:100%}.no-print{display:none!important}}`}</style>
-    <div className="summary-print space-y-5 text-slate-800">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
-        <div><div className="text-[17px] font-bold">Payroll Summary</div><div className="text-[12px] text-slate-500">Archon Nell Incorporated · {period}</div></div>
-        <div className="text-right text-[12px] text-slate-500"><div className="font-semibold text-slate-800">PR-{run.id.slice(0,8).toUpperCase()}</div><div>Cutoff: {period}</div><div>Pay date: {formatDate(run.payDate??run.paidAt)}</div>{run.funding&&<div>Funding receipt: {run.funding.fileName}</div>}<div>Status: {runStatusLabel(run)}</div>{run.releasedAt&&<><div>Released by: {run.releasedBy??'—'}</div><div>Released: {new Date(run.releasedAt).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div></>}</div>
+    <div className="summary-print space-y-5 text-gray-800">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-4">
+        <div><div className="text-[17px] font-bold">Payroll Summary</div><div className="text-[12px] text-gray-500">Archon Nell Incorporated · {period}</div></div>
+        <div className="text-right text-[12px] text-gray-500"><div className="font-semibold text-gray-800">PR-{run.id.slice(0,8).toUpperCase()}</div><div>Cutoff: {period}</div><div>Pay date: {formatDate(run.payDate??run.paidAt)}</div>{run.funding&&<div>Funding receipt: {run.funding.fileName}</div>}<div>Status: {runStatusLabel(run)}</div>{run.releasedAt&&<><div>Released by: {run.releasedBy??'—'}</div><div>Released: {new Date(run.releasedAt).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'})}</div></>}</div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 p-5">
+      <div className="rounded-xl border border-gray-200 p-5">
         <div className="flex flex-wrap gap-x-10 gap-y-3">
-          <div><div className="text-[12px] text-slate-500">Total gross pay</div><div className="text-[30px] font-bold leading-tight">{peso(data.gross)}</div></div>
-          <div><div className="text-[12px] text-slate-500">Net pay to fund</div><div className="text-[30px] font-bold leading-tight" style={{color:COLORS.net}}>{peso(data.net)}</div></div>
-          <div><div className="text-[12px] text-slate-500">Employees paid</div><div className="text-[30px] font-bold leading-tight">{rows.length}</div></div>
+          <div><div className="text-[12px] text-gray-500">Total gross pay</div><div className="text-[30px] font-bold leading-tight">{peso(data.gross)}</div></div>
+          <div><div className="text-[12px] text-gray-500">Net pay to fund</div><div className="text-[30px] font-bold leading-tight" style={{color:COLORS.net}}>{peso(data.net)}</div></div>
+          <div><div className="text-[12px] text-gray-500">Employees paid</div><div className="text-[30px] font-bold leading-tight">{rows.length}</div></div>
         </div>
         <div className="mt-4 flex h-7 gap-0.5 overflow-hidden rounded" role="img" aria-label="Deductions by type">
           {segments.map(([label,value,color])=>value>0&&<i key={label} title={label} style={{flex:value,background:color,minWidth:4}}/>)}
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {segments.map(([label,value,color])=><div key={label} className="border-l-4 pl-2.5" style={{borderColor:color}}><div className="text-[11px] text-slate-500">{label}{data.gross?` · ${((value/data.gross)*100).toFixed(1)}%`:''}</div><div className="text-[15px] font-semibold">{peso(value)}</div></div>)}
+          {segments.map(([label,value,color])=><div key={label} className="border-l-4 pl-2.5" style={{borderColor:color}}><div className="text-[11px] text-gray-500">{label}{data.gross?` · ${((value/data.gross)*100).toFixed(1)}%`:''}</div><div className="text-[15px] font-semibold">{peso(value)}</div></div>)}
         </div>
       </div>
 
       <div className="grid gap-5 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">Earnings</h3><p className="mb-2 mt-0.5 text-[11px] text-slate-500">What was earned this cutoff.</p>
+        <div className="rounded-xl border border-gray-200 p-4"><h3 className="m-0 text-[14px] font-semibold">Earnings</h3><p className="mb-2 mt-0.5 text-[11px] text-gray-500">What was earned this cutoff.</p>
           {lines(data.earn)}
           <div className="mt-2">{total('Total gross pay',data.gross)}</div></div>
-        <div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">Deductions</h3><p className="mb-0 mt-0.5 text-[11px] text-slate-500">Taken from employee pay.</p>
+        <div className="rounded-xl border border-gray-200 p-4"><h3 className="m-0 text-[14px] font-semibold">Deductions</h3><p className="mb-0 mt-0.5 text-[11px] text-gray-500">Taken from employee pay.</p>
           {group('Statutory',COLORS.stat,data.stat)}
           {group('Attendance',COLORS.att,data.att)}
           {group('Company',COLORS.co,data.company)}
           <div className="mt-3">{total('Total deductions',data.deductions)}</div></div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 mb-2 text-[14px] font-semibold">Statutory remittances</h3>
-        <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[13px]"><thead><tr className="border-b border-slate-200">{['Agency','Employee Share','Employer Share','Total Remittance'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
-          {data.remit.map(([label,employee,employerShare])=><tr key={label} className="border-b border-slate-100"><td className={td}>{label}</td><td className={td}>{peso(employee)}</td><td className={td}>{employerShare===null?'—':peso(employerShare)}</td><td className={td}>{peso(employee+(employerShare??0))}</td></tr>)}
-          <tr className="border-t-2 border-slate-800 font-bold"><td className={td}>Total</td><td className={td}>{peso(data.statTotal)}</td><td className={td}>{peso(data.employer)}</td><td className={td}>{peso(data.statTotal+data.employer)}</td></tr></tbody></table></div></div>
+      <div className="rounded-xl border border-gray-200 p-4"><h3 className="m-0 mb-2 text-[14px] font-semibold">Statutory remittances</h3>
+        <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[13px]"><thead><tr className="border-b border-gray-200">{['Agency','Employee Share','Employer Share','Total Remittance'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
+          {data.remit.map(([label,employee,employerShare])=><tr key={label} className="border-b border-gray-100"><td className={td}>{label}</td><td className={td}>{peso(employee)}</td><td className={td}>{employerShare===null?'—':peso(employerShare)}</td><td className={td}>{peso(employee+(employerShare??0))}</td></tr>)}
+          <tr className="border-t-2 border-gray-800 font-bold"><td className={td}>Total</td><td className={td}>{peso(data.statTotal)}</td><td className={td}>{peso(data.employer)}</td><td className={td}>{peso(data.statTotal+data.employer)}</td></tr></tbody></table></div></div>
 
-      {(data.hmo.employee>0||data.hmo.company>0||data.hmo.recorded)&&<div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">HMO premiums (Maxicare)</h3><p className="mb-2 mt-0.5 text-[11px] text-slate-500">{data.hmo.recorded?'Employee share deducted this cutoff and the company share the company pays.':'The company share was not recorded for this run; it was saved before company HMO costs were tracked.'}</p>
-        <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[13px]"><thead><tr className="border-b border-slate-200">{['Provider','Employee Share','Company Share','Total Premium'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
-          <tr className="border-t-2 border-slate-800 font-bold"><td className={td}>Maxicare</td><td className={td}>{peso(data.hmo.employee)}</td><td className={td}>{data.hmo.recorded?peso(data.hmo.company):'—'}</td><td className={td}>{data.hmo.recorded?peso(data.hmo.employee+data.hmo.company):'—'}</td></tr></tbody></table></div></div>}
+      {(data.hmo.employee>0||data.hmo.company>0||data.hmo.recorded)&&<div className="rounded-xl border border-gray-200 p-4"><h3 className="m-0 text-[14px] font-semibold">HMO premiums (Maxicare)</h3><p className="mb-2 mt-0.5 text-[11px] text-gray-500">{data.hmo.recorded?'Employee share deducted this cutoff and the company share the company pays.':'The company share was not recorded for this run; it was saved before company HMO costs were tracked.'}</p>
+        <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[13px]"><thead><tr className="border-b border-gray-200">{['Provider','Employee Share','Company Share','Total Premium'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
+          <tr className="border-t-2 border-gray-800 font-bold"><td className={td}>Maxicare</td><td className={td}>{peso(data.hmo.employee)}</td><td className={td}>{data.hmo.recorded?peso(data.hmo.company):'—'}</td><td className={td}>{data.hmo.recorded?peso(data.hmo.employee+data.hmo.company):'—'}</td></tr></tbody></table></div></div>}
 
-      <div className="rounded-xl border border-slate-200 p-4"><h3 className="m-0 text-[14px] font-semibold">By department</h3><p className="mb-2 mt-0.5 text-[11px] text-slate-500">For cost-center allocation.</p>
-        <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-[13px]"><thead><tr className="border-b border-slate-200">{['Department','Headcount','Gross','Deductions','Employer Contributions','Net Pay'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
-          {data.departments.map(d=><tr key={d.name} className="border-b border-slate-100"><td className={td}>{d.name}</td><td className={td}>{d.count}</td><td className={td}>{peso(d.gross)}</td><td className={td}>{peso(d.deductions)}</td><td className={td}>{peso(d.employer)}</td><td className={td}>{peso(d.net)}</td></tr>)}
-          <tr className="border-t-2 border-slate-800 font-bold"><td className={td}>Total</td><td className={td}>{rows.length}</td><td className={td}>{peso(data.gross)}</td><td className={td}>{peso(data.deductions)}</td><td className={td}>{peso(data.employer)}</td><td className={td}>{peso(data.net)}</td></tr></tbody></table></div></div>
+      <div className="rounded-xl border border-gray-200 p-4"><h3 className="m-0 text-[14px] font-semibold">By department</h3><p className="mb-2 mt-0.5 text-[11px] text-gray-500">For cost-center allocation.</p>
+        <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-[13px]"><thead><tr className="border-b border-gray-200">{['Department','Headcount','Gross','Deductions','Employer Contributions','Net Pay'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>
+          {data.departments.map(d=><tr key={d.name} className="border-b border-gray-100"><td className={td}>{d.name}</td><td className={td}>{d.count}</td><td className={td}>{peso(d.gross)}</td><td className={td}>{peso(d.deductions)}</td><td className={td}>{peso(d.employer)}</td><td className={td}>{peso(d.net)}</td></tr>)}
+          <tr className="border-t-2 border-gray-800 font-bold"><td className={td}>Total</td><td className={td}>{rows.length}</td><td className={td}>{peso(data.gross)}</td><td className={td}>{peso(data.deductions)}</td><td className={td}>{peso(data.employer)}</td><td className={td}>{peso(data.net)}</td></tr></tbody></table></div></div>
 
       <div className="grid gap-6 pt-6 sm:grid-cols-3">
-        {[['Prepared by',run.preparedBy||'Payroll Officer'],['Approved by',run.decidedBy||'Finance'],['Received by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[64px] flex-col justify-end border-t border-slate-700 pt-1.5 text-[12px] text-slate-500"><b className="text-slate-800">{label}</b><span>{name}</span><span className="mt-3">Date: ________________</span></div>)}
+        {[['Prepared by',run.preparedBy||'Payroll Officer'],['Approved by',run.decidedBy||'Finance'],['Received by','Finance Officer']].map(([label,name])=><div key={label} className="flex min-h-[64px] flex-col justify-end border-t border-gray-700 pt-1.5 text-[12px] text-gray-500"><b className="text-gray-800">{label}</b><span>{name}</span><span className="mt-3">Date: ________________</span></div>)}
       </div>
     </div>
     <button className={`${ghost} no-print mt-4`} onClick={()=>window.print()}>Print / Save as PDF</button>

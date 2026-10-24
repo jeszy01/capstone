@@ -19,7 +19,7 @@ const STATUS:Record<RangeStatus,[string,string]>={
  'Within band':['Within range','bg-emerald-50 text-emerald-700'],
  'Below band':['Below range','bg-amber-50 text-amber-700'],
  'Above band':['Above range','bg-blue-50 text-blue-700'],
- 'No grade':['No grade','bg-slate-100 text-slate-600'],
+ 'No grade':['No grade','bg-gray-100 text-gray-600'],
  'No salary':['No salary','bg-red-50 text-red-700'],
 };
 type View='grades'|'employees';
@@ -54,20 +54,20 @@ export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth
 
   {view==='grades'&&<div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]">
     <thead><tr className={theadClass}>{['Salary Grade',...steps.map(step=>`Step ${step}`),'Employees',''].map((head,i)=><th key={head||i} scope="col" className={`px-5 py-3 font-semibold ${head==='Salary Grade'?'':'text-right'}`}>{head}</th>)}</tr></thead>
-    <tbody>{grades.map(grade=><tr key={grade.code} className="border-b border-slate-100 last:border-0">
-     <td className="px-5 py-3"><div className="font-bold text-slate-900">{grade.code}</div>{grade.name&&<div className="mt-0.5 text-[12px] text-slate-500">{grade.name}</div>}<div className="mt-0.5 text-[12px] font-medium text-indigo-600">{peso(grade.steps[0])} – {peso(grade.steps[STEP_COUNT-1])}</div></td>
-     {grade.steps.map((value,i)=><td key={i} className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-semibold text-slate-900">{peso(value)}</td>)}
-     <td className="px-5 py-3 text-right tabular-nums text-slate-800">{headcount[grade.code]??0}</td>
+    <tbody>{grades.map(grade=><tr key={grade.code} className="border-b border-gray-100 last:border-0">
+     <td className="px-5 py-3"><div className="font-bold text-gray-900">{grade.code}</div>{grade.name&&<div className="mt-0.5 text-[12px] text-gray-500">{grade.name}</div>}<div className="mt-0.5 text-[12px] font-medium text-indigo-600">{peso(grade.steps[0])} – {peso(grade.steps[STEP_COUNT-1])}</div></td>
+     {grade.steps.map((value,i)=><td key={i} className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-semibold text-gray-900">{peso(value)}</td>)}
+     <td className="px-5 py-3 text-right tabular-nums text-gray-800">{headcount[grade.code]??0}</td>
      <td className="px-5 py-3 text-right">{canManage&&<button type="button" className={ghost} onClick={()=>setEditing(grade)}><Pencil size={14}/>Edit</button>}</td>
     </tr>)}</tbody>
    </table></div>}
 
   {view==='employees'&&<div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-[13px]">
     <thead><tr className={theadClass}>{['Employee','Grade & Step','Daily Rate','Status'].map(head=><th key={head} scope="col" className={`px-5 py-3 font-semibold ${head==='Daily Rate'?'text-right':''}`}>{head}</th>)}</tr></thead>
-    <tbody>{loading?<MessageRow colSpan={4}>Loading employees…</MessageRow>:!rows.length?<MessageRow colSpan={4}>No active employees yet.</MessageRow>:rows.map((row,index)=>{const[label,tone]=STATUS[row.status];return <tr key={row.employee.id} className="border-b border-slate-100 last:border-0">
-     <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={row.employee.name} index={index}/><div><div className="font-semibold text-slate-900">{row.employee.name}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.employee.position||'—'}</div></div></div></td>
-     <td className="px-5 py-3">{row.grade?<><div className="font-bold text-slate-900">{row.grade.code}</div><div className="mt-0.5 text-[12px] text-slate-500">{row.step?`Step ${row.step} of ${STEP_COUNT}`:'Below step 1'}</div></>:<span className="text-slate-500">—</span>}</td>
-     <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-slate-900">{row.dailyRate?peso(row.dailyRate):'—'}</td>
+    <tbody>{loading?<MessageRow colSpan={4}>Loading employees…</MessageRow>:!rows.length?<MessageRow colSpan={4}>No active employees yet.</MessageRow>:rows.map((row,index)=>{const[label,tone]=STATUS[row.status];return <tr key={row.employee.id} className="border-b border-gray-100 last:border-0">
+     <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={row.employee.name} index={index}/><div><div className="font-semibold text-gray-900">{row.employee.name}</div><div className="mt-0.5 text-[12px] text-gray-500">{row.employee.position||'—'}</div></div></div></td>
+     <td className="px-5 py-3">{row.grade?<><div className="font-bold text-gray-900">{row.grade.code}</div><div className="mt-0.5 text-[12px] text-gray-500">{row.step?`Step ${row.step} of ${STEP_COUNT}`:'Below step 1'}</div></>:<span className="text-gray-500">—</span>}</td>
+     <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-gray-900">{row.dailyRate?peso(row.dailyRate):'—'}</td>
      <td className="px-5 py-3"><span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold ${tone}`}><span className="h-1.5 w-1.5 rounded-full bg-current"/>{label}</span></td>
     </tr>})}</tbody>
    </table></div>}
