@@ -54,7 +54,7 @@ export function maskGovId(value:string|null|undefined){
  return digits.length>4?`•••• ${digits.slice(-4)}`:'••••';
 }
 
-// Appearance: the UI colour swaps the blue scale every page uses; the font size scales the whole interface.
+// Appearance: the UI colour swaps the blue, indigo and sky scales, the sidebar and the dark-theme tints; the font size scales the whole interface.
 export const UI_COLORS:Array<{id:UiColor;label:string;swatch:string}>=[
  {id:'blue',label:'Blue',swatch:'#2563eb'},{id:'green',label:'Green',swatch:'#059669'},{id:'purple',label:'Purple',swatch:'#7c3aed'},{id:'orange',label:'Orange',swatch:'#ea580c'},{id:'rose',label:'Rose',swatch:'#e11d48'},
 ];
