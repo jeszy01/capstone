@@ -16,6 +16,7 @@ import {LogsAudits} from './pages/Admin';
 import SettingsPrivacy from './pages/SettingsPrivacy';
 import PayrollSettings from './pages/PayrollSettings';
 import Notifications from './pages/Notifications';
+import Help from './pages/Help';
 import {canOpen} from './features/auth/permissions';
 /** Pages the signed-in role cannot open redirect to the Dashboard. */
 function RouteGuard(){return canOpen(useLocation().pathname)?<Outlet/>:<Navigate to="/dashboard" replace/>}
@@ -29,6 +30,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/dashboard" element={<Dashboard/>}/>
   <Route path="/settings-privacy" element={<SettingsPrivacy/>}/>
   <Route path="/notifications" element={<Notifications/>}/>
+  <Route path="/help" element={<Help/>}/>
   <Route path="/logs-audits" element={<LogsAudits/>}/>
   <Route path="/finance" element={<Finance/>}/>
   <Route path="/payroll-settings" element={<PayrollSettings/>}/>
