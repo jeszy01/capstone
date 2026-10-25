@@ -28,6 +28,8 @@ import { recordAudit } from "../audit/auditService";
 import { localToday } from "../../components/common/tableUi";
 import { can } from "../auth/permissions";
 import { StatusBadge } from "../../components/common/StatusBadge";
+import { loadHolidays } from "../settings/payrollSettings";
+import { MAXICARE_FOLLOW_UP_WORKING_DAYS, manilaToday, maxicareFollowUpDue, workingDaysBetween } from "../../../backend-render/hmoRules.js";
 import type {
   HmoDependent,
   HmoEnrollment,
@@ -722,6 +724,9 @@ function EnrollmentSection({
   onChanged: () => void;
 }) {
   const [selectedEnrollment, setSelectedEnrollment] = useState<HmoEnrollment | null>(null);
+  const [view, setView] = useState<"all" | "action">("all");
+  const actionCount = enrollments.filter((e) => needsAction(enrollmentDisplayStatus(e))).length;
+  const shown = view === "action" ? enrollments.filter((e) => needsAction(enrollmentDisplayStatus(e))) : enrollments;
   // Inactive or resigned employees whose coverage is still open: Maxicare keeps billing until HR terminates it.
   const leavers = enrollments.filter((e) => {
     const employee = employeeMap.get(e.employeeId);
@@ -734,7 +739,8 @@ function EnrollmentSection({
           {leavers.length === 1 ? "1 employee who is" : `${leavers.length} employees who are`} no longer active still {leavers.length === 1 ? "has" : "have"} open HMO coverage: {leavers.map((e) => employeeMap.get(e.employeeId)?.name).join(", ")}. Open each enrollment and terminate it so Maxicare coverage and billing stop.
         </p>
       )}
-      <Card className="mt-4 overflow-x-auto">
+      <div className="mt-4"><Segmented label="Enrollments shown" value={view} onChange={setView} options={[{ id: "all", label: `All (${enrollments.length})` }, { id: "action", label: `Needs action (${actionCount})` }]} /></div>
+      <Card className="mt-3 overflow-x-auto">
       <table className="w-full min-w-[1120px] text-left text-[13px]">
         <thead>
           <tr className="border-b border-gray-100 text-[11px] uppercase tracking-wide text-gray-500">
@@ -754,14 +760,14 @@ function EnrollmentSection({
           </tr>
         </thead>
         <tbody>
-          {enrollments.length === 0 ? (
+          {shown.length === 0 ? (
             <tr>
               <td colSpan={7}>
-                <Empty>No HMO enrollments yet.</Empty>
+                <Empty>{view === "action" ? "Nothing needs action: no request is overdue at Maxicare or not accepted." : "No HMO enrollments yet."}</Empty>
               </td>
             </tr>
           ) : (
-            enrollments.map((e) => {
+            shown.map((e) => {
               const employee = employeeMap.get(e.employeeId);
               const eligibilityDate = employee ? hmoEligibilityDate(employee.dateHired) : e.eligibilityDate;
               const eligibleForEffectiveDate = employee
@@ -822,14 +828,60 @@ function EnrollmentSection({
   );
 }
 
+// Maxicare is not connected to PBMS. HR sends each approved request to Maxicare and enters the answer Maxicare sends back
+// (the member ID, or the reason it was not accepted); PBMS shows who entered it and never a Maxicare decision of its own.
+type MaxicareRequest = Pick<HmoEnrollment, "approvalStatus" | "rejectionReason" | "maxicareReference" | "maxicareActivatedAt" | "maxicareSubmittedAt" | "maxicareAnsweredAt" | "maxicareAnsweredByName"> & { maxicareStatus?: HmoEnrollment["maxicareStatus"] };
+const holidayDates = () => loadHolidays().map((holiday) => holiday.date);
+const followUpDue = (request: MaxicareRequest) => maxicareFollowUpDue(request.maxicareStatus, request.maxicareSubmittedAt, manilaToday(), holidayDates());
+const waitingStatus = (request: MaxicareRequest) => (followUpDue(request) ? "Follow up with Maxicare" : "Waiting for Maxicare");
+/** Statuses HR has to act on: no answer from Maxicare in time, or not accepted by Maxicare. */
+const needsAction = (status: string) => status === "Follow up with Maxicare" || status === "Not accepted by Maxicare";
+const manilaDay = (iso?: string | null) => (iso ? formatHmoDate(manilaToday(new Date(iso))) : "—");
+
+/** Where a request stands with Maxicare, as entered by HR. */
+function MaxicareDetails({ request }: { request: MaxicareRequest }) {
+  const by = (verb: string, at?: string | null) => `${verb}${request.maxicareAnsweredByName ? ` by ${request.maxicareAnsweredByName}` : ""} on ${manilaDay(at)}`;
+  if (request.approvalStatus !== "Approved") return null;
+  if (request.maxicareStatus === "Pending") {
+    const due = followUpDue(request);
+    const waited = request.maxicareSubmittedAt ? workingDaysBetween(manilaToday(new Date(request.maxicareSubmittedAt)), manilaToday(), holidayDates()) : null;
+    return (
+      <div className={`rounded-xl border p-3 ${due ? "border-amber-200 bg-amber-50 text-amber-900" : "border-blue-100 bg-blue-50 text-blue-900"}`}>
+        <div className="text-[11px] font-semibold uppercase tracking-wide">{waitingStatus(request)}</div>
+        <div className="mt-1">
+          {request.maxicareSubmittedAt ? `Sent to Maxicare on ${manilaDay(request.maxicareSubmittedAt)}, ${waited === 1 ? "1 working day" : `${waited} working days`} ago.` : "Sent to Maxicare."}
+          {due ? ` No answer after ${MAXICARE_FOLLOW_UP_WORKING_DAYS} working days: contact Maxicare.` : ""}
+        </div>
+        <div className="mt-1 text-[12px]">When Maxicare answers, enter its member ID with Confirm Enrollment, or use Not Accepted by Maxicare.</div>
+      </div>
+    );
+  }
+  if (request.maxicareStatus === "Active")
+    return (
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div><div className="text-[11px] text-gray-500">Maxicare Member ID / Card No.</div><div className="font-medium">{request.maxicareReference ?? "—"}</div></div>
+        <div><div className="text-[11px] text-gray-500">Enrollment Confirmed</div><div className="font-medium">{by("Confirmed", request.maxicareAnsweredAt ?? request.maxicareActivatedAt)}</div></div>
+      </div>
+    );
+  if (request.maxicareStatus === "Rejected")
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">
+        <div className="text-[11px] font-semibold uppercase tracking-wide">Not accepted by Maxicare</div>
+        <div className="mt-1">{request.rejectionReason ?? "No reason entered."}</div>
+        <div className="mt-1 text-[12px]">{by("Entered", request.maxicareAnsweredAt)}. Correct the request with Maxicare, then mark it as sent again.</div>
+      </div>
+    );
+  return null;
+}
+
 function enrollmentDisplayStatus(enrollment: HmoEnrollment) {
   if (enrollment.status === "Terminated") return "Terminated";
   if (enrollment.status === "Expired") return "Expired";
   if (enrollment.status === "Rejected" || enrollment.approvalStatus === "Rejected") return "Rejected";
-  if (enrollment.status === "Active" && enrollment.maxicareStatus === "Active") return "Active";
-  if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
-  if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Rejected") return "Rejected by Maxicare";
-  if (enrollment.approvalStatus === "Approved") return "Ready for Submission";
+  if (enrollment.status === "Active" && enrollment.maxicareStatus === "Active") return "Enrolled";
+  if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Pending") return waitingStatus(enrollment);
+  if (enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Rejected") return "Not accepted by Maxicare";
+  if (enrollment.approvalStatus === "Approved") return "Ready to send to Maxicare";
   return "Pending Admin Approval";
 }
 
@@ -854,11 +906,11 @@ function EnrollmentViewModal({
       { key: "reject", label: "Reject", danger: true, permission: "hmo.approve" as const, needs: "reason" as const, run: (reason: string) => hmoService.rejectEnrollment(enrollment.id, reason), audit: `Rejected the HMO enrollment of ${name}.` },
     ] : []),
     ...(enrollment.approvalStatus === "Approved" && ["Not Submitted", "Rejected"].includes(enrollment.maxicareStatus) && ["Pending", "Submitted"].includes(enrollment.status) ? [
-      { key: "submit", label: enrollment.maxicareStatus === "Rejected" ? "Submit to Maxicare Again" : "Submit to Maxicare", run: () => hmoService.submitEnrollmentToMaxicare(enrollment.id), audit: `Submitted the HMO enrollment of ${name} to Maxicare.` },
+      { key: "submit", label: enrollment.maxicareStatus === "Rejected" ? "Mark as Sent Again" : "Mark as Sent to Maxicare", confirm: `Mark ${name}'s request as sent to Maxicare? Send it to Maxicare first (email or Maxicare portal); PBMS does not send it.`, run: () => hmoService.submitEnrollmentToMaxicare(enrollment.id), audit: `Marked the HMO enrollment of ${name} as sent to Maxicare.` },
     ] : []),
     ...(enrollment.approvalStatus === "Approved" && enrollment.maxicareStatus === "Pending" && ["Pending", "Submitted"].includes(enrollment.status) ? [
-      { key: "activate", label: "Record Maxicare Approval", needs: "reference" as const, run: (reference: string) => hmoService.activateEnrollment(enrollment.id, reference), audit: `Recorded Maxicare approval for ${name}.` },
-      { key: "maxicare-reject", label: "Record Maxicare Rejection", danger: true, needs: "reason" as const, run: (reason: string) => hmoService.recordEnrollmentMaxicareRejection(enrollment.id, reason), audit: `Recorded Maxicare rejection for ${name}.` },
+      { key: "activate", label: "Confirm Enrollment", needs: "reference" as const, field: "Maxicare member ID / card no.", placeholder: "From Maxicare's confirmation email or card", run: (reference: string) => hmoService.activateEnrollment(enrollment.id, reference), audit: `Confirmed the HMO enrollment of ${name} with the member ID from Maxicare's confirmation.` },
+      { key: "maxicare-reject", label: "Not Accepted by Maxicare", danger: true, needs: "reason" as const, field: "Reason given by Maxicare", run: (reason: string) => hmoService.recordEnrollmentMaxicareRejection(enrollment.id, reason), audit: `Entered that Maxicare did not accept the HMO enrollment of ${name}.` },
     ] : []),
     // A pending enrollment is rejected rather than terminated.
     ...(!pending && enrollment.approvalStatus === "Approved" && ["Pending", "Submitted", "Active"].includes(enrollment.status) ? [
@@ -878,8 +930,8 @@ function EnrollmentViewModal({
           <div><div className="text-[11px] text-gray-500">Eligibility Date</div><div className="font-medium">{formatHmoDate(enrollment.eligibilityDate)}</div></div>
           <div><div className="text-[11px] text-gray-500">Coverage Period</div><div className="font-medium">{formatHmoDate(enrollment.effectiveDate)} – {formatHmoDate(enrollment.expirationDate)}</div></div>
         </div>
-        {enrollment.maxicareReference && <div><div className="text-[11px] text-gray-500">Maxicare Reference</div><div className="font-medium">{enrollment.maxicareReference}</div></div>}
-        {enrollment.rejectionReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{enrollment.rejectionReason}</div></div>}
+        <MaxicareDetails request={enrollment} />
+        {enrollment.rejectionReason && enrollment.maxicareStatus !== "Rejected" && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{enrollment.rejectionReason}</div></div>}
       </div>
       <WorkflowActions steps={steps} onDone={onChanged} onClose={onClose} />
     </Modal>
@@ -897,6 +949,9 @@ function DependentSection({
   onChanged: () => void;
 }) {
   const [selectedDependent, setSelectedDependent] = useState<HmoDependent | null>(null);
+  const [view, setView] = useState<"all" | "action">("all");
+  const actionCount = dependents.filter((d) => needsAction(dependentDisplayStatus(d))).length;
+  const shown = view === "action" ? dependents.filter((d) => needsAction(dependentDisplayStatus(d))) : dependents;
   const hasActiveEnrollment = enrollments.some(
     (enrollment) =>
       enrollment.status === "Active" &&
@@ -907,10 +962,11 @@ function DependentSection({
     <>
     {!hasActiveEnrollment && (
       <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-[12px] text-amber-900">
-        Dependents can be added only after the employee enrollment is <b>Active</b> and has confirmed Maxicare approval. Open an employee enrollment and use <b>View</b> to approve or record Maxicare approval first.
+        Dependents can be added only after the employee is <b>Enrolled</b>, which HR confirms with the member ID from Maxicare's confirmation. Open the employee's enrollment and use <b>View</b> to approve or confirm it first.
       </div>
     )}
-    <Card className="mt-4 overflow-x-auto">
+    <div className="mt-4"><Segmented label="Dependents shown" value={view} onChange={setView} options={[{ id: "all", label: `All (${dependents.length})` }, { id: "action", label: `Needs action (${actionCount})` }]} /></div>
+    <Card className="mt-3 overflow-x-auto">
       <table className="w-full min-w-[1050px] text-left text-[13px]">
         <thead>
           <tr className="border-b border-gray-100 text-[11px] uppercase tracking-wide text-gray-500">
@@ -932,14 +988,14 @@ function DependentSection({
           </tr>
         </thead>
         <tbody>
-          {dependents.length === 0 ? (
+          {shown.length === 0 ? (
             <tr>
               <td colSpan={9}>
-                <Empty>No dependents enrolled.</Empty>
+                <Empty>{view === "action" ? "Nothing needs action: no request is overdue at Maxicare or not accepted." : "No dependents enrolled."}</Empty>
               </td>
             </tr>
           ) : (
-            dependents.map((d) => {
+            shown.map((d) => {
               const e = enrollments.find((x) => x.id === d.enrollmentId);
               return (
                 <tr key={d.id} className="border-b border-gray-100">
@@ -1000,10 +1056,10 @@ function dependentDisplayStatus(dependent: HmoDependent) {
   if (dependent.status === "Terminated") return "Terminated";
   if (dependent.status === "Expired") return "Expired";
   if (dependent.status === "Rejected" || dependent.approvalStatus === "Rejected") return "Rejected";
-  if (dependent.status === "Active" && dependent.maxicareStatus === "Active") return "Active";
-  if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Pending") return "Awaiting Maxicare Approval";
-  if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Rejected") return "Rejected by Maxicare";
-  if (dependent.approvalStatus === "Approved") return "Ready for Submission";
+  if (dependent.status === "Active" && dependent.maxicareStatus === "Active") return "Enrolled";
+  if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Pending") return waitingStatus(dependent);
+  if (dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Rejected") return "Not accepted by Maxicare";
+  if (dependent.approvalStatus === "Approved") return "Ready to send to Maxicare";
   return "Pending Admin Approval";
 }
 
@@ -1031,11 +1087,11 @@ function DependentViewModal({
       { key: "reject", label: "Reject", danger: true, permission: "hmo.approve" as const, needs: "reason" as const, run: (reason: string) => hmoService.rejectDependent(dependent.id, reason), audit: `Rejected HMO dependent ${name}.` },
     ] : []),
     ...(open && dependent.approvalStatus === "Approved" && ["Not Submitted", "Rejected"].includes(dependent.maxicareStatus ?? "Not Submitted") ? [
-      { key: "submit", label: dependent.maxicareStatus === "Rejected" ? "Submit to Maxicare Again" : "Submit to Maxicare", run: () => hmoService.submitDependentToMaxicare(dependent.id), audit: `Submitted HMO dependent ${name} to Maxicare.` },
+      { key: "submit", label: dependent.maxicareStatus === "Rejected" ? "Mark as Sent Again" : "Mark as Sent to Maxicare", confirm: `Mark ${name}'s request as sent to Maxicare? Send it to Maxicare first (email or Maxicare portal); PBMS does not send it.`, run: () => hmoService.submitDependentToMaxicare(dependent.id), audit: `Marked HMO dependent ${name} as sent to Maxicare.` },
     ] : []),
     ...(open && dependent.approvalStatus === "Approved" && dependent.maxicareStatus === "Pending" && dependent.status !== "Active" ? [
-      { key: "activate", label: "Record Maxicare Approval", needs: "reference" as const, run: (reference: string) => hmoService.activateDependent(dependent.id, reference), audit: `Recorded Maxicare approval for HMO dependent ${name}.` },
-      { key: "maxicare-reject", label: "Record Maxicare Rejection", danger: true, needs: "reason" as const, run: (reason: string) => hmoService.recordDependentMaxicareRejection(dependent.id, reason), audit: `Recorded Maxicare rejection for HMO dependent ${name}.` },
+      { key: "activate", label: "Confirm Enrollment", needs: "reference" as const, field: "Maxicare member ID / card no.", placeholder: "From Maxicare's confirmation email or card", run: (reference: string) => hmoService.activateDependent(dependent.id, reference), audit: `Confirmed HMO dependent ${name} with the member ID from Maxicare's confirmation.` },
+      { key: "maxicare-reject", label: "Not Accepted by Maxicare", danger: true, needs: "reason" as const, field: "Reason given by Maxicare", run: (reason: string) => hmoService.recordDependentMaxicareRejection(dependent.id, reason), audit: `Entered that Maxicare did not accept HMO dependent ${name}.` },
     ] : []),
     // A pending dependent is rejected rather than terminated.
     ...(!pending && dependent.approvalStatus === "Approved" && ["Active", "Submitted"].includes(dependent.status) ? [
@@ -1057,9 +1113,9 @@ function DependentViewModal({
           <div><div className="text-[11px] text-gray-500">Coverage Period</div><div className="font-medium">{formatHmoDate(dependent.effectiveDate)} – {formatHmoDate(dependent.expirationDate ?? enrollment?.expirationDate)}</div></div>
           <div><div className="text-[11px] text-gray-500">Sponsorship</div><div className="font-medium">{dependent.companySponsored ? "Company-sponsored" : "Employee-paid"}</div></div>
         </div>
-        {dependent.maxicareReference && <div><div className="text-[11px] text-gray-500">Maxicare Reference</div><div className="font-medium">{dependent.maxicareReference}</div></div>}
-        {dependent.rejectionReason && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{dependent.rejectionReason}</div></div>}
-        {!coverageActive && open && <p className="m-0 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">The employee's own HMO enrollment must be approved and active with Maxicare before this dependent can be reviewed.</p>}
+        <MaxicareDetails request={dependent} />
+        {dependent.rejectionReason && dependent.maxicareStatus !== "Rejected" && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700"><div className="text-[11px] font-semibold uppercase tracking-wide">Rejection Reason</div><div className="mt-1">{dependent.rejectionReason}</div></div>}
+        {!coverageActive && open && <p className="m-0 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">The employee must be Enrolled (approved and confirmed with Maxicare's member ID) before this dependent can be reviewed.</p>}
       </div>
       <WorkflowActions steps={steps} onDone={onChanged} onClose={onClose} />
     </Modal>
@@ -1067,8 +1123,8 @@ function DependentViewModal({
 }
 
 // Approve and Reject need hmo.approve (Admin); every other step needs hmo.manage (HR Staff).
-type WorkflowStep = { key: string; label: string; permission?: "hmo.approve" | "hmo.manage"; danger?: boolean; needs?: "reason" | "reference"; confirm?: string; audit: string; run: (value: string) => Promise<unknown> };
-/** Action buttons for an HMO record. Steps that need a reason, a Maxicare reference or a confirmation open an inline
+type WorkflowStep = { key: string; label: string; permission?: "hmo.approve" | "hmo.manage"; danger?: boolean; needs?: "reason" | "reference"; field?: string; placeholder?: string; confirm?: string; audit: string; run: (value: string) => Promise<unknown> };
+/** Action buttons for an HMO record. Steps that need a reason, a Maxicare member ID or a confirmation open an inline
  * form first; the others run on click. Errors from the server stay visible in the dialog. */
 function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; onDone: () => void; onClose: () => void }) {
   const [active, setActive] = useState<WorkflowStep | null>(null),
@@ -1096,8 +1152,8 @@ function WorkflowActions({ steps, onDone, onClose }: { steps: WorkflowStep[]; on
       {error && <p role="alert" className="mb-0 mt-4 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
       {active ? (
         <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50 p-4">
-          {active.needs === "reason" && <Field label="Reason for rejection"><textarea className={`${input} min-h-20`} maxLength={500} autoFocus value={value} onChange={(e) => setValue(e.target.value)} /></Field>}
-          {active.needs === "reference" && <Field label="Maxicare reference no."><TextInput autoFocus maxLength={100} value={value} onChange={(e) => setValue(e.target.value)} placeholder="Reference from the Maxicare approval" /></Field>}
+          {active.needs === "reason" && <Field label={active.field ?? "Reason for rejection"}><textarea className={`${input} min-h-20`} maxLength={500} autoFocus value={value} onChange={(e) => setValue(e.target.value)} /></Field>}
+          {active.needs === "reference" && <Field label={active.field ?? "Maxicare member ID / card no."}><TextInput autoFocus maxLength={100} value={value} onChange={(e) => setValue(e.target.value)} placeholder={active.placeholder} /></Field>}
           {active.confirm && <p className="m-0 text-[13px] text-gray-500">{active.confirm}</p>}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <button type="button" className={ghost} disabled={saving} onClick={() => setActive(null)}>Back</button>
@@ -1603,7 +1659,7 @@ function EnrollmentModal({
         </Field>
         {!validExpiration && <p role="alert" className="text-[12px] text-amber-800">Expiration must be on or after the effective date and within the plan coverage period.</p>}
         <p className="text-[12px] text-gray-500">
-          Enrollment is submitted for HR approval. Maxicare confirmation is required before it becomes Active.
+          The enrollment goes to an Admin for approval. HR then sends it to Maxicare, and it becomes Enrolled when HR enters the member ID from Maxicare's confirmation.
         </p>
         {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">{error}</div>}
       </div>

@@ -12,7 +12,7 @@ import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashb
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
-import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
+import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 import { lockedRuleChange } from './withholdingRuleLock.js';
 import { heldReply, transactions } from './transaction.js';
 
@@ -391,6 +391,14 @@ await pool.query(`
   create unique index if not exists uq_hmo_one_sponsored_dependent_per_employee on hmo_dependents((enrollment_id))
     where company_sponsored = true and status in ('Pending','Submitted','Active');
   alter table hmo_dependents add column if not exists terminated_at timestamptz;
+  alter table hmo_enrollments add column if not exists maxicare_submitted_at timestamptz;
+  alter table hmo_enrollments add column if not exists maxicare_answered_by uuid;
+  alter table hmo_enrollments add column if not exists maxicare_answered_at timestamptz;
+  alter table hmo_enrollments add column if not exists maxicare_follow_up_at timestamptz;
+  alter table hmo_dependents add column if not exists maxicare_submitted_at timestamptz;
+  alter table hmo_dependents add column if not exists maxicare_answered_by uuid;
+  alter table hmo_dependents add column if not exists maxicare_answered_at timestamptz;
+  alter table hmo_dependents add column if not exists maxicare_follow_up_at timestamptz;
 
   create table if not exists hmo_utilizations(
     id uuid primary key default gen_random_uuid(), enrollment_id uuid not null references hmo_enrollments(id),
@@ -405,6 +413,11 @@ await pool.query(`
     entity_id text not null, action text not null, actor_id uuid,
     previous_values jsonb not null default '{}'::jsonb, new_values jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now());
+  -- Requests already waiting for Maxicare get their sent date from history, or from their last update.
+  update hmo_enrollments e set maxicare_submitted_at = coalesce((select max(h.created_at) from hmo_history h where h.entity_type = 'enrollment' and h.entity_id = e.id::text and h.action = 'submitted_to_maxicare'), e.updated_at)
+    where e.maxicare_status = 'Pending' and e.maxicare_submitted_at is null;
+  update hmo_dependents d set maxicare_submitted_at = coalesce((select max(h.created_at) from hmo_history h where h.entity_type = 'dependent' and h.entity_id = d.id::text and h.action = 'submitted_to_maxicare'), d.updated_at)
+    where d.maxicare_status = 'Pending' and d.maxicare_submitted_at is null;
 
   create table if not exists hmo_payroll_deductions(
     id uuid primary key default gen_random_uuid(), employee_id uuid not null,
@@ -1610,6 +1623,18 @@ async function expireHmoRecords() {
     if (change.table === 'hmo_dependents') closedDependentsOf.add(String(change.previous.enrollment_id));
   }
   for (const enrollmentId of closedDependentsOf) await reassignSponsoredDependent(enrollmentId, null);
+  // Requests sent to Maxicare with no answer after MAXICARE_FOLLOW_UP_WORKING_DAYS working days: HR is reminded once.
+  const { rows: [stored] } = await run(`select value, deleted from app_data where key='payroll:holidays'`);
+  const holidayList = stored && !stored.deleted ? appValue(stored.value) : [];
+  const holidays = Array.isArray(holidayList) ? holidayList.map(h => String(h?.date ?? '')).filter(Boolean) : [];
+  const today = manilaToday(), now = new Date().toISOString();
+  const due = [...enrollments.map(r => ['hmo_enrollments', 'enrollment', r]), ...dependents.map(r => ['hmo_dependents', 'dependent', r])]
+    .filter(([, , r]) => !r.maxicare_follow_up_at && ['Pending', 'Submitted'].includes(String(r.status)) && maxicareFollowUpDue(r.maxicare_status, r.maxicare_submitted_at, today, holidays));
+  for (const [table, type, r] of due) {
+    await updateRows(table, { id: r.id }, { maxicare_follow_up_at: now });
+    await hmoHistory(type, r.id, 'maxicare_follow_up_due', null, r, { ...r, maxicare_follow_up_at: now });
+  }
+  if (due.length) await notifyRoles(['hr'], 'hmo', 'Follow up with Maxicare', `${due.length === 1 ? '1 HMO request has' : `${due.length} HMO requests have`} had no answer from Maxicare for ${MAXICARE_FOLLOW_UP_WORKING_DAYS} working days.`, '/hmo-benefits/hmo/employee-enrollment');
 }
 // When the company-sponsored dependent closes, the next open dependent of the same employee becomes sponsored.
 async function reassignSponsoredDependent(enrollmentId, actorId) {
@@ -1648,14 +1673,19 @@ async function hmoHandler(req, res) {
         order by h.created_at desc limit ${pageSize} offset ${(page - 1) * pageSize}`, values)).rows;
       return ok(res, { items: rows.map(r => ({ ...r, actor_name: r.actor_id ? r.actor_name ?? String(r.actor_id) : 'System' })), page, page_size: pageSize, total });
     }
+    const userNames = async () => new Map((await listRows('users')).map(u => [String(u.id), text(u.name) || u.email]));
+    if (resource === 'dependents') {
+      const [rows, names] = await Promise.all([listRows(table), userNames()]);
+      return ok(res, rows.map(r => ({ ...r, maxicare_answered_by_name: r.maxicare_answered_by ? names.get(String(r.maxicare_answered_by)) ?? null : null })));
+    }
     if (resource === 'enrollments') {
-      const [rows, employees] = await Promise.all([listRows(table), listRows('employees')]);
+      const [rows, employees, names] = await Promise.all([listRows(table), listRows('employees'), userNames()]);
       const employeeById = new Map(employees.map(e => [String(e.id), e]));
       return ok(res, rows.map(r => {
         const e = employeeById.get(String(r.employee_id));
         const eligibilityDate = e ? safeEligibilityDate(e) : null;
         const isEligible = Boolean(e && activeEmployee(e) && eligibilityDate && String(r.effective_date ?? '') >= eligibilityDate);
-        return { ...r, employee: e ? { id: e.id, employee_number: e.employee_number ?? null, name: employeeName(e), hire_date: e.hire_date ?? null, employment_status: e.employment_status ?? null, employment_type: e.employment_type ?? null, status: e.status ?? null } : null,
+        return { ...r, maxicare_answered_by_name: r.maxicare_answered_by ? names.get(String(r.maxicare_answered_by)) ?? null : null, employee: e ? { id: e.id, employee_number: e.employee_number ?? null, name: employeeName(e), hire_date: e.hire_date ?? null, employment_status: e.employment_status ?? null, employment_type: e.employment_type ?? null, status: e.status ?? null } : null,
           employee_eligibility_date: eligibilityDate, employee_eligible_for_effective_date: isEligible };
       }));
     }
@@ -1675,10 +1705,16 @@ async function hmoHandler(req, res) {
       await reassignSponsoredDependent(String(previous.enrollment_id), ctx.userId);
     return ok(res, updated);
   };
-  // Maxicare's answer to a submission: a rejection keeps the request open so HR can correct it and submit again.
-  const recordMaxicareRejection = (previous, targetId, b, now) => {
-    if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Only a request submitted to Maxicare can be marked as rejected by Maxicare.');
-    return saveTransition('maxicare_rejected', targetId, previous, { maxicare_status: 'Rejected', rejection_reason: required(b.rejection_reason, 'rejection_reason'), updated_at: now });
+  // Maxicare is not connected to PBMS: HR enters the answer Maxicare sent. Not accepted keeps the request open so HR can
+  // correct it and send it again; HR and Admin are notified.
+  const recordMaxicareRejection = async (previous, targetId, b, now) => {
+    if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Only a request sent to Maxicare can be marked as not accepted by Maxicare.');
+    const reason = required(b.rejection_reason, 'rejection_reason');
+    const result = await saveTransition('not_accepted_by_maxicare', targetId, previous, { maxicare_status: 'Rejected', rejection_reason: reason, maxicare_answered_by: ctx.userId ?? null, maxicare_answered_at: now, updated_at: now });
+    const employee = resource === 'enrollments' ? await first('employees', { id: previous.employee_id }) : null;
+    const who = resource === 'enrollments' ? (employee ? employeeName(employee) : 'An employee') : `Dependent ${previous.name}`;
+    await notifyRoles(['hr', 'admin'], 'hmo', 'HMO request not accepted by Maxicare', `${who}: ${reason}`, resource === 'enrollments' ? '/hmo-benefits/hmo/employee-enrollment' : '/hmo-benefits/hmo/dependents');
+    return result;
   };
 
   const handleAction = async (action, targetId, b) => {
@@ -1707,24 +1743,24 @@ async function hmoHandler(req, res) {
         return saveTransition('rejected', targetId, previous, { approval_status: 'Rejected', status: 'Rejected', rejection_reason: reason, updated_at: now });
       }
       if (action === 'submit_to_maxicare') {
-        if (approval !== 'Approved' || !['Pending', 'Submitted'].includes(status)) throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The enrollment must be approved before submission to Maxicare.');
-        if (!['Not Submitted', 'Rejected'].includes(String(previous.maxicare_status ?? 'Not Submitted'))) throw new HttpError(409, 'HMO_ALREADY_SUBMITTED', 'This enrollment has already been submitted to Maxicare.');
-        return saveTransition('submitted_to_maxicare', targetId, previous, { maxicare_status: 'Pending', updated_at: now });
+        if (approval !== 'Approved' || !['Pending', 'Submitted'].includes(status)) throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The enrollment must be approved before it is sent to Maxicare.');
+        if (!['Not Submitted', 'Rejected'].includes(String(previous.maxicare_status ?? 'Not Submitted'))) throw new HttpError(409, 'HMO_ALREADY_SUBMITTED', 'This enrollment is already marked as sent to Maxicare.');
+        return saveTransition('submitted_to_maxicare', targetId, previous, { maxicare_status: 'Pending', maxicare_submitted_at: now, maxicare_follow_up_at: null, maxicare_answered_by: null, maxicare_answered_at: null, rejection_reason: null, updated_at: now });
       }
       if (action === 'maxicare_reject') return recordMaxicareRejection(previous, targetId, b, now);
       if (action === 'activate') {
-        if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'Enrollment must be approved before Maxicare activation.');
+        if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The enrollment must be approved before it is confirmed.');
         if (status === 'Active' || previous.maxicare_status === 'Active') throw new HttpError(409, 'HMO_ENROLLMENT_ALREADY_ACTIVE', 'This enrollment is already active.');
-        if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Submit the approved enrollment to Maxicare before recording activation.');
+        if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Mark the approved enrollment as sent to Maxicare before confirming it.');
         const reference = text(b.maxicare_reference);
-        if (!reference) throw new HttpError(400, 'MAXICARE_REFERENCE_REQUIRED', 'maxicare_reference is required to confirm provider activation.');
+        if (!reference) throw new HttpError(400, 'MAXICARE_REFERENCE_REQUIRED', 'Enter the Maxicare member ID or card number from Maxicare\'s confirmation.');
         const effective = hmoDate(previous.effective_date, 'effective_date');
         const { employee, hireDate, eligibilityDate } = await ensureEmployeeEligibility(String(previous.employee_id), effective);
         ensureActivePlanCoverage(await ensurePlan(String(previous.plan_id)), effective, previous.expiration_date ? hmoDate(previous.expiration_date, 'expiration_date') : null);
-        const next = { status: 'Active', maxicare_status: 'Active', maxicare_reference: reference, maxicare_activated_at: now, activated_at: now, updated_at: now };
+        const next = { status: 'Active', maxicare_status: 'Active', maxicare_reference: reference, maxicare_activated_at: now, maxicare_answered_by: ctx.userId ?? null, maxicare_answered_at: now, activated_at: now, updated_at: now };
         await updateRows(table, { id: targetId }, next);
         const updated = await first(table, { id: targetId }) ?? { ...previous, ...next };
-        await hmoHistory('enrollment', targetId, 'maxicare_activated', ctx.userId, previous, { ...updated, employee_eligibility_snapshot: enrollmentSnapshot(employee, hireDate, eligibilityDate) });
+        await hmoHistory('enrollment', targetId, 'enrollment_confirmed', ctx.userId, previous, { ...updated, employee_eligibility_snapshot: enrollmentSnapshot(employee, hireDate, eligibilityDate) });
         return ok(res, updated);
       }
       if (!['Pending', 'Submitted', 'Active'].includes(status)) throw new HttpError(409, 'HMO_ENROLLMENT_ALREADY_CLOSED', 'Only an open enrollment can be terminated.');
@@ -1755,18 +1791,18 @@ async function hmoHandler(req, res) {
         return saveTransition('rejected', targetId, previous, { approval_status: 'Rejected', status: 'Rejected', eligibility_status: 'Not Eligible', rejection_reason: reason, updated_at: now });
       }
       if (action === 'submit_to_maxicare') {
-        if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The dependent must be approved before submission to Maxicare.');
-        if (previous.maxicare_status === 'Active') throw new HttpError(409, 'HMO_DEPENDENT_ALREADY_ACTIVE', 'This dependent is already active with Maxicare.');
-        return saveTransition('submitted_to_maxicare', targetId, previous, { maxicare_status: 'Pending', updated_at: now });
+        if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The dependent must be approved before it is sent to Maxicare.');
+        if (previous.maxicare_status === 'Active') throw new HttpError(409, 'HMO_DEPENDENT_ALREADY_ACTIVE', 'This dependent is already enrolled.');
+        return saveTransition('submitted_to_maxicare', targetId, previous, { maxicare_status: 'Pending', maxicare_submitted_at: now, maxicare_follow_up_at: null, maxicare_answered_by: null, maxicare_answered_at: null, rejection_reason: null, updated_at: now });
       }
       if (action === 'maxicare_reject') return recordMaxicareRejection(previous, targetId, b, now);
       if (action === 'activate') {
-        if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The dependent must be approved before Maxicare activation.');
-        if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Submit the approved dependent to Maxicare before recording activation.');
+        if (approval !== 'Approved') throw new HttpError(409, 'HMO_APPROVAL_REQUIRED', 'The dependent must be approved before it is confirmed.');
+        if (previous.maxicare_status !== 'Pending') throw new HttpError(409, 'MAXICARE_SUBMISSION_REQUIRED', 'Mark the approved dependent as sent to Maxicare before confirming it.');
         if (status === 'Active') throw new HttpError(409, 'HMO_DEPENDENT_ALREADY_ACTIVE', 'This dependent is already active.');
         const reference = text(b.maxicare_reference);
-        if (!reference) throw new HttpError(400, 'MAXICARE_REFERENCE_REQUIRED', 'maxicare_reference is required to confirm dependent activation.');
-        return saveTransition('maxicare_activated', targetId, previous, { status: 'Active', maxicare_status: 'Active', maxicare_reference: reference, maxicare_activated_at: now, updated_at: now });
+        if (!reference) throw new HttpError(400, 'MAXICARE_REFERENCE_REQUIRED', 'Enter the Maxicare member ID or card number from Maxicare\'s confirmation.');
+        return saveTransition('enrollment_confirmed', targetId, previous, { status: 'Active', maxicare_status: 'Active', maxicare_reference: reference, maxicare_activated_at: now, maxicare_answered_by: ctx.userId ?? null, maxicare_answered_at: now, updated_at: now });
       }
       if (status !== 'Active' && status !== 'Submitted') throw new HttpError(409, 'HMO_DEPENDENT_ALREADY_CLOSED', 'Only an open dependent enrollment can be terminated.');
       return saveTransition('terminated', targetId, previous, { status: 'Terminated', terminated_at: now, updated_at: now });

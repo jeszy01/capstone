@@ -22,7 +22,8 @@ describe('HMO history types',()=>{
    if(arg.startsWith('hmoHistoryType('))continue;
    const literal=arg.match(/^'([a-z_]+)'$/);
    if(literal)expect(HMO_HISTORY_TYPES).toContain(literal[1]);
-   else expect(arg).toMatch(/^(change\.entityType|hmoHistoryType\(resource\))$/);
+   // type: the Maxicare follow-up reminder, from a list of [table, 'enrollment' | 'dependent', row].
+   else expect(arg).toMatch(/^(change\.entityType|hmoHistoryType\(resource\)|type)$/);
   }
  });
 });

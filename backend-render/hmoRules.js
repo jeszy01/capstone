@@ -96,3 +96,20 @@ export function hmoHistoryType(resource) {
   if (!type) throw new Error(`No HMO history type for ${resource}`);
   return type;
 }
+
+// Maxicare is not connected to PBMS. HR sends each approved request to Maxicare and enters Maxicare's answer; a request
+// with no answer after this many working days (Monday to Friday, not holidays) is flagged for HR to follow up.
+export const MAXICARE_FOLLOW_UP_WORKING_DAYS = 3;
+/** Working days after the day from (YYYY-MM-DD) through to, skipping weekends and the given holiday dates. */
+export function workingDaysBetween(from, to, holidays = []) {
+  const skip = new Set(holidays);
+  let count = 0;
+  for (let day = addDays(from, 1); day <= to; day = addDays(day, 1)) {
+    const weekday = new Date(`${day}T00:00:00.000Z`).getUTCDay();
+    if (weekday !== 0 && weekday !== 6 && !skip.has(day)) count++;
+  }
+  return count;
+}
+/** Whether a request still waiting for Maxicare (sent at submittedAt) is due for HR to follow up on today. */
+export const maxicareFollowUpDue = (maxicareStatus, submittedAt, today, holidays = []) =>
+  maxicareStatus === 'Pending' && Boolean(submittedAt) && workingDaysBetween(manilaToday(new Date(submittedAt)), today, holidays) >= MAXICARE_FOLLOW_UP_WORKING_DAYS;
