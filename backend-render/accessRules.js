@@ -365,6 +365,8 @@ export async function appDataEvents(user, key, before, after, existed) {
   if (isSettingsKey(key)) return settingsEvents(user, key, before, after);
   if (key.startsWith('settings:')) return systemSettingsEvents(user, key, before, after);
   if (key === 'claims:records') return claimEvents(user, before, after);
+  // Reimbursement batches change only through their server actions (create, mark paid, cancel).
+  if (key === 'reimbursement:batches') { if (stable(before) === stable(after)) return []; throw forbid('Reimbursement batches change only with Create batch, Mark paid and Cancel.'); }
   if (key.startsWith('claims:') || key.startsWith('reimbursement:')) { need(user, 'claims.encode'); return []; }
   // HR2 attendance arrives only through POST /integrations/hr2/attendance; nobody changes it from a browser.
   if (key === 'attendance:hr2') throw forbid('HR2 attendance is received from HR2 only and cannot be changed here.');

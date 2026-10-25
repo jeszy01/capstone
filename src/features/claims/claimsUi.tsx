@@ -9,6 +9,7 @@ export {cell,flushCard,localToday,rowHeader,tableHead,formatDate as claimDate} f
 export function claimStatus(claim:ExpenseClaim){
  if(claim.paymentStatus==='Paid')return {label:'Reimbursed',className:statusClass('Paid')};
  if(claim.paymentStatus==='Included in Payroll')return {label:'Included in Payroll',className:statusClass('Included in Payroll')};
+ if(claim.approvalStatus==='Approved'&&claim.batchId)return {label:'In Payment Batch',className:'bg-blue-50 text-blue-700'};
  if(claim.approvalStatus==='Approved')return {label:'Ready for Reimbursement',className:'bg-amber-50 text-amber-700'};
  if(claim.approvalStatus==='Returned')return {label:'Returned',className:statusClass('Returned')};
  return {label:claim.approvalStatus,className:claim.approvalStatus==='Pending Approval'?'bg-blue-50 text-blue-700':statusClass(claim.approvalStatus)};

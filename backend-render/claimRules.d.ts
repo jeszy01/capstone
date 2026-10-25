@@ -17,3 +17,4 @@ export function keepServerClaimFields<T extends Claim>(before:T[]|null|undefined
 export function stampClaimDecisions<T extends Claim>(claims:T[],events:Array<[string,string,string,string]>,user:{id?:string;name?:string|null;email?:string|null},at:string):T[];
 export function claimPaymentError(args:{claim:Claim;payment:unknown;userId:string;own:boolean;today:string}):string;
 export function paidClaim(claim:Claim,payment:{method:string;reference:string;date:string;proof?:{name:string}|null},user:{id?:string;name?:string|null;email?:string|null},at:string):Claim;
+export function paymentProofError(proof:unknown):string;

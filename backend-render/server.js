@@ -10,11 +10,12 @@ import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
-import { claimPaymentError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
+import { claimPaymentError, paymentProofError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
 import { CORRECTION_STATUSES, correctionDecision, correctionFields, correctionView } from './correctionRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 import { lockedRuleChange } from './withholdingRuleLock.js';
+import { BATCHES_KEY, batchPaymentError, cancelBatch, createBatch, newBatchError, payBatch } from './reimbursementRules.js';
 import { heldReply, transactions } from './transaction.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -2590,6 +2591,68 @@ await pool.query(`
   create table if not exists claim_payment_proofs(
     claim_id text primary key, file_name text not null, mime_type text not null, data text not null,
     uploaded_by uuid, uploaded_at timestamptz not null default now());`);
+// The employee records with the signed-in user's email: nobody batches or pays their own claim.
+const ownEmployeeIds = async user => new Set((await pool.query(`select id from employees where $1 <> '' and lower(email) = lower($1)`, [String(user.email ?? '').trim()])).rows.map(r => String(r.id)));
+const readBatches = async client => { const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [BATCHES_KEY]); const v = row && !row.deleted ? appValue(row.value) : []; return Array.isArray(v) ? v : []; };
+const writeBatches = (client, batches) => client.query(`insert into app_data(key,value,deleted) values($1,$2,false) on conflict(key) do update set value=$2, deleted=false, updated_at=now()`, [BATCHES_KEY, JSON.stringify(batches)]);
+const notifyClaimEmployee = async (client, action, claim) => {
+  const notice = essClaimNotice(action, claim);
+  const { rows: [owner] } = await client.query('select employee_number from employees where id::text = $1', [String(claim?.employeeId)]);
+  if (owner && notice) await client.query('insert into ess_notifications(employee_no, title, message) values($1,$2,$3)', [owner.employee_number, notice.title, notice.message]);
+};
+const refused = (problem, code) => new HttpError(/your own claim|You approved/.test(problem) ? 403 : /not found/.test(problem) ? 404 : /already|not an approved/.test(problem) ? 409 : 400, code, problem);
+
+// ---- Reimbursement batches (see reimbursementRules.js) ----
+// Approved claims paid together by one bank transfer that PBMS does not send: create, download its bank file, mark paid.
+app.post('/claims/batches', auth, allow('claims.pay'), async (req, res) => {
+  const b = input(req), at = new Date().toISOString(), ownIds = await ownEmployeeIds(req.user);
+  const { claim: batch } = await withClaims(async (claims, client) => {
+    const batches = await readBatches(client);
+    const problem = newBatchError({ claims, claimIds: b.claim_ids, payDate: b.pay_date, userId: req.user.id, ownIds, batches, today: manilaDate() });
+    if (problem) throw refused(problem, 'BATCH_REFUSED');
+    const made = createBatch({ claims, claimIds: b.claim_ids.map(String), payDate: b.pay_date, batches, user: req.user, at });
+    await writeBatches(client, [made.batch, ...batches]);
+    return { claims: made.claims, claim: made.batch };
+  });
+  await audit('reimbursement.batch_created', req.user.id, 'Reimbursement', batch.id, { description: `Created reimbursement batch ${batch.number}: ${batch.claimIds.length} claim(s), ${pesoText(batch.total)}, to pay on ${batch.payDate}.` }, ipDevice(req));
+  res.status(201).json({ data: batch });
+});
+// Marks a batch paid once the bank transfer is done: claims the bank did not pay (failed_claim_ids) go back to the queue.
+app.post('/claims/batches/:id/payment', auth, allow('claims.pay'), async (req, res) => {
+  const payment = input(req), at = new Date().toISOString(), ownIds = await ownEmployeeIds(req.user);
+  const proofProblem = payment.proof ? paymentProofError(payment.proof) : '';
+  if (proofProblem) throw new HttpError(400, 'BATCH_PAYMENT_REFUSED', proofProblem);
+  const { claim: batch } = await withClaims(async (claims, client) => {
+    const batches = await readBatches(client), current = batches.find(item => String(item?.id) === String(req.params.id));
+    const problem = batchPaymentError({ batch: current, claims, payment: { ...payment, failedClaimIds: payment.failed_claim_ids }, userId: req.user.id, ownIds, today: manilaDate() });
+    if (problem) throw refused(problem, 'BATCH_PAYMENT_REFUSED');
+    const paid = payBatch({ batch: current, claims, payment: { ...payment, failedClaimIds: payment.failed_claim_ids ?? [] }, user: req.user, at, hasProof: Boolean(payment.proof) });
+    if (payment.proof) await client.query(
+      `insert into claim_payment_proofs(claim_id,file_name,mime_type,data,uploaded_by) values($1,$2,$3,$4,$5)
+       on conflict(claim_id) do update set file_name=$2, mime_type=$3, data=$4, uploaded_by=$5, uploaded_at=now()`,
+      [`batch:${current.id}`, String(payment.proof.name).trim().slice(0, 200), payment.proof.mime_type, `data:${payment.proof.mime_type};base64,${payment.proof.data}`, req.user.id]);
+    for (const claim of paid.claims.filter(item => item && paid.batch.paidClaimIds.includes(String(item.id)))) await notifyClaimEmployee(client, 'claim.paid', claim);
+    await writeBatches(client, batches.map(item => item === current ? paid.batch : item));
+    return { claims: paid.claims, claim: paid.batch };
+  });
+  await audit('reimbursement.batch_paid', req.user.id, 'Reimbursement', batch.id, { description: `Marked reimbursement batch ${batch.number} paid: ${batch.paidClaimIds.length} claim(s), ${pesoText(batch.paidTotal)}, bank reference ${batch.reference}${batch.failedClaimIds.length ? `; ${batch.failedClaimIds.length} not paid, back in the queue` : ''}.` }, ipDevice(req));
+  ok(res, batch);
+});
+app.post('/claims/batches/:id/cancel', auth, allow('claims.pay'), async (req, res) => {
+  const reason = text(input(req).reason), at = new Date().toISOString();
+  if (reason.length < 3) throw new HttpError(400, 'VALIDATION_ERROR', 'Give a reason for cancelling the batch.');
+  const { claim: batch } = await withClaims(async (claims, client) => {
+    const batches = await readBatches(client), current = batches.find(item => String(item?.id) === String(req.params.id));
+    if (!current) throw new HttpError(404, 'BATCH_NOT_FOUND', 'This batch was not found. Reload the page and try again.');
+    if (current.status !== 'Exported') throw new HttpError(409, 'BATCH_CLOSED', `Batch ${current.number} is already ${current.status.toLowerCase()}.`);
+    const cancelled = cancelBatch({ batch: current, claims, user: req.user, at, reason });
+    await writeBatches(client, batches.map(item => item === current ? cancelled.batch : item));
+    return { claims: cancelled.claims, claim: cancelled.batch };
+  });
+  await audit('reimbursement.batch_cancelled', req.user.id, 'Reimbursement', batch.id, { description: `Cancelled reimbursement batch ${batch.number}: ${reason}. Its claims are back in the queue.` }, ipDevice(req));
+  ok(res, batch);
+});
+
 // Records the reimbursement of an approved claim, paid outside PBMS: method, reference, date and an optional proof.
 // The claim, the proof and the employee's ESS notification are saved together; the payment is logged.
 app.post('/claims/:id/payment', auth, allow('claims.pay'), async (req, res) => {
@@ -2599,6 +2662,7 @@ app.post('/claims/:id/payment', auth, allow('claims.pay'), async (req, res) => {
   const { claim } = await withClaims(async (claims, client) => {
     const current = claims.find(item => item && String(item.id) === String(req.params.id));
     if (!current) throw new HttpError(404, 'CLAIM_NOT_FOUND', 'This claim was not found. Reload the page and try again.');
+    if (current.batchId && current.paymentStatus !== 'Paid') throw new HttpError(409, 'CLAIM_IN_BATCH', `${current.claimNumber} is in reimbursement batch ${current.batchNumber}. Mark the batch paid, or cancel it first.`);
     const problem = claimPaymentError({ claim: current, payment, userId: req.user.id, own: ownIds.has(String(current.employeeId)), today: manilaDate() });
     if (problem) throw new HttpError(problem.startsWith('This is your own') || problem.startsWith('You approved') ? 403 : problem.startsWith('Only an approved') ? 409 : 400, 'CLAIM_PAYMENT_REFUSED', problem);
     const claim = paidClaim(current, payment, req.user, at);
@@ -2615,7 +2679,9 @@ app.post('/claims/:id/payment', auth, allow('claims.pay'), async (req, res) => {
   ok(res, withoutReceipt(claim));
 });
 app.get('/claims/:id/payment-proof', auth, allow('claims.view'), async (req, res) => {
-  const { rows: [proof] } = await pool.query('select file_name, mime_type, data from claim_payment_proofs where claim_id=$1', [req.params.id]);
+  const { rows: [stored] } = await pool.query(`select value from app_data where key='claims:records' and not deleted`);
+  const claim = (stored && Array.isArray(appValue(stored.value)) ? appValue(stored.value) : []).find(item => String(item?.id) === String(req.params.id));
+  const { rows: [proof] } = await pool.query('select file_name, mime_type, data from claim_payment_proofs where claim_id = any($1) order by claim_id = $2 desc limit 1', [[String(req.params.id), `batch:${claim?.batchId ?? ''}`], String(req.params.id)]);
   if (!proof) return fail(res, 404, 'PROOF_NOT_FOUND', 'No proof of payment was attached to this claim.');
   ok(res, { name: proof.file_name, mime_type: proof.mime_type, data_url: proof.data });
 });

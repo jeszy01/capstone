@@ -7,7 +7,7 @@ const RECEIPT_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 // Fields the server keeps: the payment (recorded with POST /claims/:id/payment) and who decided the claim. A browser
 // save never changes them; the stored values are kept (keepServerClaimFields).
 export const CLAIM_SERVER_FIELDS = ['paymentStatus', 'paymentMethod', 'paymentDate', 'paymentReference', 'paidAt', 'paidBy', 'paidById',
-  'hasPaymentProof', 'paymentProofName', 'decidedAt', 'decidedBy', 'decidedById', 'hasReceipt'];
+  'hasPaymentProof', 'paymentProofName', 'decidedAt', 'decidedBy', 'decidedById', 'hasReceipt', 'batchId', 'batchNumber'];
 /** Claim fields that are not the employee's ESS submission: the review a PBMS user makes, and the server's fields. */
 export const CLAIM_WORKFLOW_FIELDS = ['approvalStatus', 'notes', 'updatedAt', ...CLAIM_SERVER_FIELDS];
 
@@ -128,12 +128,15 @@ export function claimPaymentError({ claim, payment, userId, own, today }) {
   if (reference.length < 3 || reference.length > 100) return 'Enter the reference: the bank or e-wallet transaction number, or the cash voucher number (3 to 100 characters).';
   if (!isDate(p.date) || p.date > today) return 'The payment date must be a valid date, not in the future.';
   if (claim.date && p.date < claim.date) return 'The payment date cannot be before the expense date.';
-  if (p.proof !== undefined && p.proof !== null) {
-    const proof = p.proof;
-    if (typeof proof?.name !== 'string' || !proof.name.trim() || !RECEIPT_TYPES.includes(proof.mime_type) || typeof proof.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(proof.data))
-      return `The proof must be a JPEG, PNG or PDF file.`;
-    if (Math.floor(proof.data.length * 3 / 4) > ESS_RECEIPT_MAX_BYTES) return 'The proof must be 3 MB or smaller.';
-  } else if (p.method === 'Cash') return 'Attach the signed cash voucher or acknowledgment for a cash payment.';
+  if (p.proof !== undefined && p.proof !== null) return paymentProofError(p.proof);
+  if (p.method === 'Cash') return 'Attach the signed cash voucher or acknowledgment for a cash payment.';
+  return '';
+}
+/** Why a proof of payment file is refused ({ name, mime_type, data } with base64 data), or ''. */
+export function paymentProofError(proof) {
+  if (typeof proof?.name !== 'string' || !proof.name.trim() || !RECEIPT_TYPES.includes(proof.mime_type) || typeof proof.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(proof.data))
+    return 'The proof must be a JPEG, PNG or PDF file.';
+  if (Math.floor(proof.data.length * 3 / 4) > ESS_RECEIPT_MAX_BYTES) return 'The proof must be 3 MB or smaller.';
   return '';
 }
 /** The claim once reimbursed, with how it was paid and who recorded it. */

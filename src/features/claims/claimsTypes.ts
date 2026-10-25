@@ -1,6 +1,8 @@
 import type {Employee} from '../../types/domain';
 import {read,write} from '../../utils/storage';
 import {apiClient} from '../../services/api/apiClient';
+import {BATCHES_KEY} from '../../../backend-render/reimbursementRules.js';
+import type {ReimbursementBatch} from '../../../backend-render/reimbursementRules.js';
 
 export type ClaimApprovalStatus='Pending Approval'|'Approved'|'Rejected'|'Returned';
 export type ClaimPaymentStatus='Unpaid'|'Included in Payroll'|'Paid';
@@ -10,12 +12,12 @@ export const PAYMENT_METHODS=['Bank Transfer','Cash','E-wallet'] as const;
 export type PaymentMethod=(typeof PAYMENT_METHODS)[number];
 export type ClaimType='Food'|'Transportation'|'Office Supplies';
 export const claimTypes:ClaimType[]=['Food','Transportation','Office Supplies'];
-export interface ExpenseClaim{id:string;claimNumber:string;claimType:ClaimType;employeeId:string;department:string;amount:number;date:string;businessPurpose:string;projectSite:string;receiptName:string;/** The receipt file is on the server (GET /claims/:id/receipt), not in the claims list. */hasReceipt:boolean;certified:boolean;approvalStatus:ClaimApprovalStatus;paymentStatus:ClaimPaymentStatus;paymentMethod:ClaimPaymentMethod;paymentDate:string;/** Set by the server when the payment is recorded. */paymentReference:string;paidBy:string;paidById:string;hasPaymentProof:boolean;paymentProofName:string;/** Who approved, returned or rejected the claim (set by the server). */decidedBy:string;decidedById:string;createdAt:string;updatedAt:string;notes:string;/** 'ESS' when the employee submitted it from ESS. */source?:'ESS'}
+export interface ExpenseClaim{id:string;claimNumber:string;claimType:ClaimType;employeeId:string;department:string;amount:number;date:string;businessPurpose:string;projectSite:string;receiptName:string;/** The receipt file is on the server (GET /claims/:id/receipt), not in the claims list. */hasReceipt:boolean;certified:boolean;approvalStatus:ClaimApprovalStatus;paymentStatus:ClaimPaymentStatus;paymentMethod:ClaimPaymentMethod;paymentDate:string;/** Set by the server when the payment is recorded. */paymentReference:string;paidBy:string;paidById:string;hasPaymentProof:boolean;paymentProofName:string;/** Who approved, returned or rejected the claim (set by the server). */decidedBy:string;decidedById:string;/** The reimbursement batch the claim is paid in, if any. */batchId:string;batchNumber:string;createdAt:string;updatedAt:string;notes:string;/** 'ESS' when the employee submitted it from ESS. */source?:'ESS'}
 export interface LegacyClaim{[key:string]:unknown}
 
 const approval=(value:unknown):ClaimApprovalStatus=>{if(value==='Submitted'||value==='Pending Approval'||value==='Pending Finance Approval')return 'Pending Approval';if(value==='Approved'||value==='Ready for Claim'||value==='Sent to Finance')return 'Approved';if(value==='Rejected'||value==='Returned')return value;return 'Pending Approval'};
 const payment=(value:unknown):ClaimPaymentStatus=>value==='Paid'?'Paid':value==='Included in Payroll'?'Included in Payroll':'Unpaid';
-function normalizeRow(row:LegacyClaim,index:number,employees:Employee[]):ExpenseClaim{const employee=employees.find(item=>item.id===String(row.employeeId??''));const rawType=String(row.claimType??row.category??'Office Supplies');const mappedType=rawType==='Meals'?'Food':rawType;const claimType=(claimTypes.includes(mappedType as ClaimType)?mappedType:'Office Supplies') as ClaimType;return{id:String(row.id??crypto.randomUUID()),claimNumber:String(row.claimNumber??`CLM-${String(index+1).padStart(4,'0')}`),claimType,employeeId:String(row.employeeId??''),department:String(row.department??employee?.department??''),amount:Number(row.amount??0),date:String(row.date??String(row.createdAt??'').slice(0,10)),businessPurpose:String(row.businessPurpose??''),projectSite:String(row.projectSite??''),receiptName:String(row.receiptName??''),hasReceipt:row.hasReceipt===true||Boolean(row.receiptData),certified:Boolean(row.certified),approvalStatus:approval(row.approvalStatus??row.status),paymentStatus:payment(row.paymentStatus),paymentMethod:(['Bank Transfer','Cash','E-wallet','Paid Separately','Include in Payroll'].includes(String(row.paymentMethod))?row.paymentMethod:'') as ClaimPaymentMethod,paymentDate:String(row.paymentDate??''),paymentReference:String(row.paymentReference??''),paidBy:String(row.paidBy??''),paidById:String(row.paidById??''),hasPaymentProof:row.hasPaymentProof===true,paymentProofName:String(row.paymentProofName??''),decidedBy:String(row.decidedBy??''),decidedById:String(row.decidedById??''),createdAt:String(row.createdAt??new Date().toISOString()),updatedAt:String(row.updatedAt??row.createdAt??new Date().toISOString()),notes:String(row.notes??''),...(row.source==='ESS'?{source:'ESS' as const}:{})}}
+function normalizeRow(row:LegacyClaim,index:number,employees:Employee[]):ExpenseClaim{const employee=employees.find(item=>item.id===String(row.employeeId??''));const rawType=String(row.claimType??row.category??'Office Supplies');const mappedType=rawType==='Meals'?'Food':rawType;const claimType=(claimTypes.includes(mappedType as ClaimType)?mappedType:'Office Supplies') as ClaimType;return{id:String(row.id??crypto.randomUUID()),claimNumber:String(row.claimNumber??`CLM-${String(index+1).padStart(4,'0')}`),claimType,employeeId:String(row.employeeId??''),department:String(row.department??employee?.department??''),amount:Number(row.amount??0),date:String(row.date??String(row.createdAt??'').slice(0,10)),businessPurpose:String(row.businessPurpose??''),projectSite:String(row.projectSite??''),receiptName:String(row.receiptName??''),hasReceipt:row.hasReceipt===true||Boolean(row.receiptData),certified:Boolean(row.certified),approvalStatus:approval(row.approvalStatus??row.status),paymentStatus:payment(row.paymentStatus),paymentMethod:(['Bank Transfer','Cash','E-wallet','Paid Separately','Include in Payroll'].includes(String(row.paymentMethod))?row.paymentMethod:'') as ClaimPaymentMethod,paymentDate:String(row.paymentDate??''),paymentReference:String(row.paymentReference??''),paidBy:String(row.paidBy??''),paidById:String(row.paidById??''),hasPaymentProof:row.hasPaymentProof===true,paymentProofName:String(row.paymentProofName??''),decidedBy:String(row.decidedBy??''),decidedById:String(row.decidedById??''),batchId:String(row.batchId??''),batchNumber:String(row.batchNumber??''),createdAt:String(row.createdAt??new Date().toISOString()),updatedAt:String(row.updatedAt??row.createdAt??new Date().toISOString()),notes:String(row.notes??''),...(row.source==='ESS'?{source:'ESS' as const}:{})}}
 export function normalizeClaims(employees:Employee[]):ExpenseClaim[]{const rows=read<LegacyClaim[]>('claims:records',[]);const existing=rows.map((row,index)=>normalizeRow(row,index,employees));return [...new Map(existing.map(item=>[item.claimNumber,item])).values()]}
 export function saveClaims(claims:ExpenseClaim[]){write('claims:records',claims)}
 /** What a PBMS user changes on a claim in a save: its review. Payments are recorded with payClaim. */
@@ -43,6 +45,27 @@ export type ClaimPayment={method:PaymentMethod;reference:string;date:string;proo
 export async function payClaim(id:string,payment:ClaimPayment){
  await apiClient.post<ClaimPayment,unknown>(`/claims/${encodeURIComponent(id)}/payment`,payment);
  await refreshClaims();
+}
+// ---- Reimbursement batches: approved claims paid by one bank transfer (see backend-render/reimbursementRules.js) ----
+export type {ReimbursementBatch};
+export const loadBatches=()=>read<ReimbursementBatch[]>(BATCHES_KEY,[]);
+// Reloads the claims and batches from the server without sending them back (loaded on use: it patches browser storage).
+const hydrateFromServer=async()=>(await import('../../services/sync/serverSync')).hydrateFromServer();
+/** Puts approved claims in a new batch to pay on payDate; returns the batch. */
+export async function createBatch(claimIds:string[],payDate:string){
+ const {data}=await apiClient.post<{claim_ids:string[];pay_date:string},{data:ReimbursementBatch}>('/claims/batches',{claim_ids:claimIds,pay_date:payDate});
+ await hydrateFromServer();
+ return data;
+}
+/** Marks a batch paid with the bank reference; failedClaimIds go back to the queue. */
+export async function markBatchPaid(id:string,payment:{reference:string;date:string;failedClaimIds:string[];proof?:ClaimPayment['proof']}){
+ await apiClient.post<unknown,unknown>(`/claims/batches/${encodeURIComponent(id)}/payment`,{reference:payment.reference,date:payment.date,failed_claim_ids:payment.failedClaimIds,...(payment.proof?{proof:payment.proof}:{})});
+ await hydrateFromServer();
+}
+/** Cancels a batch that is not paid yet; its claims go back to the queue. */
+export async function cancelBatch(id:string,reason:string){
+ await apiClient.post<{reason:string},unknown>(`/claims/batches/${encodeURIComponent(id)}/cancel`,{reason});
+ await hydrateFromServer();
 }
 /** The proof attached to a reimbursement, loaded when someone opens it. */
 export async function fetchPaymentProof(id:string){
