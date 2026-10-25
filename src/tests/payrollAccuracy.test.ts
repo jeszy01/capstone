@@ -87,3 +87,14 @@ describe('attendance rounding rule',()=>{
   expect(row('none')).toMatchObject({lateMin:10,undertimeMin:70,otHours:1.17});
  });
 });
+
+describe('HR2 leave',()=>{
+ it('is paid for a leave type and unpaid for leave without pay, the same in the timesheet and payroll',async()=>{
+  receiveHr2Attendance([hr2('2026-10-12',{status:'On Leave',time_in:null,time_out:null,leave_type:'Vacation Leave'}),hr2('2026-10-13',{status:'On Leave',time_in:null,time_out:null,leave_type:'Leave Without Pay'})]);
+  saveLeaves([]);
+  const records=await fetchAttendance({from:'2026-10-10',to:'2026-10-25'},[employee]);
+  expect(records.map(record=>[record.date,record.paidLeave])).toEqual([['2026-10-12',true],['2026-10-13',false]]);
+  const [row]=computeDeductions({employees:[employee],records,schedule:{start:'08:00',end:'17:00',otMin:0},assignments:[],grades:[],rates:DEFAULT_RATES,from:'2026-10-10',to:'2026-10-25'});
+  expect(row.absentDays).toBe(1);
+ });
+});

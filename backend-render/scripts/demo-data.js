@@ -6,7 +6,7 @@
 //   DEMO-002 lates (probationary)                            DEMO-008 cash advance and an SSS loan
 //   DEMO-003 undertime (contractual)                         DEMO-009 Pag-IBIG loan, approved bonus, lates and overtime
 //   DEMO-004 approved overtime (+ pending overtime, not paid) DEMO-010 high earner (withholding tax), allowances
-//   DEMO-005 absences                                        DEMO-011 On Leave the whole of October
+//   DEMO-005 absences                                        DEMO-011 leave without pay all October
 //   DEMO-006 vacation and sick leave                         DEMO-012 resigned October 9 (Inactive, not in payroll)
 //   node scripts/demo-data.js seed    adds (or resets) the demo employees and their records
 //   node scripts/demo-data.js clean   removes them (refused while a payroll run includes one)
@@ -72,7 +72,7 @@ function day(no, date) {
     case 'DEMO-006': return date === '2026-10-02' || date === '2026-10-12' ? { status: 'On Leave', leave: 'Vacation Leave' }
       : date === '2026-10-19' ? { status: 'On Leave', leave: 'Sick Leave' } : { status: 'Present' };
     case 'DEMO-009': return { status: 'Present', late: { '2026-10-06': 20, '2026-10-20': 15 }[date] ?? 0, ot: { '2026-10-08': 120, '2026-10-22': 60 }[date] ?? 0 };
-    case 'DEMO-011': return date >= '2026-10-01' ? { status: 'On Leave', leave: 'Vacation Leave' } : { status: 'Present' };
+    case 'DEMO-011': return date >= '2026-10-01' ? { status: 'On Leave', leave: 'Leave Without Pay' } : { status: 'Present' };
     default: return { status: 'Present' };
   }
 }

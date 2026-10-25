@@ -66,7 +66,10 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   const approvedBonuses=rewards.filter(entry=>isBonusReward(entry)&&entry.status==='Approved'&&employeeIds.includes(entry.employeeId)&&entry.cutoffEnd>=from&&entry.cutoffEnd<=to);
   const taxableBonus=approvedBonuses.filter(entry=>entry.taxable).reduce((total,entry)=>total+entry.amount,0);
   const nonTaxableBonus=approvedBonuses.filter(entry=>!entry.taxable).reduce((total,entry)=>total+entry.amount,0);
-  const allowance=allowancePay(activeAllowances(rewards,employeeIds,to),rates.payPeriodsPerMonth,to);
+  // Allowances are paid for a cutoff with at least one day worked or on paid leave; a cutoff entirely absent or on leave
+  // without pay earns none.
+  const paidDays=item.daysWorked+mine.filter(record=>record.status==='On Leave'&&record.paidLeave!==false).length;
+  const allowance=allowancePay(paidDays?activeAllowances(rewards,employeeIds,to):[],rates.payPeriodsPerMonth,to);
   // The same HMO cutoff deduction shown under Deductions → HMO.
   const hmo=hmoCutoffDeduction(hmoLines,employee.id),hmoCompany=hmoCompanyCutoffShare(hmoLines,employee.id);
   const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);

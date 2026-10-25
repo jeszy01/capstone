@@ -41,9 +41,13 @@ export const cutoffSynced=(cutoff:{from:string;to:string})=>{const through=hr2Sy
 /** When the latest HR2 records were received, or null if none have been. */
 export const lastHr2Sync=()=>loadStore().receivedAt;
 
+const UNPAID_LEAVE=/unpaid|without pay|lwop/i;
 const toAttendanceRecord=(record:Hr2AttendanceRecord,index:number):AttendanceRecord=>({
  id:index+1,empId:record.employee_no,name:'',date:record.date,status:record.status,timeIn:record.time_in??'',timeOut:record.time_out??'',
  ...(record.leave_type?{leaveType:record.leave_type}:{}),
+ // HR2 sends the leave type, not whether it is paid: leave without pay (Unpaid, Leave Without Pay, LWOP) is unpaid,
+ // every other leave type is paid. Timesheet, Deductions and payroll all read this flag.
+ ...(record.status==='On Leave'?{paidLeave:!UNPAID_LEAVE.test(record.leave_type??'')}:{}),
  workedHours:record.worked_hours,lateMin:Number(record.late_min)||0,undertimeMin:Number(record.undertime_min)||0,otMin:Number(record.ot_min)||0,
  ...(record.ot_status?{otStatus:record.ot_status}:{}),
 });
