@@ -6,7 +6,8 @@ import {formatDate} from '../../utils/date';
 import {can} from '../auth/permissions';
 import type {Employee} from '../../types/domain';
 import {cutoffNumberFor,loadRates} from '../settings/payrollSettings';
-import {APPROVED_STATUSES,RUNS_KEY,deleteRun,isThirteenthMonthRun,passkeyMessage,releaseToEss,runLabel,runStatus} from './payrollRuns';
+import {APPROVED_STATUSES,PROCESS_STAGES,RUNS_KEY,deleteRun,isThirteenthMonthRun,passkeyMessage,releaseToEss,runLabel,runStatus,stageIndex} from './payrollRuns';
+import {getCurrentUser} from '../auth/authService';
 import type {PayrollRun} from './payrollRuns';
 import {processRun} from './computeRun';
 import {StatusBadge} from '../../components/common/StatusBadge';
@@ -26,7 +27,7 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
  const statusFilter=(params.get('status')??'').split(',').map(item=>item.trim()).filter(Boolean);
  const clearFilter=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
  const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].filter(run=>!statusFilter.length||statusFilter.includes(runStatus(run))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
- const rates=loadRates(),canPrepare=can('payroll.generate'),canDelete=canPrepare,canRelease=can('payroll.release');
+ const rates=loadRates(),canPrepare=can('payroll.generate'),canDelete=canPrepare,canRelease=can('payroll.release'),canApprove=can('payroll.approve'),userId=getCurrentUser()?.id;
  // A run is processed once it has computed rows; until then Payslips and Total Net show "—".
  const processed=(run:PayrollRun)=>runStatus(run)!=='Draft'&&run.rows.length>0;
  const net=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,0);
@@ -45,12 +46,16 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
  };
  const actions=(run:PayrollRun)=>{
   const details=<Link className={ghost} to={`/payroll/review?run=${run.id}`}>Details</Link>;
-  if(APPROVED_STATUSES.includes(runStatus(run))){
-   const sent=essCount(run),total=run.rows.length;
+  const status=runStatus(run),open=`/payroll/review?run=${run.id}`;
+  if(APPROVED_STATUSES.includes(status)){
+   const sent=essCount(run),total=run.rows.length,failed=Object.values(run.payouts??{}).some(line=>line.status==='Failed');
+   // The current step's action: Export file, then Attach bank result (or fix failed payouts), then Release payslips.
    return <>
     <Link className={ghost} to={`/payroll?tab=payslip&run=${run.id}`}>Payslips</Link>
     {total>0&&sent===total?<StatusBadge status="Released"/>
-     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Available once every employee is Paid.'} onClick={()=>{setError('');setPasskey('');setReleasing(run)}}>Release payslips ({sent}/{total})</button>}
+     :canRelease&&(['Approved','Funded'].includes(status)?<Link className={button} to={open}>Export file</Link>
+      :status==='Exported'?<Link className={button} to={open}>{failed?'Fix failed payouts':'Attach bank result'}</Link>
+      :releaseOpen(run)&&<button type="button" className={button} disabled={Boolean(busy)} onClick={()=>{setError('');setPasskey('');setReleasing(run)}}>Release payslips ({sent}/{total})</button>)}
     {details}
     {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}
    </>;
@@ -60,6 +65,7 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
    {runStatus(run)==='Draft'&&canPrepare&&<button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act(`review-${run.id}`,async()=>{await processRun(run,employees);nav(`/payroll/review?run=${run.id}`)})}>{busy===`review-${run.id}`?'Reviewing…':'Review'}</button>}
    {runStatus(run)==='Returned'&&canPrepare&&<Link className={button} to={`/payroll/review?run=${run.id}`}>Review</Link>}
    {runStatus(run)==='Computed'&&canPrepare&&<Link className={button} to={`/payroll/review?run=${run.id}&submit=1`}>Submit to Finance</Link>}
+   {status==='Pending Approval'&&canApprove&&String(run.preparedById??'')!==String(userId??'')&&<Link className={button} to={open}>Approve</Link>}
    {details}
    {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}
   </>;
@@ -80,7 +86,7 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
       <div className="mt-0.5 text-[11px] font-normal text-gray-500">PR-{run.id.slice(0,8).toUpperCase()} · Prepared by {run.preparedBy||'HR'}</div>
      </th>
      <td className={`${cell} whitespace-nowrap`}><div>{schedule(run)}</div><div className="text-[11px] text-gray-500">Pay date {formatDate(run.payDate??run.to)}</div></td>
-     <td className={cell}><StatusBadge status={runStatus(run)}/></td>
+     <td className={cell}><StatusBadge status={runStatus(run)}/><div className="mt-1 whitespace-nowrap text-[11px] text-gray-500">Step {stageIndex(runStatus(run))+1} of {PROCESS_STAGES.length} · {PROCESS_STAGES[stageIndex(runStatus(run))]?.label}</div></td>
      <td className={cell}>{processed(run)?<><div className="tabular-nums">{run.rows.length}</div><div className="text-[11px] text-gray-500">{payslips(run)}</div></>:'—'}</td>
      <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{processed(run)?peso(net(run)):'—'}</td>
      <td className={`${cell} text-right`}><div className="flex justify-end gap-2 whitespace-nowrap">{actions(run)}</div></td>
