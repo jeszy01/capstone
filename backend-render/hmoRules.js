@@ -87,3 +87,12 @@ export function nextSponsoredDependent(dependents) {
   if (open.some(d => d.company_sponsored === true)) return null;
   return open.sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))[0] ?? null;
 }
+
+// The entity types hmo_history accepts (its entity_type check constraint), and the type for each HMO resource.
+export const HMO_HISTORY_TYPES = ['provider', 'plan', 'enrollment', 'dependent', 'utilization', 'contribution', 'payroll_deduction'];
+const HISTORY_TYPE_OF = { providers: 'provider', plans: 'plan', enrollments: 'enrollment', dependents: 'dependent' };
+export function hmoHistoryType(resource) {
+  const type = HISTORY_TYPE_OF[resource];
+  if (!type) throw new Error(`No HMO history type for ${resource}`);
+  return type;
+}

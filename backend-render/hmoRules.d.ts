@@ -8,3 +8,5 @@ export function hmoExpiryChanges(input:{plans:Row[];enrollments:Row[];dependents
 export function dependentShares(plan:Row,sponsored:boolean):{employee_share:number;company_share:number};
 export function validDependentSplit(company:number,member:number):boolean;
 export function nextSponsoredDependent<T extends Row>(dependents:T[]):T|null;
+export const HMO_HISTORY_TYPES:string[];
+export function hmoHistoryType(resource:string):'provider'|'plan'|'enrollment'|'dependent';

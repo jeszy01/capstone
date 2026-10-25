@@ -12,8 +12,9 @@ import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashb
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
-import { dependentShares, hmoExpiryChanges, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
+import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 import { lockedRuleChange } from './withholdingRuleLock.js';
+import { heldReply, transactions } from './transaction.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
 const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -509,7 +510,9 @@ const ident = name => {
   return `"${name}"`;
 };
 const sqlValue = v => v !== null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : v;
-const run = (text, values = []) => pool.query({ text, values: values.map(sqlValue), types: rowTypes });
+// Inside inTransaction every query runs on that transaction's connection; otherwise on the pool.
+const { db, inTransaction } = transactions(pool);
+const run = (text, values = []) => db().query({ text, values: values.map(sqlValue), types: rowTypes });
 const where = (filter, offset = 0) => {
   const keys = Object.keys(filter);
   return { sql: keys.length ? ' where ' + keys.map((k, i) => `${ident(k)}=$${i + 1 + offset}`).join(' and ') : '', values: keys.map(k => filter[k]) };
@@ -1529,7 +1532,6 @@ app.post('/compensation', auth, async (req, res) => {
 // deduction from enrollments (see src/features/hmo/hmoPayroll.ts) and Maxicare tracks benefit utilization.
 const HMO_RESOURCES = new Set(['providers', 'plans', 'enrollments', 'dependents', 'history']);
 const hmoTable = r => `hmo_${r}`;
-const hmoHistoryType = r => r === 'providers' ? 'provider' : r === 'plans' ? 'plan' : r;
 const text = v => typeof v === 'string' ? v.trim() : '';
 const hmoDate = (value, name) => {
   const day = text(value).slice(0, 10);
@@ -1907,8 +1909,14 @@ async function hmoHandler(req, res) {
   fail(res, 405, 'METHOD_NOT_ALLOWED', 'Method Not Allowed');
 }
 // Reads need hmo.view; the handler checks hmo.manage or hmo.approve for each change.
+// A change and its history entry are saved together: if any part fails, nothing is kept. The reply waits for the commit.
+async function hmoChange(req, res) {
+  const held = heldReply();
+  await inTransaction(() => hmoHandler(req, held.res));
+  res.status(held.reply.status).json(held.reply.body);
+}
 app.all(['/hmo/:resource', '/hmo/:resource/:id'], auth, (req, res, next) => req.method === 'GET' || can(req.user.role, 'hmo.manage') || can(req.user.role, 'hmo.approve')
-  ? allow('hmo.view')(req, res, next) : fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE), hmoHandler);
+  ? allow('hmo.view')(req, res, next) : fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE), (req, res) => req.method === 'GET' ? hmoHandler(req, res) : hmoChange(req, res));
 
 // ---- /loans (employee loans and cash advances) ----
 const loanMoney = (v, field) => { const n = Number(v); if (!Number.isFinite(n) || n <= 0) throw new HttpError(400, 'INVALID_LOAN_AMOUNT', `${field} must be greater than zero.`); return Math.round((n + Number.EPSILON) * 100) / 100; };
