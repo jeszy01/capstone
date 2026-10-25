@@ -2,7 +2,7 @@ import {useMemo,useState} from 'react';
 import {Pencil,Plus} from 'lucide-react';
 import {Button,Field,Modal,TextInput,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
-import {numberValue,peso} from '../../utils/storage';
+import {numberValue} from '../../utils/storage';
 import {can} from '../auth/permissions';
 import {recordAudit} from '../audit/auditService';
 import {STEP_COUNT,stepsBetween} from '../../../backend-render/gradeStructure.js';
@@ -23,6 +23,8 @@ const STATUS:Record<RangeStatus,[string,string]>={
  'No salary':['No salary','bg-red-50 text-red-700'],
 };
 type View='grades'|'employees';
+// Grade steps and daily rates are whole pesos.
+const wholePeso=(value:number)=>`₱${Math.round(value).toLocaleString('en-PH')}`;
 const VIEWS=[{id:'grades',label:'Pay Grades'},{id:'employees',label:'Employees'}] as const;
 const steps=Array.from({length:STEP_COUNT},(_,i)=>i+1);
 
@@ -42,7 +44,7 @@ export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth
  const save=(grade:SalaryGradeBand,isNew:boolean)=>{
   const next=isNew?[...grades,grade].sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true})):grades.map(item=>item.code===grade.code?grade:item);
   setGrades(next);saveGrades(next);
-  recordAudit({action:isNew?'Added salary grade':'Updated salary structure',module:'Compensation',description:`Grade ${grade.code}${grade.name?` (${grade.name})`:''} daily steps ${grade.steps.map(value=>peso(value)).join(', ')}.`});
+  recordAudit({action:isNew?'Added salary grade':'Updated salary structure',module:'Compensation',description:`Grade ${grade.code}${grade.name?` (${grade.name})`:''} daily steps ${grade.steps.map(wholePeso).join(', ')}.`});
   setEditing(null);
  };
 
@@ -55,8 +57,8 @@ export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth
   {view==='grades'&&<div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-[13px]">
     <thead><tr className={theadClass}>{['Salary Grade',...steps.map(step=>`Step ${step}`),'Employees',''].map((head,i)=><th key={head||i} scope="col" className={`px-5 py-3 font-semibold ${head==='Salary Grade'?'':'text-right'}`}>{head}</th>)}</tr></thead>
     <tbody>{grades.map(grade=><tr key={grade.code} className="border-b border-gray-100 last:border-0">
-     <td className="px-5 py-3"><div className="font-bold text-gray-900">{grade.code}</div>{grade.name&&<div className="mt-0.5 text-[12px] text-gray-500">{grade.name}</div>}<div className="mt-0.5 text-[12px] font-medium text-indigo-600">{peso(grade.steps[0])} – {peso(grade.steps[STEP_COUNT-1])}</div></td>
-     {grade.steps.map((value,i)=><td key={i} className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-semibold text-gray-900">{peso(value)}</td>)}
+     <td className="px-5 py-3"><div className="font-bold text-gray-900">{grade.code}</div>{grade.name&&<div className="mt-0.5 text-[12px] text-gray-500">{grade.name}</div>}<div className="mt-0.5 text-[12px] font-medium text-indigo-600">{wholePeso(grade.steps[0])} – {wholePeso(grade.steps[STEP_COUNT-1])}</div></td>
+     {grade.steps.map((value,i)=><td key={i} className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-semibold text-gray-900">{wholePeso(value)}</td>)}
      <td className="px-5 py-3 text-right tabular-nums text-gray-800">{headcount[grade.code]??0}</td>
      <td className="px-5 py-3 text-right">{canManage&&<button type="button" className={ghost} onClick={()=>setEditing(grade)}><Pencil size={14}/>Edit</button>}</td>
     </tr>)}</tbody>
@@ -67,7 +69,7 @@ export function SalaryStructurePanel({employees,assignments,loading,daysPerMonth
     <tbody>{loading?<MessageRow colSpan={4}>Loading employees…</MessageRow>:!rows.length?<MessageRow colSpan={4}>No active employees yet.</MessageRow>:rows.map((row,index)=>{const[label,tone]=STATUS[row.status];return <tr key={row.employee.id} className="border-b border-gray-100 last:border-0">
      <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={row.employee.name} index={index}/><div><div className="font-semibold text-gray-900">{row.employee.name}</div><div className="mt-0.5 text-[12px] text-gray-500">{row.employee.position||'—'}</div></div></div></td>
      <td className="px-5 py-3">{row.grade?<><div className="font-bold text-gray-900">{row.grade.code}</div><div className="mt-0.5 text-[12px] text-gray-500">{row.step?`Step ${row.step} of ${STEP_COUNT}`:'Below step 1'}</div></>:<span className="text-gray-500">—</span>}</td>
-     <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-gray-900">{row.dailyRate?peso(row.dailyRate):'—'}</td>
+     <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums font-bold text-gray-900">{row.dailyRate?wholePeso(row.dailyRate):'—'}</td>
      <td className="px-5 py-3"><span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold ${tone}`}><span className="h-1.5 w-1.5 rounded-full bg-current"/>{label}</span></td>
     </tr>})}</tbody>
    </table></div>}
@@ -80,7 +82,7 @@ function GradeModal({grade,taken,onClose,onSave}:{grade:SalaryGradeBand|null;tak
  const nextCode=`G${taken.reduce((max,code)=>Math.max(max,Number(code.replace(/\D/g,''))||0),0)+1}`;
  // A new grade starts from the NCR minimum wage (₱755 a day), 5% apart per step.
  const [form,setForm]=useState(()=>({code:grade?.code??nextCode,name:grade?.name??'',steps:(grade?.steps??stepsBetween(755,920)).map(String)}));
- const code=form.code.trim(),values=form.steps.map(numberValue);
+ const code=form.code.trim(),values=form.steps.map(value=>Math.round(numberValue(value)));
  const problem=!code?'Enter the grade code.':!grade&&taken.some(item=>item.toLowerCase()===code.toLowerCase())?'That grade already exists.':values.some(value=>!(value>0))?'Enter a daily rate above 0 for every step.':values.some((value,i)=>i>0&&value<values[i-1])?'Each step must be at least the step before it.':'';
  return <Modal title={grade?`Edit ${grade.code}`:'New Grade'} wide onClose={onClose}><div className="grid gap-4">
   <div className="grid gap-4 sm:grid-cols-2">
