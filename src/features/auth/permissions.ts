@@ -16,8 +16,8 @@ export function can(permission:Permission,role:User['role']|undefined=getCurrent
 const routePermissions:Array<[string,Permission]>=[
  ['/logs-audits','audit.view'],
  ['/privacy/users','users.manage'],
- ['/privacy/privacy','settings.edit'],
- ['/privacy/backup','settings.edit'],
+ ['/privacy/privacy','settings.view'],
+ ['/privacy/backup','settings.view'],
  ['/finance','payroll.fund'],
  ['/payroll-settings','settings.view'],
  ['/payroll','payroll.view'],

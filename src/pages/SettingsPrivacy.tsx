@@ -19,19 +19,19 @@ import type {Appearance,Branding,CompanyProfile,DateFormat,PrivacySettings,Regio
 import {formatWithSetting} from '../features/settings/systemSettings';
 
 type SectionId='profile'|'company'|'branding'|'regional'|'appearance'|'notifications'|'security'|'users'|'privacy'|'backup';
-// Each section has its own gradient badge; company-wide sections are for an Admin (settings.edit), Users & Roles needs users.manage.
+// Each section has its own gradient badge; company-wide sections show to Admin and HR Staff (settings.view) but only an Admin (settings.edit) changes them; Users & Roles needs users.manage.
 // Settings lists the general sections; the Privacy ones (security, users, privacy, backup) open from the sidebar's Privacy dropdown.
-const SECTIONS:Array<{id:SectionId;label:string;icon:LucideIcon;gradient:string;admin?:'settings.edit'|'users.manage';privacy?:true}>=[
+const SECTIONS:Array<{id:SectionId;label:string;icon:LucideIcon;gradient:string;admin?:'settings.view'|'users.manage';privacy?:true}>=[
  {id:'profile',label:'Profile',icon:UserRound,gradient:'from-sky-500 to-blue-600'},
- {id:'company',label:'Company Information',icon:Building2,gradient:'from-blue-600 to-indigo-600',admin:'settings.edit'},
- {id:'branding',label:'Document Branding',icon:FileImage,gradient:'from-violet-500 to-purple-600',admin:'settings.edit'},
- {id:'regional',label:'Regional',icon:Globe2,gradient:'from-teal-500 to-emerald-600',admin:'settings.edit'},
+ {id:'company',label:'Company Information',icon:Building2,gradient:'from-blue-600 to-indigo-600',admin:'settings.view'},
+ {id:'branding',label:'Document Branding',icon:FileImage,gradient:'from-violet-500 to-purple-600',admin:'settings.view'},
+ {id:'regional',label:'Regional',icon:Globe2,gradient:'from-teal-500 to-emerald-600',admin:'settings.view'},
  {id:'appearance',label:'Appearance',icon:Palette,gradient:'from-pink-500 to-rose-500'},
  {id:'notifications',label:'Notifications',icon:Bell,gradient:'from-orange-500 to-amber-500'},
  {id:'security',label:'Security',icon:ShieldCheck,gradient:'from-amber-500 to-orange-600',privacy:true},
  {id:'users',label:'Users & Roles',icon:Users,gradient:'from-cyan-500 to-sky-600',admin:'users.manage',privacy:true},
- {id:'privacy',label:'Privacy',icon:Lock,gradient:'from-indigo-500 to-violet-600',admin:'settings.edit',privacy:true},
- {id:'backup',label:'Data & Backup',icon:Database,gradient:'from-emerald-500 to-teal-600',admin:'settings.edit',privacy:true},
+ {id:'privacy',label:'Privacy',icon:Lock,gradient:'from-indigo-500 to-violet-600',admin:'settings.view',privacy:true},
+ {id:'backup',label:'Data & Backup',icon:Database,gradient:'from-emerald-500 to-teal-600',admin:'settings.view',privacy:true},
 ];
 const MODULE='Settings';
 const errorText=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
@@ -41,10 +41,11 @@ const sectionOf=(id:SectionId)=>SECTIONS.find(item=>item.id===id)!;
 
 function Section({id,actions,footer,children}:{id:SectionId;actions?:ReactNode;footer?:ReactNode;children:ReactNode}){
  const meta=sectionOf(id),Icon=meta.icon;
+ const readOnly=meta.admin==='settings.view'&&!can('settings.edit');
  return <Card className="min-w-0">
   <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><h2 className="m-0 flex items-center gap-3 text-[17px] font-bold text-gray-900"><span aria-hidden="true" className={`grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br text-white shadow-sm ${meta.gradient}`}><Icon size={18}/></span>{meta.label}</h2>{actions}</div>
-  {children}
-  {footer&&<div className="mt-6 flex flex-wrap items-center justify-end gap-3">{footer}</div>}
+  <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">{children}</fieldset>
+  {footer&&!readOnly&&<div className="mt-6 flex flex-wrap items-center justify-end gap-3">{footer}</div>}
  </Card>;
 }
 function Toggle({label,checked,onChange,disabled=false}:{label:string;checked:boolean;onChange:(value:boolean)=>void;disabled?:boolean}){

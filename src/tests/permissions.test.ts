@@ -25,6 +25,11 @@ describe('role permissions',()=>{
   expect(can('settings.edit','HR Staff')).toBe(false);
   expect(can('payroll.view','HR Staff')).toBe(true);
  });
+ it('lets HR Staff see every Settings and Privacy section except Users & Roles',()=>{
+  expect(can('settings.view','HR Staff')).toBe(true);
+  expect(can('users.manage','HR Staff')).toBe(false);
+  expect(can('settings.view','Finance')).toBe(false);
+ });
  it('denies everything without a signed-in user',()=>{
   expect(can('payroll.view',undefined)).toBe(false);
  });
