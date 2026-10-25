@@ -17,7 +17,7 @@ const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.mes
 
 /**
  * Payroll Runs: every run with its period, schedule and approval status. Review computes a Draft and opens it; a run not yet
- * approved can be deleted; an approved run opens its payslips and releases them to ESS. Details opens the run.
+ * approved can be deleted (for now, any run can be deleted); an approved run opens its payslips and releases them to ESS. Details opens the run.
  */
 export function PayrollRuns({employees}:{employees:Employee[]}){
  // ?status=Pending Approval (or a comma list) shows only runs in those statuses, as the Dashboard links do.
@@ -52,6 +52,7 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
     {total>0&&sent===total?<StatusBadge status="Released"/>
      :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Available once every employee is Paid.'} onClick={()=>{setError('');setReleasing(run)}}>Release payslips ({sent}/{total})</button>}
     {details}
+    {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}
    </>;
   }
   return <>

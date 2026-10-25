@@ -957,7 +957,6 @@ await pool.query(`
     id uuid primary key default gen_random_uuid(), employee_no text not null, title text not null, message text not null,
     run_id text, created_at timestamptz not null default now(), read_at timestamptz);
   create index if not exists idx_ess_notifications_employee on ess_notifications(lower(employee_no));`);
-const APPROVED_RUN_STATUSES = ['Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
 const payrollRows = payrollRun => (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).filter(r => r?.input?.empId);
 // Each employee's department, as the Payslips page groups them (employee number -> department, or Unassigned).
 async function runDepartments(client, payrollRun) {
@@ -2355,7 +2354,7 @@ app.patch('/government-loans/:id', auth, allow('hmo.manage'), async (req, res) =
   ok(res, await govLoanWithEmployee(await first('government_loans', { id }) ?? { ...previous, id }));
 });
 
-// Deletes a payroll run that is not yet approved (HR Staff or Admin); an approved run (Approved to Closed) is kept, 409.
+// Deletes a payroll run in any status, approved ones included for now (HR Staff, Admin or Finance).
 // Any funding receipt or ESS payslips of the run go with it. The audit entry keeps the run's status and net pay.
 app.delete('/payroll/runs/:id', auth, async (req, res) => {
   if (!can(req.user.role, 'payroll.generate') && !can(req.user.role, 'payroll.approve')) throw new AccessError();
@@ -2368,7 +2367,6 @@ app.delete('/payroll/runs/:id', auth, async (req, res) => {
     const runs = data && !data.deleted && Array.isArray(appValue(data.value)) ? appValue(data.value) : [];
     removed = runs.find(r => r && String(r.id) === req.params.id);
     if (!removed) throw new HttpError(404, 'PAYROLL_RUN_NOT_FOUND', 'The payroll run was not found.');
-    if (APPROVED_RUN_STATUSES.includes(runStatus(removed))) throw new HttpError(409, 'PAYROLL_APPROVED', `An approved payroll run cannot be deleted. This run is ${runStatus(removed)}.`);
     next = runs.filter(r => r !== removed);
     await client.query(`update app_data set value=$1, updated_at=now(), updated_by=$2 where key='payroll:runs'`, [JSON.stringify(next), req.user.id]);
     await client.query('delete from payroll_funding_receipts where run_id=$1', [String(removed.id)]);
