@@ -89,7 +89,7 @@ function tables(section:SectionId):Table[]{
  const excluded=[rules.excludeOvertime&&'overtime',(rules.excludeHolidayPay||rules.excludeNightDifferential)&&'premiums',rules.excludeAllowances&&'allowances'].filter(Boolean).join(', ');
  const[month,day]=rules.releaseDeadline.split('-').map(Number);
  return [
-  {title:'Benefits',columns:['Benefit','Formula','Who gets it','Basis'],rows:[
+  {title:'Benefits',columns:['Benefit','Formula','Eligible','Basis'],rows:[
    ['13th month pay','Basic salary earned in the year ÷ 12',who,'PD 851'],
    ['Service incentive leave','5 paid days a year, unused days paid as daily rate × unused days','1+ year of service','Art. 95'],
    ['Maternity leave','105 days, SSS benefit plus employer salary differential','Female employees','RA 11210'],
@@ -100,7 +100,7 @@ function tables(section:SectionId):Table[]{
   {title:'13th month pay',columns:SETTING,rows:[
    ['Formula','Basic salary earned in the year ÷ 12','PD 851'],
    ['Not included',excluded?excluded[0].toUpperCase()+excluded.slice(1):'None','PD 851 IRR'],
-   ['Who gets it',who,'PD 851'],
+   ['Eligible',who,'PD 851'],
    ['Pay by',`${MONTHS[month-1]??''} ${day||''}${rules.allowInstallments?` (${rules.installments} installments)`:''}`.trim(),'PD 851'],
   ]},
   {title:'Bonuses and incentives',columns:SETTING,rows:[
