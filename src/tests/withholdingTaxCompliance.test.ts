@@ -140,7 +140,7 @@ describe('5. Minimum wage earners',()=>{
   expect(c.tax).toBeGreaterThan(0);
  });
  it('applies no exemption while the minimum wage is not set',()=>{
-  expect(cutoff({dailyRate:695,daysWorked:11,otHours:20,holidayPay:1390}).taxBreakdown!.minimumWageEarner).toBeUndefined();
+  expect(cutoff({dailyRate:695,daysWorked:11,otHours:20,holidayPay:1390},{},{...DEFAULT_RATES,statutoryMinimumWage:0}).taxBreakdown!.minimumWageEarner).toBeUndefined();
  });
 });
 

@@ -19,6 +19,8 @@ export const loadRates=():PayrollRates=>{
  const saved=read<Partial<PayrollRates>>(RATES_KEY,{});
  // Settings saved before the 26 - 9 / 10 - 25 cutoffs: their 1st cutoff end day belonged to calendar-month cutoffs.
  if(saved.secondCutoffEndDay===undefined)delete saved.firstCutoffEndDay;
+ // The minimum wage earner exemption always applies; a minimum wage saved as 0 ("not used") takes the NCR rate.
+ if(!(Number(saved.statutoryMinimumWage)>0))delete saved.statutoryMinimumWage;
  const rates={...DEFAULT_RATES,...saved};
  // Settings saved before the PhilHealth total rate existed: the total is the sum of the saved shares.
  return saved.philTotalRate===undefined?{...rates,philTotalRate:rates.philRate+rates.philEmployerRate}:rates;
@@ -58,7 +60,7 @@ export const RATE_FIELDS:Record<'time'|'schedule'|'holiday'|'sss'|'philhealth'|'
   {key:'otRestMultiplier',label:'Rest day overtime multiplier',unit:'x'},
   {key:'ndRate',label:'Night differential',unit:'%',percent:true},
   {key:'otMinMinutes',label:'Overtime minimum threshold',unit:'min',integer:true},
-  {key:'statutoryMinimumWage',label:'Statutory minimum wage per day (minimum wage earner tax exemption; 0 = not used)',unit:'₱'},
+  {key:'statutoryMinimumWage',label:'Statutory minimum wage per day (minimum wage earner tax exemption)',unit:'₱'},
  ],
  schedule:[
   {key:'payPeriodsPerMonth',label:'Pay periods per month',unit:'periods',integer:true},
@@ -116,6 +118,7 @@ export function validateRates(v:PayrollRates):string[]{
  }
  if(v.hoursPerDay<1||v.hoursPerDay>24)errors.push('Paid hours per day must be between 1 and 24.');
  if(v.daysPerMonth<1||v.daysPerMonth>31)errors.push('Working days per month must be between 1 and 31.');
+ if(!(v.statutoryMinimumWage>0))errors.push('Enter the statutory minimum wage per day.');
  if(v.payPeriodsPerMonth!==1&&v.payPeriodsPerMonth!==2)errors.push('Pay periods per month must be 1 or 2.');
  if(v.firstCutoffEndDay<1||v.firstCutoffEndDay>27)errors.push('1st cutoff end day must be from 1 to 27.');
  if(v.secondCutoffEndDay<=v.firstCutoffEndDay||v.secondCutoffEndDay>31)errors.push('2nd cutoff end day must be after the 1st cutoff end day and no later than 31 (31 = end of month).');
