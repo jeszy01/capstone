@@ -7,7 +7,7 @@ const RECEIPT_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 // Fields the server keeps: the payment (recorded with POST /claims/:id/payment) and who decided the claim. A browser
 // save never changes them; the stored values are kept (keepServerClaimFields).
 export const CLAIM_SERVER_FIELDS = ['paymentStatus', 'paymentMethod', 'paymentDate', 'paymentReference', 'paidAt', 'paidBy', 'paidById',
-  'hasPaymentProof', 'paymentProofName', 'decidedAt', 'decidedBy', 'decidedById', 'hasReceipt', 'batchId', 'batchNumber'];
+  'hasPaymentProof', 'paymentProofName', 'decidedAt', 'decidedBy', 'decidedById', 'hasReceipt', 'batchId', 'batchNumber', 'receiptHash'];
 /** Claim fields that are not the employee's ESS submission: the review a PBMS user makes, and the server's fields. */
 export const CLAIM_WORKFLOW_FIELDS = ['approvalStatus', 'notes', 'updatedAt', ...CLAIM_SERVER_FIELDS];
 
@@ -145,4 +145,49 @@ export function paidClaim(claim, payment, user, at) {
   return { ...claim, paymentStatus: 'Paid', paymentMethod: payment.method, paymentReference: payment.reference.trim(), paymentDate: payment.date,
     paidAt: at, paidBy: String(user?.name || user?.email || 'PBMS user'), paidById: String(user?.id ?? ''),
     hasPaymentProof: Boolean(proofName), paymentProofName: proofName, updatedAt: at };
+}
+
+// ---- Policy checks ----
+/** An expense submitted more than this many days after it was made is flagged for HR. */
+export const CLAIM_MAX_AGE_DAYS = 30;
+/** An employee who has left may still submit claims for this many days after leaving. */
+export const LEAVER_CLAIM_DAYS = 30;
+const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+const manilaDay = iso => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(iso));
+/**
+ * Warnings for HR on a claim: a possible duplicate (same employee, date, type and amount, or the same receipt file) and
+ * an expense submitted more than CLAIM_MAX_AGE_DAYS after it was made. Warnings do not block approval.
+ */
+export function claimWarnings(claim, claims) {
+  const warnings = [], others = listOf(claims).filter(item => item && item.id !== claim.id && item.approvalStatus !== 'Rejected');
+  const same = others.filter(item => String(item.employeeId) === String(claim.employeeId) && item.claimType === claim.claimType && item.date === claim.date && Number(item.amount) === Number(claim.amount));
+  if (same.length) warnings.push(`Possible duplicate of ${same.map(item => item.claimNumber).join(', ')}: same employee, date, type and amount.`);
+  const receipt = claim.receiptHash ? others.filter(item => item.receiptHash === claim.receiptHash) : [];
+  if (receipt.length) warnings.push(`Same receipt file as ${receipt.map(item => item.claimNumber).join(', ')}.`);
+  if (isDate(claim.date) && claim.createdAt) {
+    const age = daysBetween(claim.date, manilaDay(claim.createdAt));
+    if (age > CLAIM_MAX_AGE_DAYS) warnings.push(`Submitted ${age} days after the expense (more than ${CLAIM_MAX_AGE_DAYS}).`);
+  }
+  return warnings;
+}
+/** Why this employee cannot submit a claim from ESS today, or ''. separated_on: the day they became inactive or resigned. */
+export function claimantError(employee, today) {
+  const active = String(employee?.status ?? '').trim().toLowerCase() === 'active' && String(employee?.employment_status ?? '').trim().toLowerCase() !== 'resigned';
+  if (active) return '';
+  const left = typeof employee?.separated_on === 'string' ? employee.separated_on.slice(0, 10) : '';
+  if (isDate(left) && daysBetween(left, today) <= LEAVER_CLAIM_DAYS) return '';
+  return `This employee is no longer active${left ? ` (since ${left})` : ''}. Claims can be submitted up to ${LEAVER_CLAIM_DAYS} days after leaving.`;
+}
+/** Claim totals without any employee or receipt detail: count and amount by month, claim type and status. */
+export function claimTotals(claims) {
+  const totals = new Map();
+  for (const claim of listOf(claims)) {
+    if (!claim || !isDate(claim.date)) continue;
+    const status = claim.paymentStatus === 'Paid' ? 'Paid' : approved(claim) ? 'Approved' : ['Rejected', 'Returned'].includes(claim.approvalStatus) ? claim.approvalStatus : 'Pending Approval';
+    const key = `${claim.date.slice(0, 7)}|${claim.claimType}|${status}`;
+    const row = totals.get(key) ?? { month: claim.date.slice(0, 7), claimType: claim.claimType, status, count: 0, amount: 0 };
+    row.count += 1; row.amount = Math.round((row.amount + Number(claim.amount || 0)) * 100) / 100;
+    totals.set(key, row);
+  }
+  return [...totals.values()].sort((a, b) => a.month.localeCompare(b.month) || a.claimType.localeCompare(b.claimType) || a.status.localeCompare(b.status));
 }

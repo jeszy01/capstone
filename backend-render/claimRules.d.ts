@@ -18,3 +18,9 @@ export function stampClaimDecisions<T extends Claim>(claims:T[],events:Array<[st
 export function claimPaymentError(args:{claim:Claim;payment:unknown;userId:string;own:boolean;today:string}):string;
 export function paidClaim(claim:Claim,payment:{method:string;reference:string;date:string;proof?:{name:string}|null},user:{id?:string;name?:string|null;email?:string|null},at:string):Claim;
 export function paymentProofError(proof:unknown):string;
+export const CLAIM_MAX_AGE_DAYS:number;
+export const LEAVER_CLAIM_DAYS:number;
+export function claimWarnings(claim:Claim,claims:Claim[]):string[];
+export function claimantError(employee:{status?:string|null;employment_status?:string|null;separated_on?:string|null}|null|undefined,today:string):string;
+export type ClaimTotal={month:string;claimType:string;status:'Pending Approval'|'Approved'|'Returned'|'Rejected'|'Paid';count:number;amount:number};
+export function claimTotals(claims:Claim[]):ClaimTotal[];

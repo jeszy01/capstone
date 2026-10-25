@@ -5,7 +5,9 @@ import type {PayrollRun,RunRow} from '../payroll/payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from '../payroll/thirteenthMonth';
 import {hmoService} from '../hmo/hmoService';
 import {loanService} from '../deductions/loanService';
-import {normalizeClaims} from '../claims/claimsTypes';
+import {fetchClaimTotals,normalizeClaims} from '../claims/claimsTypes';
+import {can} from '../auth/permissions';
+import {claimTypes} from '../claims/claimsTypes';
 import {loadRates} from '../settings/payrollSettings';
 
 // The Reports page: each report is built from the saved records for the chosen month (or year) when it is opened.
@@ -112,6 +114,15 @@ export async function buildReport(id:ReportId,context:ReportContext):Promise<Rep
   return {...base,period:'As of today',summary:tones([['Open records',String(open.length)],['Loans',count(open.filter(loan=>loan.recordType==='Loan').length,'record')],['Outstanding balance',peso(sum(open.map(loan=>loan.outstandingBalance)))],['Monthly amortization',peso(sum(open.map(monthly)))]]),
    columns:['Employee','Type','Principal','Outstanding balance','Monthly amortization','Payments made'],numeric:[2,3,4,5],
    rows:open.map(loan=>[loan.employeeName,loan.recordType==='Loan'?loan.loanType||'Loan':'Cash Advance',peso(loan.principalAmount),peso(loan.outstandingBalance),peso(monthly(loan)),`${loan.repaymentsCompleted} of ${loan.installmentCount}`])};
+ }
+ // Roles that may not view claims (Finance) get totals by claim type, without employees or receipts.
+ if(!can('claims.view')){
+  const totals=(await fetchClaimTotals()).filter(total=>inMonth(`${total.month}-01`,context));
+  const amount=(statuses:string[])=>peso(sum(totals.filter(total=>statuses.includes(total.status)).map(total=>total.amount)));
+  const ofType=(type:string,statuses?:string[])=>totals.filter(total=>total.claimType===type&&(!statuses||statuses.includes(total.status)));
+  return {...base,description:`${base.description} Totals only: claim details are visible to HR and Admin.`,summary:tones([['Claims',String(sum(totals.map(total=>total.count)))],['Approved',amount(['Approved','Paid'])],['Rejected',amount(['Rejected'])],['Paid',amount(['Paid'])]]),
+   columns:['Type','Claims','Amount','Pending','Approved','Rejected','Paid'],numeric:[1,2,3,4,5,6],
+   rows:claimTypes.filter(type=>ofType(type).length).map(type=>[type,String(sum(ofType(type).map(total=>total.count))),peso(sum(ofType(type).map(total=>total.amount))),peso(sum(ofType(type,['Pending Approval','Returned']).map(total=>total.amount))),peso(sum(ofType(type,['Approved']).map(total=>total.amount))),peso(sum(ofType(type,['Rejected']).map(total=>total.amount))),peso(sum(ofType(type,['Paid']).map(total=>total.amount)))])};
  }
  const claims=normalizeClaims(context.employees).filter(claim=>inMonth(claim.date,context)).sort((a,b)=>a.date.localeCompare(b.date));
  const amount=(status:(claim:(typeof claims)[number])=>boolean)=>peso(sum(claims.filter(status).map(claim=>claim.amount)));

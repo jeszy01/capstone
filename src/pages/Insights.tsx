@@ -7,9 +7,11 @@ import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {SummaryCard} from '../features/compensation/compensationWidgets';
 import {BarChart,LineChart,NoData,SERIES} from '../features/analytics/Charts';
-import {benefitsByPlan,claimsByType,compactPeso,costTrend,kpis,statutory} from '../features/analytics/hrAnalytics';
+import {benefitsByPlan,claimsByType,claimsByTypeFromTotals,compactPeso,costTrend,kpis,statutory} from '../features/analytics/hrAnalytics';
 import {hmoService} from '../features/hmo/hmoService';
-import {normalizeClaims} from '../features/claims/claimsTypes';
+import {fetchClaimTotals,normalizeClaims} from '../features/claims/claimsTypes';
+import type {ClaimTotal} from '../features/claims/claimsTypes';
+import {can} from '../features/auth/permissions';
 import {loadRates} from '../features/settings/payrollSettings';
 import {RUNS_KEY} from '../features/payroll/payrollRuns';
 import type {PayrollRun} from '../features/payroll/payrollRuns';
@@ -22,9 +24,12 @@ import {documentLogo,loadBranding,loadCompany} from '../features/settings/system
 export function HrAnalytics(){
  const[employees,setEmployees]=useState<Employee[]>([]),[benefits,setBenefits]=useState<Array<{label:string;value:number}>>([]);
  useEffect(()=>{employeeService.getAll().then(setEmployees).catch(()=>setEmployees([]))},[]);
+ // Roles that may not view claims (Finance) see the chart from claim totals, without employees or receipts.
+ const[claimTotals,setClaimTotals]=useState<ClaimTotal[]>([]);
+ useEffect(()=>{if(!can('claims.view'))fetchClaimTotals().then(setClaimTotals).catch(()=>setClaimTotals([]))},[]);
  useEffect(()=>{Promise.all([hmoService.plans(),hmoService.enrollments()]).then(([plans,enrollments])=>setBenefits(benefitsByPlan(plans,enrollments))).catch(()=>setBenefits([]))},[]);
  const runs=read<PayrollRun[]>(RUNS_KEY,[]);
- const figures=kpis(runs,employees),trend=costTrend(runs,loadRates()),claims=claimsByType(normalizeClaims(employees)),shares=statutory(runs);
+ const figures=kpis(runs,employees),trend=costTrend(runs,loadRates()),claims=can('claims.view')?claimsByType(normalizeClaims(employees)):claimsByTypeFromTotals(claimTotals),shares=statutory(runs);
  const chartCard=(title:string,subtitle:string,body:ReactNode)=><Card className="min-w-0 !p-0"><div className="border-b border-gray-100 px-6 py-4"><h2 className="m-0 text-[15px] font-bold text-gray-900">{title}</h2><p className="mb-0 mt-0.5 text-[12.5px] text-gray-500">{subtitle}</p></div><div className="px-4 pb-4 pt-3">{body}</div></Card>;
  const green='bg-emerald-50 text-emerald-700';
  return <div className="space-y-6">

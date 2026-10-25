@@ -5,6 +5,7 @@ import {cutoffNumberFor} from '../settings/payrollSettings';
 import type {PayrollRates} from '../../types/domain';
 import type {ExpenseClaim} from '../claims/claimsTypes';
 import {claimTypes} from '../claims/claimsTypes';
+import type {ClaimTotal} from '../claims/claimsTypes';
 import type {HmoEnrollment,HmoPlan} from '../hmo/hmoTypes';
 
 // HR Analytics figures, built from the approved payroll runs, HMO enrollments and claims.
@@ -50,6 +51,8 @@ export function benefitsByPlan(plans:HmoPlan[],enrollments:HmoEnrollment[]){
 }
 
 /** Claimed amount by claim type (rejected claims left out). */
+/** The same, from claim totals (for roles that may not view the claims themselves). */
+export const claimsByTypeFromTotals=(totals:ClaimTotal[])=>claimTypes.map(type=>({label:type,value:sum(totals.filter(total=>total.claimType===type&&total.status!=='Rejected').map(total=>total.amount))}));
 export const claimsByType=(claims:ExpenseClaim[])=>claimTypes.map(type=>({label:type,value:sum(claims.filter(claim=>claim.claimType===type&&claim.approvalStatus!=='Rejected').map(claim=>claim.amount))}));
 
 /** Employee and employer shares of SSS, PhilHealth and Pag-IBIG for the latest month. */

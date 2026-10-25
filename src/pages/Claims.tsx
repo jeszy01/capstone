@@ -8,6 +8,7 @@ import {can} from '../features/auth/permissions';
 import {getCurrentUser} from '../features/auth/authService';
 import {notifyClaimDecided} from '../features/notifications/notificationService';
 import {employeeName,normalizeClaims,updateClaim} from '../features/claims/claimsTypes';
+import {claimWarnings} from '../../backend-render/claimRules.js';
 import type {ClaimReview,ExpenseClaim} from '../features/claims/claimsTypes';
 import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,openClaimFile,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
@@ -61,10 +62,10 @@ export default function Claims(){
     <Segmented label="Filter claims by status" options={FILTERS} value={filter} onChange={setFilter} idPrefix="claims-filter" panelId="claims-list"/>
    </div>
    <section id="claims-list" role="tabpanel" aria-labelledby={`claims-filter-${filter}`} className="min-w-0">
-    {loading?<LoadingState>Loading claims…</LoadingState>:<ClaimsTable claims={list} employees={employees} canDecide={canDecide} own={own} onUpdate={(id,patch)=>void update(id,patch)} onReject={claim=>openPending('reject',claim)} onReturn={claim=>openPending('return',claim)} onView={setSelected}/>}
+    {loading?<LoadingState>Loading claims…</LoadingState>:<ClaimsTable claims={list} employees={employees} warningsOf={claim=>claimWarnings(claim,claims)} canDecide={canDecide} own={own} onUpdate={(id,patch)=>void update(id,patch)} onReject={claim=>openPending('reject',claim)} onReturn={claim=>openPending('return',claim)} onView={setSelected}/>}
    </section>
   </Card>
-  {selected&&<DetailsModal claim={selected} employees={employees} onClose={()=>setSelected(null)}/>}
+  {selected&&<DetailsModal claim={selected} employees={employees} warnings={claimWarnings(selected,claims)} onClose={()=>setSelected(null)}/>}
   {pending&&<Modal title={pending.kind==='reject'?'Reject claim?':'Return claim for correction?'} onClose={()=>{if(!saving)setPending(null)}}>
    <p className="mb-3 mt-0 text-[13px] text-gray-600">{pending.kind==='reject'?`Reject claim ${pending.claim.claimNumber} for ${peso(pending.claim.amount)}? A rejected claim cannot be approved or reimbursed later.`:`Return claim ${pending.claim.claimNumber} to the employee? They correct it in ESS and resubmit it.`}</p>
    <Field label="Reason (shown to the employee in ESS)"><textarea className={`${input} min-h-24`} maxLength={500} autoFocus value={reason} onChange={event=>setReason(event.target.value)}/></Field>
@@ -73,7 +74,7 @@ export default function Claims(){
  </div>;
 }
 
-function ClaimsTable({claims,employees,canDecide,own,onUpdate,onReject,onReturn,onView}:{claims:ExpenseClaim[];employees:Employee[];canDecide:boolean;own:Set<string>;onUpdate:(id:string,patch:ClaimReview)=>void;onReject:(claim:ExpenseClaim)=>void;onReturn:(claim:ExpenseClaim)=>void;onView:(claim:ExpenseClaim)=>void}){
+function ClaimsTable({claims,employees,warningsOf,canDecide,own,onUpdate,onReject,onReturn,onView}:{claims:ExpenseClaim[];employees:Employee[];warningsOf:(claim:ExpenseClaim)=>string[];canDecide:boolean;own:Set<string>;onUpdate:(id:string,patch:ClaimReview)=>void;onReject:(claim:ExpenseClaim)=>void;onReturn:(claim:ExpenseClaim)=>void;onView:(claim:ExpenseClaim)=>void}){
  return <div role="region" aria-label="Claims table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[900px] text-left text-[13px]"><caption className="sr-only">Claims with claim number, employee, type, date, amount, status, receipt, and available actions. Open a claim to read its business purpose.</caption>
   <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Receipt','Actions'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
   <tbody>{claims.length===0?<tr><td colSpan={8}><Empty>No claims with this status.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-gray-100 transition-colors hover:bg-blue-50/35">
@@ -82,7 +83,7 @@ function ClaimsTable({claims,employees,canDecide,own,onUpdate,onReject,onReturn,
    <td className={`${cell} whitespace-nowrap text-gray-700`}>{claim.claimType}</td>
    <td className={`${cell} whitespace-nowrap text-gray-600`}>{claimDate(claim.date)}</td>
    <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{peso(claim.amount)}</td>
-   <td className={cell}><ClaimStatusBadge claim={claim}/>{claim.approvalStatus==='Returned'&&claim.notes&&<div className="mt-1 max-w-[220px] text-[11px] text-amber-700">{claim.notes}</div>}</td>
+   <td className={cell}><ClaimStatusBadge claim={claim}/>{claim.approvalStatus==='Returned'&&claim.notes&&<div className="mt-1 max-w-[220px] text-[11px] text-amber-700">{claim.notes}</div>}{claim.paymentStatus==='Unpaid'&&warningsOf(claim).map(warning=><div key={warning} className="mt-1 max-w-[240px] whitespace-normal text-[11px] font-medium text-amber-700">⚠ {warning}</div>)}</td>
    <td className={`${cell} whitespace-nowrap`}>{claim.hasReceipt?<button type="button" className="font-medium text-blue-600 underline-offset-2 hover:text-blue-800 hover:underline" title={claim.receiptName} aria-label={`View receipt ${claim.receiptName} for ${claim.claimNumber}`} onClick={()=>void viewReceipt(claim)}>View receipt</button>:claim.receiptName?<span className="text-gray-600" title={claim.receiptName}>Attached</span>:<span className="font-medium text-red-700">Missing</span>}</td>
    <td className={cell}>{isOpen(claim)?<ClaimActions claim={claim} canDecide={canDecide&&!own.has(claim.employeeId)} ownClaim={own.has(claim.employeeId)} onUpdate={onUpdate} onReject={onReject} onReturn={onReturn} onView={onView}/>:<button className={ghost} onClick={()=>onView(claim)}>View</button>}</td>
   </tr>)}</tbody></table></div>;
@@ -116,8 +117,9 @@ function ClaimActions({claim,canDecide,ownClaim,onUpdate,onReject,onReturn,onVie
 }
 
 function Detail({label,children}:{label:string;children:React.ReactNode}){return <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</dt><dd className="m-0 mt-1 text-[13px] text-gray-800">{children}</dd></div>}
-function DetailsModal({claim,employees,onClose}:{claim:ExpenseClaim;employees:Employee[];onClose:()=>void}){
+function DetailsModal({claim,employees,warnings,onClose}:{claim:ExpenseClaim;employees:Employee[];warnings:string[];onClose:()=>void}){
  return <Modal title={`Claim ${claim.claimNumber}`} wide onClose={onClose}>
+  {warnings.length>0&&<div role="note" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Check before approving</div><ul className="mb-0 mt-1 list-disc pl-5">{warnings.map(warning=><li key={warning}>{warning}</li>)}</ul></div>}
   <dl className="m-0 grid gap-4 sm:grid-cols-2">
    <Detail label="Employee">{employeeName(employees,claim.employeeId)}</Detail>
    <Detail label="Department">{claim.department||'—'}</Detail>

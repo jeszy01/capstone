@@ -6,11 +6,19 @@ approves and pays it, and ESS reads the claim's status back to show the employee
 ## Process
 
 1. The employee submits a claim in ESS → ESS sends it (`POST /integrations/ess/claims`) → **Pending Approval**.
-2. HR reviews it in PBMS and decides:
-   - **Approved** → HR pays it separately (**Reimbursed**) or adds it to payroll (**Included in Payroll**);
-   - **Returned** → the employee corrects it in ESS and resubmits it (`PUT /integrations/ess/claims/{claim_number}`);
+2. HR reviews it in PBMS and decides (nobody decides their own claim):
+   - **Approved** → HR pays it outside PBMS (bank transfer, e-wallet or cash), alone or in a bank batch, and records
+     the method, reference and date → **Reimbursed**. The user who approved a claim cannot record its payment;
+   - **Returned** → the employee corrects it in ESS and resubmits it (`PUT /integrations/ess/claims/{claim_number}`).
+     A returned claim cannot be approved until it is resubmitted;
    - **Rejected** → closed. Returned and rejected claims carry HR's reason in `notes`.
-3. ESS shows the employee their claims and statuses (`GET /integrations/ess/claims?employee_no=…`).
+3. ESS shows the employee their claims and statuses (`GET /integrations/ess/claims?employee_no=…`), and PBMS adds a
+   notification for the employee at each decision and payment (`GET /integrations/ess/notifications?employee_no=…`).
+
+An employee who is no longer active can still submit or resubmit claims for **30 days** after leaving; after that
+PBMS refuses them (`403 EMPLOYEE_NOT_ACTIVE`). HR also sees warnings on possible duplicates (same date, type and
+amount, or the same receipt file) and on expenses submitted more than 30 days after they were made; these do not
+stop a claim.
 
 ## Authentication
 
@@ -67,13 +75,28 @@ Only a claim with status **Returned** and the same `employee_no` can be resubmit
   "claim_number": "CLM-2026-0042", "claim_type": "Transportation", "amount": 450.5, "date": "2026-10-20",
   "business_purpose": "…", "project_site": "Makati Tower", "receipt_name": "taxi-receipt.jpg",
   "status": "Returned", "notes": "The receipt is unreadable; attach a clearer photo.",
-  "payment_method": null, "payment_date": null,
+  "payment_method": null, "payment_date": null, "payment_reference": null,
   "submitted_at": "2026-10-20T03:12:00.000Z", "updated_at": "2026-10-21T01:05:00.000Z", "ess_reference": "ESS-CLM-88412"
 } ] }
 ```
 
-`status`: `Pending Approval`, `Returned`, `Rejected`, `Approved`, `Reimbursed` or `Included in Payroll`.
-`payment_method`: `Paid Separately` or `Include in Payroll` once HR sets it.
+`status`: `Pending Approval`, `Returned`, `Rejected`, `Approved` or `Reimbursed` (`Included in Payroll` appears only on
+older claims).
+Once reimbursed: `payment_method` is `Bank Transfer`, `Cash` or `E-wallet` (`Paid Separately` on older claims),
+`payment_date` is the day it was paid and `payment_reference` the bank or e-wallet transaction number, or the cash
+voucher number.
+
+## Notifications for the employee
+
+`GET https://<pbms-render-host>/integrations/ess/notifications?employee_no=EMP-0001` returns the employee's
+notifications, newest first (`id`, `title`, `message`, `created_at`, `read_at`). For claims PBMS adds:
+
+| When | `title` | `message` (example) |
+|---|---|---|
+| Approved | Claim approved | CLM-2026-0042 for ₱450.50 was approved and will be reimbursed. |
+| Returned | Claim returned for correction | CLM-2026-0042: The receipt is unreadable. Correct it and resubmit it in ESS. |
+| Rejected | Claim rejected | CLM-2026-0042 for ₱450.50 was rejected: Personal expense |
+| Reimbursed | Claim reimbursed | CLM-2026-0042 for ₱450.50 was reimbursed by bank transfer on 2026-10-27 (reference BDO-778899). |
 
 ## Errors
 
@@ -81,6 +104,7 @@ Only a claim with status **Returned** and the same `employee_no` can be resubmit
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | A field is missing or invalid; the message says which. |
 | 401 | `INVALID_API_KEY` | The `X-API-Key` header is missing or wrong. |
+| 403 | `EMPLOYEE_NOT_ACTIVE` | The employee left more than 30 days ago; the message gives the date. |
 | 404 | `EMPLOYEE_NOT_FOUND` / `CLAIM_NOT_FOUND` | Unknown `employee_no`, or no such claim for that employee. |
 | 409 | `CLAIM_NOT_RETURNED` | Only returned claims can be resubmitted. |
 | 413 | — | The request is larger than 5 MB. |

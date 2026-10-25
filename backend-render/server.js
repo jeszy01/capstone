@@ -10,7 +10,7 @@ import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
-import { claimPaymentError, paymentProofError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
+import { claimantError, claimPaymentError, claimTotals, paymentProofError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
 import { CORRECTION_STATUSES, correctionDecision, correctionFields, correctionView } from './correctionRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
@@ -235,6 +235,10 @@ app.get('/employees', auth, allow('employees.view'), async (req, res) => {
   res.json({ data: rows.map(row => visibleEmployee(req.user.role, row)) });
 });
 
+// Records the day an employee becomes inactive or resigned (kept while they stay so), and clears it when they are active again.
+const markSeparation = id => pool.query(
+  `update employees set separated_on = case when lower(trim(coalesce(status, ''))) = 'active' and lower(trim(coalesce(employment_status, ''))) <> 'resigned'
+   then null else coalesce(separated_on, (now() at time zone 'Asia/Manila')::date) end where id = $1`, [id]);
 app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
   const b = req.body;
   if (!b.employee_number || !b.first_name || !b.last_name)
@@ -244,6 +248,7 @@ app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
       `insert into employees(employee_number,first_name,middle_name,last_name,email,position,department,hire_date,employment_status,status,
        phone,address,birth_date,sss_number,philhealth_number,pagibig_number,tin,bank_name,bank_account_number)
        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning *`, empVals(b));
+    await markSeparation(r.id);
     // The salary follows the position's salary grade automatically.
     const assigned = await tryAutoAssignSalary(r, req.user.id);
     const { rows: [saved] } = assigned ? await pool.query('select * from employees where id=$1', [r.id]) : { rows: [r] };
@@ -267,6 +272,7 @@ app.put('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
      philhealth_number=$15,pagibig_number=$16,tin=$17,bank_name=$18,bank_account_number=$19 where id=$20 returning id`,
     [...empVals(b), req.params.id]);
   if (!r) return fail(res, 404, 'NOT_FOUND', 'Employee not found');
+  await markSeparation(r.id);
   // An employee still without a salary gets the one for their (new) position.
   const { rows: [saved] } = await pool.query('select * from employees where id=$1', [r.id]);
   const assigned = await tryAutoAssignSalary(saved, req.user.id);
@@ -293,6 +299,10 @@ await pool.query(`
   alter table users add column if not exists passkey_locked_until timestamptz;
   alter table employees add column if not exists salary_grade_id uuid;
   alter table employees add column if not exists updated_at timestamptz;
+  -- The day an employee became inactive or resigned (claims are accepted for 30 days after); earlier leavers take their last update.
+  alter table employees add column if not exists separated_on date;
+  update employees set separated_on = coalesce(updated_at, now())::date
+    where separated_on is null and not (lower(trim(coalesce(status, ''))) = 'active' and lower(trim(coalesce(employment_status, ''))) <> 'resigned');
 
   create table if not exists audit_logs(
     id uuid primary key default gen_random_uuid(), action text not null, actor_id uuid, entity text not null,
@@ -2545,7 +2555,7 @@ const manilaDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Mani
 const essEmployee = async employeeNo => {
   const number = text(employeeNo);
   if (!number) throw new HttpError(400, 'VALIDATION_ERROR', 'employee_no is required.');
-  const { rows: [employee] } = await pool.query('select id, employee_number, department, first_name, last_name from employees where lower(employee_number)=lower($1)', [number]);
+  const { rows: [employee] } = await pool.query('select id, employee_number, department, first_name, last_name, status, employment_status, separated_on from employees where lower(employee_number)=lower($1)', [number]);
   if (!employee) throw new HttpError(404, 'EMPLOYEE_NOT_FOUND', 'employee_no is not a PBMS employee.');
   return employee;
 };
@@ -2560,8 +2570,13 @@ const saveReceipt = (client, receipt) => client.query(
   [receipt.claimId, receipt.name, receipt.mimeType, receipt.dataUrl]);
 // Saves a claims list: receipt files go to claim_receipts and the list keeps the claims without them.
 async function saveClaimsList(client, claims) {
-  for (const claim of claims) { const receipt = receiptOf(claim); if (receipt) await saveReceipt(client, receipt); }
-  const list = claims.map(withoutReceipt);
+  const list = [];
+  for (const claim of claims) {
+    const receipt = receiptOf(claim);
+    if (receipt) await saveReceipt(client, receipt);
+    // The receipt's fingerprint lets HR see the same file used on another claim.
+    list.push(withoutReceipt(receipt ? { ...claim, receiptHash: receiptFingerprint(receipt.dataUrl) } : claim));
+  }
   await client.query(`insert into app_data(key,value,deleted) values('claims:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(list)]);
 }
 // Reads and saves the claims list in one locked transaction; change returns the claim it added or changed. change may
@@ -2582,9 +2597,26 @@ async function withClaims(change) {
     throw e;
   } finally { client.release(); }
 }
+const receiptFingerprint = dataUrl => crypto.createHash('sha256').update(dataUrl).digest('hex');
 // Receipts saved inside the claims list before claim_receipts existed move there once, at startup.
 const movedReceipts = await withClaims(claims => claims.some(claim => receiptOf(claim)) ? { claims: [...claims], claim: claims.filter(claim => receiptOf(claim)).length } : { claims, claim: 0 });
 if (movedReceipts.claim) console.log(`Moved ${movedReceipts.claim} claim receipt(s) to claim_receipts.`);
+// Claims whose receipt has no fingerprint yet get one from claim_receipts, once.
+await withClaims(async (claims, client) => {
+  const missing = claims.filter(claim => claim?.hasReceipt && !claim.receiptHash);
+  if (!missing.length) return { claims, claim: 0 };
+  const { rows } = await client.query('select claim_id, data from claim_receipts where claim_id = any($1)', [missing.map(claim => String(claim.id))]);
+  const prints = new Map(rows.map(row => [String(row.claim_id), receiptFingerprint(row.data)]));
+  return { claims: claims.map(claim => (claim && prints.has(String(claim.id)) && !claim.receiptHash ? { ...claim, receiptHash: prints.get(String(claim.id)) } : claim)), claim: prints.size };
+});
+
+// Claim totals by month, type and status, without employees or receipts: HR Analytics and the Claims report for roles
+// that may not view claims (Finance).
+app.get('/claims/totals', auth, async (req, res) => {
+  if (!can(req.user.role, 'claims.view') && !can(req.user.role, 'payroll.view')) return fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE);
+  const { rows: [stored] } = await pool.query(`select value from app_data where key='claims:records' and not deleted`);
+  ok(res, claimTotals(stored && Array.isArray(appValue(stored.value)) ? appValue(stored.value) : []));
+});
 
 // Proof of a reimbursement (bank confirmation, e-wallet screenshot or signed cash voucher), one per claim.
 await pool.query(`
@@ -2693,8 +2725,14 @@ app.get('/claims/:id/receipt', auth, allow('claims.view'), async (req, res) => {
   ok(res, { name: receipt.file_name, mime_type: receipt.mime_type, data_url: receipt.data });
 });
 
+// An employee who has left may submit claims for LEAVER_CLAIM_DAYS days after leaving (see claimantError).
+const essClaimant = async employeeNo => {
+  const employee = await essEmployee(employeeNo), problem = claimantError(employee, manilaDate());
+  if (problem) throw new HttpError(403, 'EMPLOYEE_NOT_ACTIVE', problem);
+  return employee;
+};
 app.post('/integrations/ess/claims', essAuth, async (req, res) => {
-  const b = input(req), employee = await essEmployee(b.employee_no);
+  const b = input(req), employee = await essClaimant(b.employee_no);
   const parsed = essClaimFields(b, manilaDate());
   if (parsed.error) return fail(res, 400, 'VALIDATION_ERROR', parsed.error);
   const reference = text(b.ess_reference).slice(0, 100) || null;
@@ -2715,7 +2753,7 @@ app.post('/integrations/ess/claims', essAuth, async (req, res) => {
   res.status(created ? 201 : 200).json({ data: essClaimView(claim) });
 });
 app.put('/integrations/ess/claims/:claimNumber', essAuth, async (req, res) => {
-  const b = input(req), employee = await essEmployee(b.employee_no);
+  const b = input(req), employee = await essClaimant(b.employee_no);
   const parsed = essClaimFields(b, manilaDate());
   if (parsed.error) return fail(res, 400, 'VALIDATION_ERROR', parsed.error);
   const { claim } = await withClaims(claims => {
