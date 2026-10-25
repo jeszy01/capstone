@@ -47,11 +47,11 @@ describe('payroll run transitions are enforced by the server',()=>{
   await expect(save(hr,[draft()],[computed({rows:[{input:{empId:'EMP-1',name:'Ana'},result:{basic:1000,gross:1000,deductions:0,net:900}},row('EMP-2',2000)]})])).rejects.toThrow('do not add up');
   await expect(save(hr,[pending()],[{...pending(),rows:[row('EMP-1',1)]}])).rejects.toThrow('submitted payroll run cannot be changed');
  });
- it('only Finance approves, never a run they prepared, and returning or rejecting needs a comment',async()=>{
+ it('Finance, Admin and HR Staff approve, never a run they prepared, and returning or rejecting needs a comment',async()=>{
   const decided=(patch:Record<string,unknown>={})=>({...approved(),decidedById:'u-fin',...patch});
-  await expect(save(hr,[pending()],[{...approved(),decidedById:'u-hr'}])).rejects.toThrow('permission to approve');
-  await expect(save({id:'u-hr2',role:'hr_staff'},[pending()],[{...approved(),decidedById:'u-hr2'}])).rejects.toThrow('permission to approve');
-  await expect(save(admin,[pending()],[approved()])).rejects.toThrow('permission to approve');
+  await expect(save(hr,[pending()],[{...approved(),decidedById:'u-hr'}])).rejects.toThrow('you prepared');
+  expect((await save({id:'u-hr2',role:'hr_staff'},[pending()],[{...approved(),decidedById:'u-hr2'}]))[0][0]).toBe('payroll.approved');
+  expect((await save(admin,[pending()],[{...approved(),decidedById:admin.id}]))[0][0]).toBe('payroll.approved');
   await expect(save(finance,[{...pending(),preparedById:'u-fin'}],[decided({preparedById:'u-fin'})])).rejects.toThrow('you prepared');
   expect((await save(finance,[pending()],[decided()]))[0][0]).toBe('payroll.approved');
   await expect(save(finance,[pending()],[decided({status:'Returned'})])).rejects.toThrow('comment is required');
