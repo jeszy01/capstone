@@ -142,7 +142,7 @@ async function seed(client) {
        values($1,$2,$3,$4,$5,'Initial Assignment')`, [id, position, salary, rate, hired]);
     await client.query(
       `insert into compensation_history(employee_id,source,event_type,previous_salary,new_salary,adjustment_amount,reason,effective_date,status,applied_at,actor_name)
-       values($1,'Employee Compensation','Initial Assignment',0,$2,$2,'Initial compensation assignment',$3,'Applied',$3,'Demo data')`, [id, salary, hired]);
+       values($1,'Employee Compensation','Initial Assignment',0,$2,$2,'Initial compensation assignment',$3::date,'Applied',$3::date::timestamptz,'Demo data')`, [id, salary, hired]);
   }
 
   // Allowances (monthly, split over the two cutoffs).
