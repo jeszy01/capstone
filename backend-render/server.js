@@ -10,7 +10,7 @@ import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
-import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
+import { essClaimFields, essClaimView, nextClaimNumber, receiptOf, withoutReceipt } from './claimRules.js';
 import { CORRECTION_STATUSES, correctionDecision, correctionFields, correctionView } from './correctionRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
@@ -169,6 +169,8 @@ async function saveAppData(req, key, isDel, value) {
     if (key === 'payroll:runs' || key === 'claims:records') {
       if (isDel) throw new AccessError(key === 'payroll:runs' ? 'Payroll runs cannot be deleted.' : 'Claims cannot be deleted.');
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
+      // Receipt files live in claim_receipts; a browser copy saved before they moved does not bring them back.
+      if (key === 'claims:records' && Array.isArray(next)) next = next.map(withoutReceipt);
     }
     events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed);
     // A withholding tax version a payroll run was computed with cannot be changed or removed (see withholdingRuleLock.js).
@@ -2531,6 +2533,21 @@ const essEmployee = async employeeNo => {
   if (!employee) throw new HttpError(404, 'EMPLOYEE_NOT_FOUND', 'employee_no is not a PBMS employee.');
   return employee;
 };
+// Claim receipt files, one per claim (a resubmitted claim replaces its file). The claims list keeps only the name.
+await pool.query(`
+  create table if not exists claim_receipts(
+    claim_id text primary key, file_name text not null, mime_type text not null, data text not null,
+    created_at timestamptz not null default now(), updated_at timestamptz not null default now());`);
+const saveReceipt = (client, receipt) => client.query(
+  `insert into claim_receipts(claim_id,file_name,mime_type,data) values($1,$2,$3,$4)
+   on conflict(claim_id) do update set file_name=$2, mime_type=$3, data=$4, updated_at=now()`,
+  [receipt.claimId, receipt.name, receipt.mimeType, receipt.dataUrl]);
+// Saves a claims list: receipt files go to claim_receipts and the list keeps the claims without them.
+async function saveClaimsList(client, claims) {
+  for (const claim of claims) { const receipt = receiptOf(claim); if (receipt) await saveReceipt(client, receipt); }
+  const list = claims.map(withoutReceipt);
+  await client.query(`insert into app_data(key,value,deleted) values('claims:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(list)]);
+}
 // Reads and saves the claims list in one locked transaction; change returns the claim it added or changed.
 async function withClaims(change) {
   const client = await pool.connect();
@@ -2540,7 +2557,7 @@ async function withClaims(change) {
     const { rows: [row] } = await client.query(`select value, deleted from app_data where key='claims:records'`);
     const claims = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
     const { claims: next, claim, created } = change(claims);
-    if (next !== claims) await client.query(`insert into app_data(key,value,deleted) values('claims:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(next)]);
+    if (next !== claims) await saveClaimsList(client, next);
     await client.query('commit');
     return { claim, created };
   } catch (e) {
@@ -2548,6 +2565,17 @@ async function withClaims(change) {
     throw e;
   } finally { client.release(); }
 }
+// Receipts saved inside the claims list before claim_receipts existed move there once, at startup.
+const movedReceipts = await withClaims(claims => claims.some(claim => receiptOf(claim)) ? { claims: [...claims], claim: claims.filter(claim => receiptOf(claim)).length } : { claims, claim: 0 });
+if (movedReceipts.claim) console.log(`Moved ${movedReceipts.claim} claim receipt(s) to claim_receipts.`);
+
+// One claim's receipt file, loaded when someone opens it.
+app.get('/claims/:id/receipt', auth, allow('claims.view'), async (req, res) => {
+  const { rows: [receipt] } = await pool.query('select file_name, mime_type, data from claim_receipts where claim_id=$1', [req.params.id]);
+  if (!receipt) return fail(res, 404, 'RECEIPT_NOT_FOUND', 'This claim has no receipt on file.');
+  ok(res, { name: receipt.file_name, mime_type: receipt.mime_type, data_url: receipt.data });
+});
+
 app.post('/integrations/ess/claims', essAuth, async (req, res) => {
   const b = input(req), employee = await essEmployee(b.employee_no);
   const parsed = essClaimFields(b, manilaDate());

@@ -57,3 +57,18 @@ export const essClaimView = claim => ({
 /** Fields other than the workflow fields that a save changed, for refusing edits to the employee's submission. */
 export const changedClaimDetails = (before, after) =>
   [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])].filter(key => !CLAIM_WORKFLOW_FIELDS.includes(key) && JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]));
+
+// Receipt files are kept in the claim_receipts table, not in the claims list every PBMS browser loads: a claim keeps
+// its receiptName and hasReceipt, and PBMS loads the file only when someone opens it (GET /claims/:id/receipt).
+/** A claim without its receipt file, as the claims list keeps it. */
+export function withoutReceipt(claim) {
+  if (!claim || typeof claim !== 'object' || !('receiptData' in claim)) return claim;
+  const { receiptData, ...rest } = claim;
+  return { ...rest, hasReceipt: Boolean(receiptData) || rest.hasReceipt === true };
+}
+/** The receipt to store for a claim (its name, MIME type and data URL), or null when it carries none. */
+export function receiptOf(claim) {
+  const dataUrl = typeof claim?.receiptData === 'string' ? claim.receiptData : '';
+  const mimeType = /^data:([a-z]+\/[a-z0-9.+-]+);base64,/i.exec(dataUrl)?.[1];
+  return mimeType ? { claimId: String(claim.id), name: String(claim.receiptName || 'receipt'), mimeType, dataUrl } : null;
+}

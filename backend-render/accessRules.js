@@ -30,7 +30,9 @@ export const isSettingsKey = key => (key.startsWith('payroll:') && !PAYROLL_DATA
 export const PAYROLL_RULE_KEYS = ['payroll:rates', 'payroll:time-settings', 'payroll:holidays', 'payroll:withholding-tax-rules', 'payroll:tax-brackets',
   'payroll:thirteenth-month-rules', 'compensation:thirteenth-month-rules', 'payroll:run-options'];
 export const readableKey = (user, key) => !key.startsWith('audit:') && (key !== 'admin:users' || can(user.role, 'users.manage'))
-  && (!isSettingsKey(key) || can(user.role, 'settings.view'));
+  && (!isSettingsKey(key) || can(user.role, 'settings.view'))
+  // Employees' claims and receipts: only roles that review or pay claims.
+  && (!(key.startsWith('claims:') || key.startsWith('reimbursement:')) || can(user.role, 'claims.view'));
 // Key order differs between browsers, so values are compared with sorted keys.
 const stable = value => JSON.stringify(value, (_k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
 const without = (row, keys) => { const copy = { ...row }; for (const k of keys) delete copy[k]; return copy; };

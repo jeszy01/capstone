@@ -86,6 +86,8 @@ export async function hydrateFromServer(reloadOnChange=false){
   for(let i=0;i<window.localStorage.length;i++){
    const key=window.localStorage.key(i);
    if(key&&settingsHidden&&settingsKey(key)&&!serverKeys.has(key)){rawRemove.call(window.localStorage,key);i--;continue}
+   // Claims and receipts are sent only to roles that review or pay claims; a copy left from before is removed.
+   if(key&&(key.startsWith('claims:')||key.startsWith('reimbursement:'))&&!can('claims.view')&&!serverKeys.has(key)){rawRemove.call(window.localStorage,key);i--;continue}
    if(key&&synced(key)&&!serverKeys.has(key)&&!pending.has(key)){
     const raw=window.localStorage.getItem(key);
     if(raw)schedulePush(key,{raw});
