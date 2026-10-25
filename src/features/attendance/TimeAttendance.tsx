@@ -5,10 +5,9 @@ import {employeeService} from '../employees/employeeService';
 import {fetchAttendance} from './attendanceService';
 import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
-import {loadAttendanceSchedule,loadHolidays,recentCutoffs,shortRange} from '../settings/payrollSettings';
+import {loadHolidays,loadRates,recentCutoffs,shortRange} from '../settings/payrollSettings';
 import type {Holiday} from '../settings/payrollSettings';
 
-const mins=(time:string)=>{const[h,m]=time.split(':').map(Number);return h*60+(m||0)};
 const isWeekend=(date:string)=>[0,6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
 
 type Column='regular'|'rest'|'holiday'|'special';
@@ -22,8 +21,6 @@ function columnOf(record:AttendanceRecord,holidays:Holiday[]):Column{
 }
 
 type Cutoff={from:string;to:string};
-type Schedule=ReturnType<typeof loadAttendanceSchedule>;
-const shiftHours=(schedule:Schedule)=>Math.max(0,mins(schedule.end)-mins(schedule.start))/60;
 function useRecords(cutoff:Cutoff|undefined){
  const[records,setRecords]=useState<AttendanceRecord[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
  useEffect(()=>{
@@ -63,7 +60,8 @@ export default function TimeAttendance(){
 /** One cutoff's HR2 records as a per-employee timesheet, hours split by day type. */
 function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employee[]}){
  const holidays=useMemo(()=>loadHolidays(),[]);
- const schedule=useMemo(()=>loadAttendanceSchedule(),[]);
+ // A paid leave day counts the paid hours per day from Payroll Settings (the shift less its meal break).
+ const leaveHours=useMemo(()=>loadRates().hoursPerDay,[]);
  const{records,loading,error,reload}=useRecords(cutoff);
  const rows=useMemo(()=>{
   const groups=new Map<string,Row>();
@@ -72,13 +70,13 @@ function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employe
    const row=groups.get(key)??{key,name:employee?.name||record.name||record.empId,worked:0,regular:0,rest:0,holiday:0,special:0,paidHours:0,paidTypes:new Set<string>(),unpaidDays:0,absent:0,total:0};
    const column=columnOf(record,holidays);
    if(record.status==='Present'){const hours=Number(record.workedHours)||0;row.worked++;row[column]+=hours;row.total+=hours}
-   // Paid leave counts the scheduled shift; unpaid leave and absences count none.
-   if(record.status==='On Leave'){if(record.paidLeave){const hours=shiftHours(schedule);row.paidHours+=hours;row.total+=hours;row.paidTypes.add(record.leaveType||'Leave')}else row.unpaidDays++}
+   // Paid leave counts the paid hours per day; unpaid leave and absences count none.
+   if(record.status==='On Leave'){if(record.paidLeave){const hours=leaveHours;row.paidHours+=hours;row.total+=hours;row.paidTypes.add(record.leaveType||'Leave')}else row.unpaidDays++}
    if(record.status==='Absent'&&column==='regular')row.absent++;
    groups.set(key,row);
   }
   return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
- },[records,employees,holidays,schedule]);
+ },[records,employees,holidays,leaveHours]);
  const sum=(pick:(row:Row)=>number)=>rows.reduce((total,row)=>total+pick(row),0);
  const total=sum(row=>row.total);
  const heads=['Employee','Days worked','Regular','Rest day','Holiday','Special','Leave','Absence','Total hours'];

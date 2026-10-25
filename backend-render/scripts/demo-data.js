@@ -2,12 +2,12 @@
 // salary, government IDs, bank details and HR2 attendance for the August 10 to October 25, 2026 cutoffs, together covering
 // every case payroll handles. Work on a rest day (Saturday), on Ninoy Aquino Day (Aug 21, special non-working) and on
 // National Heroes Day (Aug 31, regular holiday) fills the Rest day, Special and Holiday columns of the timesheet:
-//   DEMO-001 perfect attendance, G1 step 1 (minimum wage)    DEMO-007 company loan, transport and rice allowances
+//   DEMO-001 G1 step 1 (minimum wage)                        DEMO-007 company loan, transport and rice allowances
 //   DEMO-002 lates (probationary)                            DEMO-008 cash advance and an SSS loan
 //   DEMO-003 undertime (contractual)                         DEMO-009 Pag-IBIG loan, approved bonus, lates and overtime
 //   DEMO-004 approved overtime (+ pending overtime, not paid) DEMO-010 high earner (withholding tax), allowances
-//   DEMO-005 absences                                        DEMO-011 leave without pay all October
-//   DEMO-006 paid leave and leave without pay                DEMO-012 resigned October 9 (Inactive, not in payroll)
+//   DEMO-005 absences                                        DEMO-011 leave without pay all October (1 paid day)
+//   DEMO-006 sick leave (Oct 2)                              DEMO-012 resigned October 9 (Inactive, not in payroll)
 //   node scripts/demo-data.js seed    adds (or resets) the demo employees and their records
 //   node scripts/demo-data.js clean   removes them (refused while a payroll run includes one)
 // Needs DATABASE_URL set to the Render database's External Database URL. Reload PBMS afterwards.
@@ -33,6 +33,20 @@ const HOLIDAYS = [
 // Who works on a holiday (everyone else has the day off, with no record) and on a rest day (Saturday).
 const HOLIDAY_WORK = { '2026-08-21': ['DEMO-004', 'DEMO-009'], '2026-08-31': ['DEMO-001', 'DEMO-007'] };
 const REST_DAY_WORK = { '2026-09-12': ['DEMO-009'], '2026-10-17': ['DEMO-004'] };
+// October 10–25: every employee takes one paid leave day and one day of leave without pay (Paolo resigned October 9).
+const LEAVE = {
+  'DEMO-001': [['2026-10-12', 'Sick Leave'], ['2026-10-20', 'Leave Without Pay']],
+  'DEMO-002': [['2026-10-15', 'Vacation Leave'], ['2026-10-22', 'Leave Without Pay']],
+  'DEMO-003': [['2026-10-13', 'Sick Leave'], ['2026-10-20', 'Leave Without Pay']],
+  'DEMO-004': [['2026-10-16', 'Vacation Leave'], ['2026-10-19', 'Leave Without Pay']],
+  'DEMO-005': [['2026-10-13', 'Vacation Leave'], ['2026-10-22', 'Leave Without Pay']],
+  'DEMO-006': [['2026-10-12', 'Vacation Leave'], ['2026-10-19', 'Leave Without Pay']],
+  'DEMO-007': [['2026-10-14', 'Sick Leave'], ['2026-10-21', 'Leave Without Pay']],
+  'DEMO-008': [['2026-10-15', 'Vacation Leave'], ['2026-10-23', 'Leave Without Pay']],
+  'DEMO-009': [['2026-10-13', 'Sick Leave'], ['2026-10-16', 'Leave Without Pay']],
+  'DEMO-010': [['2026-10-19', 'Vacation Leave'], ['2026-10-21', 'Leave Without Pay']],
+  'DEMO-011': [['2026-10-12', 'Vacation Leave']],
+};
 
 // [no, first, last, position, department, employment, status, hired, salary step (1-5) in the position's grade, birth date]
 const EMPLOYEES = [
@@ -61,6 +75,8 @@ function day(no, date) {
   if (HOLIDAY_WORK[date]) return HOLIDAY_WORK[date].includes(no) ? { status: 'Present' } : null;
   const weekend = [0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
   if (weekend) return REST_DAY_WORK[date]?.includes(no) ? { status: 'Present' } : { status: 'Day Off' };
+  const leave = LEAVE[no]?.find(([day]) => day === date);
+  if (leave) return { status: 'On Leave', leave: leave[1] };
   switch (no) {
     case 'DEMO-002': return { status: 'Present', late: { '2026-09-29': 10, '2026-10-02': 25, '2026-10-13': 15, '2026-10-19': 40 }[date] ?? 0 };
     case 'DEMO-003': return { status: 'Present', undertime: { '2026-10-01': 60, '2026-10-15': 90, '2026-10-22': 30 }[date] ?? 0 };
@@ -69,10 +85,7 @@ function day(no, date) {
       return { status: 'Present', ot, otPending: date === '2026-10-23' };
     }
     case 'DEMO-005': return ['2026-10-05', '2026-10-16', '2026-10-20'].includes(date) ? { status: 'Absent' } : { status: 'Present' };
-    // Oct 10–25: one paid leave day (vacation, Oct 12) and one unpaid (leave without pay, Oct 19).
-    case 'DEMO-006': return date === '2026-10-02' ? { status: 'On Leave', leave: 'Sick Leave' }
-      : date === '2026-10-12' ? { status: 'On Leave', leave: 'Vacation Leave' }
-      : date === '2026-10-19' ? { status: 'On Leave', leave: 'Leave Without Pay' } : { status: 'Present' };
+    case 'DEMO-006': return date === '2026-10-02' ? { status: 'On Leave', leave: 'Sick Leave' } : { status: 'Present' };
     case 'DEMO-009': return { status: 'Present', late: { '2026-10-06': 20, '2026-10-20': 15 }[date] ?? 0, ot: { '2026-10-08': 120, '2026-10-22': 60 }[date] ?? 0 };
     case 'DEMO-011': return date >= '2026-10-01' ? { status: 'On Leave', leave: 'Leave Without Pay' } : { status: 'Present' };
     default: return { status: 'Present' };
