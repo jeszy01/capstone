@@ -74,3 +74,16 @@ describe('attendance gaps',()=>{
   expect(attendanceGaps({records:[],employeeKeys:['EMP-0001'],hiredOn:'2026-10-06',from:'2026-10-01',to:'2026-10-06',holidays:[]}).missingDays).toEqual(['2026-10-06']);
  });
 });
+
+describe('attendance rounding rule',()=>{
+ const records=[{id:1,empId:'EMP-0001',name:'',date:'2026-10-12',status:'Present' as const,timeIn:'08:10',timeOut:'18:10',lateMin:10,undertimeMin:0,otMin:70,otStatus:'Approved' as const},
+  {id:2,empId:'EMP-0001',name:'',date:'2026-10-13',status:'Present' as const,timeIn:'08:00',timeOut:'15:50',lateMin:0,undertimeMin:70,otMin:0}];
+ const row=(otRounding:'none'|'60'|'up60')=>computeDeductions({employees:[employee],records,schedule:{start:'08:00',end:'17:00',otMin:0,otRounding},assignments:[],grades:[],rates:DEFAULT_RATES,from:'2026-10-10',to:'2026-10-25'})[0];
+ it('rounds overtime, late and undertime up to the next hour each day under round up to 1 hour',()=>{
+  expect(row('up60')).toMatchObject({lateMin:60,undertimeMin:120,otHours:2});
+ });
+ it('rounds only overtime down under round down to 1 hour, and leaves all as recorded with no rounding',()=>{
+  expect(row('60')).toMatchObject({lateMin:10,undertimeMin:70,otHours:1});
+  expect(row('none')).toMatchObject({lateMin:10,undertimeMin:70,otHours:1.17});
+ });
+});

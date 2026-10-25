@@ -33,7 +33,7 @@ export interface TimeSettings{shiftStart:string;shiftEnd:string;ndStart:string;n
 export const DEFAULT_TIME_SETTINGS:TimeSettings={shiftStart:'08:00',shiftEnd:'17:00',ndStart:'22:00',ndEnd:'06:00',otRounding:'none'};
 export const loadTimeSettings=():TimeSettings=>({...DEFAULT_TIME_SETTINGS,...read<Partial<TimeSettings>>(TIME_SETTINGS_KEY,{})});
 export const saveTimeSettings=(settings:TimeSettings)=>write(TIME_SETTINGS_KEY,settings);
-export const OVERTIME_ROUNDING:Array<[OvertimeRounding,string]>=[['none','No rounding'],['15','Round down to 15 minutes'],['30','Round down to 30 minutes'],['60','Round down to 1 hour']];
+export const OVERTIME_ROUNDING:Array<[OvertimeRounding,string]>=[['none','No rounding'],['15','Round down to 15 minutes'],['30','Round down to 30 minutes'],['60','Round down to 1 hour'],['up60','Round up to 1 hour (overtime, late and undertime)']];
 
 // Payroll run options. Strict Mode turns the Create Payroll warnings (timesheet not locked, HR2 sync short of the
 // cutoff end, a run already exists) into blocks. showTax adds the Tax column to the Payroll Register (tax is withheld

@@ -69,7 +69,7 @@ export function WorkingTimeSection({editing,canEdit,onEdit,onDone,onDirty}:Secti
   {rate('hoursPerDay')}{rate('daysPerMonth')}{time('shiftStart','Shift start')}{time('shiftEnd','Shift end')}{rate('otMultiplier')}{rate('otRestMultiplier')}{rate('ndRate')}{time('ndStart','Night differential start')}{time('ndEnd','Night differential end')}{rate('otMinMinutes')}{rate('statutoryMinimumWage')}
   <Field label="Rounding rule"><select className={input} disabled={!editing} value={draft.time.otRounding} onChange={event=>setDraft({...draft,time:{...draft.time,otRounding:event.target.value as OvertimeRounding}})}>{OVERTIME_ROUNDING.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field>
  </div>
-  <p className="mb-0 mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-[12px] text-gray-600">Shift start and end, the overtime minimum threshold and the rounding rule are for reference only. HR2 computes late, undertime and overtime minutes, and payroll uses its figures as received (overtime only when approved).</p>
+  <p className="mb-0 mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-[12px] text-gray-600">Shift start and end and the overtime minimum threshold are for reference only: HR2 computes late, undertime and overtime minutes (overtime is paid only when approved). Payroll applies the rounding rule to each day's figures: round down applies to overtime; round up to 1 hour applies to overtime, late and undertime.</p>
  </SectionShell>;
 }
 
