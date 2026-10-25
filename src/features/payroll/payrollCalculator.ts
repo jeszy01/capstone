@@ -14,16 +14,29 @@ export function computeTax(monthlyTaxable:number,table:Array<{over:number;base:n
  return b?round(b.base+b.rate/100*(monthlyTaxable-b.over)):0;
 }
 
-/** Employer shares for one cutoff, from the Payroll Settings rates: same salary bases and per-period split as the
+/**
+ * The part of the month's SSS, PhilHealth and Pag-IBIG a cutoff deducts. Contributions are paid monthly: a semi-monthly
+ * payroll deducts all of them in the 2nd cutoff (ending after the 1st cutoff end day) and none in the 1st, unless it is
+ * the employee's final pay. Without a cutoff end date (a monthly estimate), or with contributionsEveryCutoff, it is the
+ * per-period split.
+ */
+export function contributionShare(R:PayrollRates,periodEnd?:string,finalPeriod=false){
+ if(R.payPeriodsPerMonth!==2)return 1;
+ if(!periodEnd||R.contributionsEveryCutoff)return 1/R.payPeriodsPerMonth;
+ if(finalPeriod)return 1;
+ return Number(periodEnd.slice(8,10))>R.firstCutoffEndDay?1:0;
+}
+
+/** Employer shares for one cutoff, from the Payroll Settings rates: same salary bases and share of the month as the
  * employee shares; the SSS employer share includes the employer-only EC amount. Zero when no contributions apply. */
-export function employerShares(dailyRate:number,R:PayrollRates,applies=true){
+export function employerShares(dailyRate:number,R:PayrollRates,applies=true,share=contributionShare(R)){
  const monthly=dailyRate*R.daysPerMonth;
  if(!applies||!(monthly>0))return {employerSss:0,employerPhil:0,employerPagibig:0};
  const sssBase=clamp(Math.round(monthly/R.sssStep)*R.sssStep,R.sssMin,R.sssMax);
  return {
-  employerSss:round((sssBase*R.sssEmployerRate/100+(sssBase<R.sssEcThreshold?R.sssEcLow:R.sssEcHigh))/R.payPeriodsPerMonth),
-  employerPhil:round(clamp(monthly,R.philMin,R.philMax)*R.philEmployerRate/100/R.payPeriodsPerMonth),
-  employerPagibig:round(Math.min(monthly,R.pagibigMax)*R.pagibigEmployerRate/100/R.payPeriodsPerMonth),
+  employerSss:round((sssBase*R.sssEmployerRate/100+(sssBase<R.sssEcThreshold?R.sssEcLow:R.sssEcHigh))*share),
+  employerPhil:round(clamp(monthly,R.philMin,R.philMax)*R.philEmployerRate/100*share),
+  employerPagibig:round(Math.min(monthly,R.pagibigMax)*R.pagibigEmployerRate/100*share),
  };
 }
 
@@ -50,9 +63,10 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const late=round(hourly/60*numberValue(r.lateMin));
  const undertime=round(hourly/60*numberValue(r.undertimeMin));
  const has=rate>0&&round(gross-absences)>0;
- const sss=has?round(clamp(Math.round(monthly/R.sssStep)*R.sssStep,R.sssMin,R.sssMax)*R.sssRate/100/R.payPeriodsPerMonth):0;
- const phil=has?round(clamp(monthly,R.philMin,R.philMax)*R.philRate/100/R.payPeriodsPerMonth):0;
- const pagibig=has?round(Math.min(monthly,R.pagibigMax)*pagibigEmployeeRate(monthly,R)/100/R.payPeriodsPerMonth):0;
+ const share=contributionShare(R,taxContext.periodEnd,taxContext.finalPeriod);
+ const sss=has?round(clamp(Math.round(monthly/R.sssStep)*R.sssStep,R.sssMin,R.sssMax)*R.sssRate/100*share):0;
+ const phil=has?round(clamp(monthly,R.philMin,R.philMax)*R.philRate/100*share):0;
+ const pagibig=has?round(Math.min(monthly,R.pagibigMax)*pagibigEmployeeRate(monthly,R)/100*share):0;
  const periodStart=taxContext.periodStart??new Date().toISOString().slice(0,10),periodEnd=taxContext.periodEnd??periodStart;
  const period=taxContext.period??(taxContext.periodStart||taxContext.periodEnd?detectPayrollPeriod(periodStart,periodEnd,R.payPeriodsPerMonth):(R.payPeriodsPerMonth===1?'monthly':'semi-monthly'));
  // A minimum wage earner (daily rate at or below the statutory minimum wage set in Payroll Settings) is exempt on the
@@ -76,5 +90,5 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance)+numberValue(r.govSssLoan)+numberValue(r.govPagibigLoan));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));
  const net=round(gross-deductions);
- return{basic,earnedBasic,absences,overtime,leavePay,allowances,earnings,gross,late,undertime,lateUt:round(late+undertime),sss,phil,pagibig,tax,taxBreakdown,loans,deductions,net,shortfall:net<0?round(-net):0,...employerShares(rate,R,has)};
+ return{basic,earnedBasic,absences,overtime,leavePay,allowances,earnings,gross,late,undertime,lateUt:round(late+undertime),sss,phil,pagibig,tax,taxBreakdown,loans,deductions,net,shortfall:net<0?round(-net):0,...employerShares(rate,R,has,share)};
 }

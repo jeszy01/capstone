@@ -33,7 +33,9 @@ describe('1. BIR tables',()=>{
 
 // One semi-monthly cutoff through the full payroll calculation.
 import {calculatePayroll} from '../features/payroll/payrollCalculator';
-import {DEFAULT_RATES} from '../features/payroll/payrollRules';
+import {DEFAULT_RATES as STANDARD_RATES} from '../features/payroll/payrollRules';
+// These figures split SSS, PhilHealth and Pag-IBIG over both cutoffs.
+const DEFAULT_RATES={...STANDARD_RATES,contributionsEveryCutoff:1};
 import {BLANK_PAYROLL_INPUT} from '../features/payroll/payrollRuns';
 import type {PayrollInput} from '../types/domain';
 export const cutoff=(input:Partial<PayrollInput>,context:Parameters<typeof calculatePayroll>[3]={},rates=DEFAULT_RATES)=>calculatePayroll({...BLANK_PAYROLL_INPUT,empId:'E',name:'E',...input},rates,[],{periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:[DEFAULT_WITHHOLDING_RULES],...context});

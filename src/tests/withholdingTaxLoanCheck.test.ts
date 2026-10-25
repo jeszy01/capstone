@@ -4,7 +4,9 @@ import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {governmentLoanDeductions,governmentLoanTotals} from '../features/governmentLoans/governmentLoanPayroll';
 import type {ScheduledGovernmentLoan} from '../features/governmentLoans/governmentLoanService';
 import {calculatePayroll} from '../features/payroll/payrollCalculator';
-import {DEFAULT_RATES} from '../features/payroll/payrollRules';
+import {DEFAULT_RATES as STANDARD_RATES} from '../features/payroll/payrollRules';
+// These figures split SSS, PhilHealth and Pag-IBIG over both cutoffs.
+const DEFAULT_RATES={...STANDARD_RATES,contributionsEveryCutoff:1};
 import {BLANK_PAYROLL_INPUT} from '../features/payroll/payrollRuns';
 import type {PayrollRun} from '../features/payroll/payrollRuns';
 import {calculateRunRow} from '../features/payroll/taxHistory';

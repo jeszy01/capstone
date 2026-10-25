@@ -4,6 +4,7 @@ import type {EmployeeCompensation} from '../compensation/compensationState';
 import {approvedOtMinutes} from '../attendance/attendanceService';
 import {calculateContributions} from '../contributions/contributionCalculator';
 import type {Agency} from '../contributions/contributionCalculator';
+import {contributionShare} from '../payroll/payrollCalculator';
 
 const round=(v:number)=>Math.round(v*100)/100;
 type Grade={position?:string;fixedSalary:number;status?:string};
@@ -24,7 +25,8 @@ export function computeDeductions(a:{employees:Employee[];records:AttendanceReco
   a.records.filter(r=>r.date>=a.from&&r.date<=a.to&&(r.empId===employee.employeeNo||r.empId===employee.id)).forEach(r=>{lateMin+=r.lateMin??0;undertimeMin+=r.undertimeMin??0;otMin+=approvedOtMinutes(r);if(r.status==='Present'&&r.timeIn&&r.timeOut)daysWorked++;if(r.status==='Absent'||(r.status==='On Leave'&&r.paidLeave===false))absentDays++});
   const perMin=salary?salary/a.rates.daysPerMonth/a.rates.hoursPerDay/60:0;
   const contrib=salary?calculateContributions(salary,a.rates):null;
-  const share=(agency:Agency)=>contrib?round(contrib[agency].employee/a.rates.payPeriodsPerMonth):0;
+  // Contributions are monthly: deducted in full in the 2nd cutoff, none in the 1st.
+  const share=(agency:Agency)=>contrib?round(contrib[agency].employee*contributionShare(a.rates,a.to)):0;
   const late=round(perMin*lateMin),undertime=round(perMin*undertimeMin),sss=share('SSS'),phil=share('PhilHealth'),pagibig=share('Pag-IBIG');
   return {employee,salary,lateMin,undertimeMin,daysWorked,absentDays,otHours:round(otMin/60),late,undertime,sss,phil,pagibig,total:round(late+undertime+sss+phil+pagibig)};
  });

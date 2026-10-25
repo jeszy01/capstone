@@ -1,6 +1,8 @@
 import {describe,expect,it} from 'vitest';
 import {calculatePayroll} from '../features/payroll/payrollCalculator';
-import {DEFAULT_RATES} from '../features/payroll/payrollRules';
+import {DEFAULT_RATES as STANDARD_RATES} from '../features/payroll/payrollRules';
+// These figures split SSS, PhilHealth and Pag-IBIG over both cutoffs.
+const DEFAULT_RATES={...STANDARD_RATES,contributionsEveryCutoff:1};
 import {BLANK_PAYROLL_INPUT} from '../features/payroll/payrollRuns';
 import type {RunRow} from '../features/payroll/payrollRuns';
 import {buildRegister,registerLine,registerMismatch} from '../../backend-render/payrollRegister.js';
