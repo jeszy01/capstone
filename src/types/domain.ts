@@ -1,6 +1,6 @@
 export type EmployeeStatus='Active'|'Inactive'|'On Leave';
 export type EmploymentStatus='Regular'|'Probationary'|'Part-Time'|'Contractual'|'Project-Based'|'Temporary'|'On Leave'|'Resigned';
-export interface User{ id:string; employeeId:string; name:string; displayName?:string|null; role:'Admin'|'HR Staff'|'Finance' }
+export interface User{ id:string; employeeId:string; name:string; displayName?:string|null; role:'Admin'|'HR Staff'|'Finance'; /** The sign-in email; it links the user to their own employee record. */email?:string|null }
 export interface Session{token:string;user:User}
 export interface Employee{id:string;employeeNo:string;name:string;email:string|null;position:string;department:string;dateHired:string;basicSalary:number;positionRate:number;status:EmployeeStatus;employmentStatus?:EmploymentStatus;contactNumber?:string|null;address?:string|null;birthDate?:string|null;sssNo?:string|null;philhealthNo?:string|null;pagibigNo?:string|null;tin?:string|null;bankName?:string|null;bankAccountNo?:string|null}
 export type AttendanceStatus='Present'|'Absent'|'On Leave'|'Day Off';

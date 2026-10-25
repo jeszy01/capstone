@@ -10,7 +10,7 @@ import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
-import { essClaimFields, essClaimView, nextClaimNumber, receiptOf, withoutReceipt } from './claimRules.js';
+import { essClaimFields, essClaimNotice, essClaimView, nextClaimNumber, receiptOf, withoutReceipt } from './claimRules.js';
 import { CORRECTION_STATUSES, correctionDecision, correctionFields, correctionView } from './correctionRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
@@ -172,7 +172,18 @@ async function saveAppData(req, key, isDel, value) {
       // Receipt files live in claim_receipts; a browser copy saved before they moved does not bring them back.
       if (key === 'claims:records' && Array.isArray(next)) next = next.map(withoutReceipt);
     }
-    events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed);
+    // For claims, the employee records with the user's email: nobody decides or pays their own claim.
+    const actor = key === 'claims:records'
+      ? { ...req.user, employeeIds: (await client.query(`select id from employees where $1 <> '' and lower(email) = lower($1)`, [String(req.user.email ?? '').trim()])).rows.map(r => String(r.id)) }
+      : req.user;
+    events = await appDataEvents(actor, key, existed ? appValue(row.value) : null, next, existed);
+    // The employee is told in ESS when their claim is approved, returned, rejected or paid (saved with the decision).
+    if (key === 'claims:records') for (const [action, , claimId] of events) {
+      const claim = next.find(item => String(item?.id) === String(claimId)), notice = essClaimNotice(action, claim);
+      if (!notice) continue;
+      const { rows: [owner] } = await client.query('select employee_number from employees where id::text = $1', [String(claim.employeeId)]);
+      if (owner) await client.query('insert into ess_notifications(employee_no, title, message) values($1,$2,$3)', [owner.employee_number, notice.title, notice.message]);
+    }
     // A withholding tax version a payroll run was computed with cannot be changed or removed (see withholdingRuleLock.js).
     if (key === 'payroll:withholding-tax-rules') {
       const { rows: [runs] } = await client.query(`select value from app_data where key='payroll:runs' and not deleted`);

@@ -72,3 +72,14 @@ export function receiptOf(claim) {
   const mimeType = /^data:([a-z]+\/[a-z0-9.+-]+);base64,/i.exec(dataUrl)?.[1];
   return mimeType ? { claimId: String(claim.id), name: String(claim.receiptName || 'receipt'), mimeType, dataUrl } : null;
 }
+
+const pesos = amount => `₱${Number(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** The ESS notification for a claim decision or payment (audit action claim.approved, .returned, .rejected, .paid), or null. */
+export function essClaimNotice(action, claim) {
+  const number = claim?.claimNumber ?? 'Your claim', amount = pesos(claim?.amount), reason = String(claim?.notes ?? '').trim();
+  if (action === 'claim.approved') return { title: 'Claim approved', message: `${number} for ${amount} was approved and will be reimbursed.` };
+  if (action === 'claim.returned') return { title: 'Claim returned for correction', message: `${number}: ${reason || 'see the review notes'}. Correct it and resubmit it in ESS.` };
+  if (action === 'claim.rejected') return { title: 'Claim rejected', message: `${number} for ${amount} was rejected${reason ? `: ${reason}` : '.'}` };
+  if (action === 'claim.paid') return { title: 'Claim reimbursed', message: `${number} for ${amount} was reimbursed${claim?.paymentDate ? ` on ${claim.paymentDate}` : ''}.` };
+  return null;
+}

@@ -6,6 +6,7 @@ import {employeeService} from '../features/employees/employeeService';
 import {normalizeClaims,updateClaim} from '../features/claims/claimsTypes';
 import type {ClaimReview} from '../features/claims/claimsTypes';
 import {can} from '../features/auth/permissions';
+import {getCurrentUser} from '../features/auth/authService';
 import type {ExpenseClaim} from '../features/claims/claimsTypes';
 import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,localToday,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
@@ -48,6 +49,9 @@ export default function Reimbursement(){
 }
 
 function ForReimbursement({claims,employees,onProcess}:{claims:ExpenseClaim[];employees:Employee[];onProcess:(claim:ExpenseClaim)=>void}){
+  // The signed-in user's own claims (employee records with their email): another user marks them paid.
+  const email=getCurrentUser()?.email?.trim().toLowerCase();
+  const own=new Set(email?employees.filter(employee=>employee.email?.trim().toLowerCase()===email).map(employee=>employee.id):[]);
   return <div role="region" aria-label="Claims ready for reimbursement table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[820px] text-left text-[13px]"><caption className="sr-only">Approved claims waiting for reimbursement, with employee, type, date, amount, status, and processing action.</caption>
     <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Action'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
     <tbody>{claims.length===0?<tr><td colSpan={7}><Empty>No approved claims are waiting for reimbursement.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-gray-100 transition-colors hover:bg-blue-50/35">
@@ -57,7 +61,7 @@ function ForReimbursement({claims,employees,onProcess}:{claims:ExpenseClaim[];em
       <td className={`${cell} whitespace-nowrap text-gray-600`}>{claimDate(claim.date)}</td>
       <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{peso(claim.amount)}</td>
       <td className={cell}><ClaimStatusBadge claim={claim}/></td>
-      <td className={cell}>{can('claims.pay')&&<Button onClick={()=>onProcess(claim)}><Check size={14}/>Process</Button>}</td>
+      <td className={cell}>{can('claims.pay')&&(own.has(claim.employeeId)?<span className="text-[11px] text-gray-500">Your claim: another user pays it</span>:<Button onClick={()=>onProcess(claim)}><Check size={14}/>Process</Button>)}</td>
     </tr>)}</tbody></table></div>;
 }
 

@@ -235,13 +235,19 @@ function claimEvents(user, before, after) {
     need(user, 'claims.encode');
     const label = `${claim.claimNumber || id} (${pesoText(claim.amount)})`;
     const was = claimApproval(old), now = claimApproval(claim);
+    // user.employeeIds: the employee records with the signed-in user's email. Nobody decides or pays their own claim.
+    const own = Array.isArray(user.employeeIds) && user.employeeIds.includes(String(claim.employeeId));
     if (was !== now) {
       need(user, 'claims.approve');
+      if (own) throw forbid('This is your own claim. Another reviewer must approve, return or reject it.');
+      // A returned claim waits for the employee to correct it and resubmit it from ESS; meanwhile it can only be rejected.
+      if (was === 'Returned' && now !== 'Rejected') throw forbid('This claim was returned to the employee. It can be approved after they correct and resubmit it from ESS.');
       if (!['Pending Approval', 'Returned'].includes(was) || !CLAIM_DECISIONS.includes(now)) throw forbid('This claim status change is not allowed.');
       events.push([`claim.${now.toLowerCase()}`, 'Claims', id, `${now} claim ${label}.`]);
     }
     if (paid(claim)) {
       need(user, 'claims.pay');
+      if (own) throw forbid('This is your own claim. Another user must mark it as paid.');
       if (now !== 'Approved') throw forbid('Only approved claims can be paid.');
       events.push(['claim.paid', 'Reimbursement', id, `Marked claim ${label} as Paid.`]);
     }

@@ -10,3 +10,4 @@ export function essClaimView(claim:Claim):Record<string,any>;
 export function changedClaimDetails(before:Claim|undefined,after:Claim|undefined):string[];
 export function withoutReceipt<T extends Claim | null | undefined>(claim:T):T;
 export function receiptOf(claim:Claim | null | undefined):{claimId:string;name:string;mimeType:string;dataUrl:string}|null;
+export function essClaimNotice(action:string,claim:Claim|null|undefined):{title:string;message:string}|null;
