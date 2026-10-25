@@ -7,7 +7,7 @@
 //   DEMO-003 undertime (contractual)                         DEMO-009 Pag-IBIG loan, approved bonus, lates and overtime
 //   DEMO-004 approved overtime (+ pending overtime, not paid) DEMO-010 high earner (withholding tax), allowances
 //   DEMO-005 absences                                        DEMO-011 leave without pay all October
-//   DEMO-006 vacation and sick leave                         DEMO-012 resigned October 9 (Inactive, not in payroll)
+//   DEMO-006 paid leave and leave without pay                DEMO-012 resigned October 9 (Inactive, not in payroll)
 //   node scripts/demo-data.js seed    adds (or resets) the demo employees and their records
 //   node scripts/demo-data.js clean   removes them (refused while a payroll run includes one)
 // Needs DATABASE_URL set to the Render database's External Database URL. Reload PBMS afterwards.
@@ -69,8 +69,10 @@ function day(no, date) {
       return { status: 'Present', ot, otPending: date === '2026-10-23' };
     }
     case 'DEMO-005': return ['2026-10-05', '2026-10-16', '2026-10-20'].includes(date) ? { status: 'Absent' } : { status: 'Present' };
-    case 'DEMO-006': return date === '2026-10-02' || date === '2026-10-12' ? { status: 'On Leave', leave: 'Vacation Leave' }
-      : date === '2026-10-19' ? { status: 'On Leave', leave: 'Sick Leave' } : { status: 'Present' };
+    // Oct 10–25: one paid leave day (vacation, Oct 12) and one unpaid (leave without pay, Oct 19).
+    case 'DEMO-006': return date === '2026-10-02' ? { status: 'On Leave', leave: 'Sick Leave' }
+      : date === '2026-10-12' ? { status: 'On Leave', leave: 'Vacation Leave' }
+      : date === '2026-10-19' ? { status: 'On Leave', leave: 'Leave Without Pay' } : { status: 'Present' };
     case 'DEMO-009': return { status: 'Present', late: { '2026-10-06': 20, '2026-10-20': 15 }[date] ?? 0, ot: { '2026-10-08': 120, '2026-10-22': 60 }[date] ?? 0 };
     case 'DEMO-011': return date >= '2026-10-01' ? { status: 'On Leave', leave: 'Leave Without Pay' } : { status: 'Present' };
     default: return { status: 'Present' };
