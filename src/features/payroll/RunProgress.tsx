@@ -3,11 +3,11 @@ import {PROCESS_STAGES,runStatus,stageIndex} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
 
 // What the current step is waiting for, under its label.
-const WAITING:Record<string,string>={Computed:'Check and submit',Returned:'Returned for changes','Pending Approval':'Awaiting approval',Rejected:'Rejected',Approved:'Awaiting funding',Funded:'Ready to export',Exported:'Mark results'};
-/** Where the run is in Draft → Review → Submitted to Finance → Bank file exported → Paid → Payslips released. */
+const WAITING:Record<string,string>={Computed:'Check and submit',Returned:'Returned for changes','Pending Approval':'Awaiting approval',Rejected:'Rejected',Approved:'Ready to export',Funded:'Ready to export',Exported:'Mark results'};
+/** Where the run is in Draft → Review → Submit to finance → Approved → Export file → Paid → Release payslip. */
 export function RunStepper({run}:{run:PayrollRun}){
  const status=runStatus(run),index=stageIndex(status);
- return <ol aria-label="Payroll run progress" className="no-print m-0 grid list-none grid-cols-3 gap-2 p-0 sm:grid-cols-6">
+ return <ol aria-label="Payroll run progress" className="no-print m-0 grid list-none grid-cols-3 gap-2 p-0 sm:grid-cols-4 lg:grid-cols-7">
   {PROCESS_STAGES.map((stage,i)=>{
    const done=i<index||(i===index&&status==='Closed'),active=i===index&&status!=='Closed';
    const stopped=active&&status==='Rejected',returned=active&&status==='Returned';

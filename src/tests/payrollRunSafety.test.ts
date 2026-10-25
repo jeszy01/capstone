@@ -65,14 +65,13 @@ describe('payroll run transitions are enforced by the server',()=>{
   const rejected={...approved(),status:'Rejected',decisionComment:'Wrong cutoff'};
   await expect(save(hr,[rejected],[{...rejected,status:'Computed'}])).rejects.toThrow('rejected payroll run is locked');
  });
- it('funding is confirmed only through the receipt upload, and export is blocked until a receipt is attached',async()=>{
+ it('an approved run exports straight away, with no funding step; funding is never set by a browser save',async()=>{
   await expect(save(admin,[approved()],[funded()])).rejects.toThrow('uploading the transfer receipt');
   await expect(save(hr,[approved()],[funded()])).rejects.toThrow('uploading the transfer receipt');
   await expect(save(admin,[funded()],[{...funded(),funding:{...funded().funding,fileName:'other.pdf'}}])).rejects.toThrow('uploading the transfer receipt');
-  const noReceipt={...funded(),funding:{...funded().funding,receiptId:undefined}};
-  await expect(save(hr,[noReceipt],[{...exported(),funding:noReceipt.funding}])).rejects.toThrow('Attach the funding receipt');
-  await expect(save(hr,[approved()],[{...exported(),funding:undefined,status:'Exported'}])).rejects.toThrow();
-  await expect(save(hr,[approved()],[{...approved(),exports:[exportEntry],payouts:exported().payouts}])).rejects.toThrow('only after the payroll account is funded');
+  expect((await save(hr,[approved()],[{...exported(),funding:undefined}]))[0][0]).toBe('payroll.exported');
+  await expect(save(hr,[approved()],[{...approved(),status:'Exported'}])).rejects.toThrow('first payout file');
+  await expect(save(hr,[approved()],[{...approved(),exports:[exportEntry],payouts:exported().payouts}])).rejects.toThrow('first payout file');
  });
  it('HR exports payouts, marks them Paid or Failed, fixes failures, and the run is Paid only when everyone is',async()=>{
   expect((await save(hr,[funded()],[exported()]))[0]).toEqual(['payroll.exported','Payroll','r1',expect.stringContaining('Bank payout file for 1 employee')]);
@@ -103,8 +102,8 @@ describe('payroll run transitions are enforced by the server',()=>{
   expect(runStatus({...legacy,releasedAt:'y'})).toBe('Closed');
   expect(runStatus(draft({status:'Approved'}))).toBe('Approved');
   await expect(save(hr,[legacy],[{...legacy,paidAt:undefined}])).rejects.toThrow('locked');
-  expect(canMove('Approved','Funded')).toBe(true);
-  expect(canMove('Approved','Exported')).toBe(false);
+  expect(canMove('Approved','Exported')).toBe(true);
+  expect(canMove('Approved','Funded')).toBe(false);
  });
 });
 

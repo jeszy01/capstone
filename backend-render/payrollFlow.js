@@ -1,27 +1,30 @@
 // The payroll run process, shared by the server's checks (accessRules.js, server.js) and the app.
-// Draft -> Review -> Submit to Finance -> Export bank file -> Mark as paid -> Release payslips (PROCESS_STAGES).
-// Statuses: Draft -> Computed -> Pending Approval -> Approved -> Funded -> Exported -> Paid -> Closed, plus Returned and Rejected.
+// Draft -> Review -> Submit to finance -> Approved -> Export file -> (bank portal upload, outside the system) -> Paid ->
+// Release payslip (PROCESS_STAGES).
+// Statuses: Draft -> Computed -> Pending Approval -> Approved -> Exported -> Paid -> Closed, plus Returned and Rejected.
 //   Draft: HR created the run for a cutoff.             Computed: HR computed (or recomputed) its figures.
 //   Pending Approval: HR submitted it.                  Returned: the Admin sent it back with a comment; HR recomputes.
 //   Rejected: the Admin refused it with a comment; it is locked.
-//   Approved: the Admin approved it (never the preparer). Funded: the Admin confirmed the payroll account is funded.
+//   Approved: Finance approved it (never the preparer).  Funded: runs funded before funding was dropped (export as Approved).
 //   Exported: HR exported payout files.                 Paid: every employee is marked Paid.
 //   Closed: payslips were released to every department (set by the server).
 
 export const RUN_STATUSES = ['Draft', 'Computed', 'Pending Approval', 'Returned', 'Rejected', 'Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
 /** The main path, in order. */
-export const PROCESS_STEPS = ['Draft', 'Computed', 'Pending Approval', 'Approved', 'Funded', 'Exported', 'Paid', 'Closed'];
+export const PROCESS_STEPS = ['Draft', 'Computed', 'Pending Approval', 'Approved', 'Exported', 'Paid', 'Closed'];
 /**
- * The six steps HR follows, each with the statuses it covers: Review (computed, or returned for changes), Submitted to
- * Finance (awaiting approval, approved, funded), Bank file (exported, awaiting payment results), Paid, Payslips released.
+ * The seven steps, each with the statuses it covers: Review (computed, or returned for changes), Submit to finance
+ * (awaiting approval, or rejected), Approved (by Finance), Export file (exported, awaiting payment results), Paid,
+ * Release payslip. The bank portal upload between Export file and Paid happens outside the system.
  */
 export const PROCESS_STAGES = [
   { id: 'draft', label: 'Draft', statuses: ['Draft'] },
   { id: 'review', label: 'Review', statuses: ['Computed', 'Returned'] },
-  { id: 'finance', label: 'Submitted to Finance', statuses: ['Pending Approval', 'Rejected', 'Approved', 'Funded'] },
-  { id: 'bank', label: 'Bank file exported', statuses: ['Exported'] },
+  { id: 'finance', label: 'Submit to finance', statuses: ['Pending Approval', 'Rejected'] },
+  { id: 'approved', label: 'Approved', statuses: ['Approved', 'Funded'] },
+  { id: 'export', label: 'Export file', statuses: ['Exported'] },
   { id: 'paid', label: 'Paid', statuses: ['Paid'] },
-  { id: 'released', label: 'Payslips released', statuses: ['Closed'] },
+  { id: 'released', label: 'Release payslip', statuses: ['Closed'] },
 ];
 /** The index of the stage a status belongs to. */
 export const stageIndex = status => PROCESS_STAGES.findIndex(stage => stage.statuses.includes(status));
@@ -47,7 +50,7 @@ export const TRANSITIONS = {
   Computed: ['Computed', 'Pending Approval'],
   Returned: ['Computed'],
   'Pending Approval': ['Approved', 'Returned', 'Rejected'],
-  Approved: ['Funded'],
+  Approved: ['Exported'],
   Funded: ['Exported'],
   Exported: ['Exported', 'Paid'],
 };

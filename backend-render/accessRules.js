@@ -86,8 +86,7 @@ function payoutEvents(old, row, status, log) {
   const oldExports = Array.isArray(old.exports) ? old.exports : [], newExports = Array.isArray(row.exports) ? row.exports : [];
   if (stable(newExports.slice(0, oldExports.length)) !== stable(oldExports)) throw forbid('Exported payout files cannot be changed.');
   const added = newExports.slice(oldExports.length), exportOf = new Map();
-  if (added.length && !['Funded', 'Exported'].includes(status)) throw forbid('Payouts can be exported only after the payroll account is funded.');
-  if (added.length && !old.funding?.receiptId) throw forbid('Attach the funding receipt before exporting payouts.');
+  if (added.length && !['Approved', 'Funded', 'Exported'].includes(status)) throw forbid('Payouts can be exported only after Finance approves the payroll.');
   for (const entry of added) {
     if (!entry || typeof entry.id !== 'string' || !PAYOUT_METHODS.includes(entry.method) || !Array.isArray(entry.employees) || !entry.employees.length) throw forbid('An export needs its method and employees.');
     for (const empId of entry.employees) exportOf.set(String(empId), entry);
@@ -143,7 +142,7 @@ async function payrollRunEvents(user, before, after) {
     // Payout details may be corrected while the run waits for funding or export.
     if (was === now && ['Approved', 'Funded'].includes(was)) {
       need(user, 'payroll.release', 'Only HR Staff can update payout details.');
-      if (was === 'Approved' && stable(old.exports ?? []) !== stable(row.exports ?? [])) throw forbid('Payouts can be exported only after the payroll account is funded.');
+      if (stable(old.exports ?? []) !== stable(row.exports ?? [])) throw forbid('A run becomes Exported with its first payout file.');
       if (!sameExcept(old, row, ['payouts'])) throw forbid('An approved payroll run cannot be changed.');
       payoutEvents(old, row, was, log);
       continue;
@@ -173,7 +172,7 @@ async function payrollRunEvents(user, before, after) {
     } else if (now === 'Exported') {
       need(user, 'payroll.release', 'Only HR Staff can export and track payouts.');
       if (!sameExcept(old, row, ['status', 'payouts', 'exports'])) throw forbid('Exporting payouts cannot change the payroll.');
-      if (was === 'Funded' && !((row.exports?.length ?? 0) > (old.exports?.length ?? 0))) throw forbid('A run becomes Exported with its first payout file.');
+      if (['Approved', 'Funded'].includes(was) && !((row.exports?.length ?? 0) > (old.exports?.length ?? 0))) throw forbid('A run becomes Exported with its first payout file.');
       if (payoutEvents(old, row, was, log)) throw forbid('Every employee is Paid, so the run must be marked Paid.');
     } else if (now === 'Paid') {
       need(user, 'payroll.release', 'Only HR Staff can export and track payouts.');

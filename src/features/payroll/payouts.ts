@@ -84,12 +84,12 @@ export function downloadCsv(name:string,csv:string){
 
 /**
  * Exports the run's pending payouts of one method: they become Exported in a new export entry and the run becomes
- * Exported. Only a Funded or Exported run can export. Returns the saved run and the export's id.
+ * Exported. Only an Approved (or Funded) or Exported run can export. Returns the saved run and the export's id.
  */
 export async function exportPayouts(id:string,method:PayoutMethod,by:string){
  const exportId=crypto.randomUUID(),at=new Date().toISOString();
  const saved=await updateRun(id,run=>{
-  expectStatus(run,'Funded','Exported');
+  expectStatus(run,'Approved','Funded','Exported');
   const employees=run.rows.map(row=>row.input.empId).filter(empId=>run.payouts?.[empId]?.method===method&&run.payouts[empId].status==='Pending');
   if(!employees.length)throw new Error(`No pending ${method} payouts to export.`);
   const incomplete=employees.filter(empId=>missingPayout(run.payouts![empId]));

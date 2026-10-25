@@ -21,13 +21,9 @@ export function pendingApprovals(user, { claims = [], runs = [], hmo = { enrollm
     const count = runsIn(runs, ['Pending Approval'], id);
     rows.push({ key: 'payroll-approval', label: 'Payroll', count, detail: `${plural(count, 'run')} awaiting approval`, action: 'Review', link: '/payroll?status=Pending%20Approval' });
   }
-  if (can(role, 'payroll.fund')) {
-    const count = runsIn(runs, ['Approved']);
-    rows.push({ key: 'payroll-funding', label: 'Payroll', count, detail: `${plural(count, 'run')} awaiting funding`, action: 'Review', link: '/payroll?status=Approved' });
-  }
   if (can(role, 'payroll.release')) {
-    const count = runsIn(runs, ['Funded', 'Exported']);
-    rows.push({ key: 'payroll-payment', label: 'Payroll', count, detail: `${plural(count, 'run')} awaiting export/payment`, action: 'View', link: '/payroll?status=Funded,Exported' });
+    const count = runsIn(runs, ['Approved', 'Funded', 'Exported']);
+    rows.push({ key: 'payroll-payment', label: 'Payroll', count, detail: `${plural(count, 'run')} awaiting export/payment`, action: 'View', link: '/payroll?status=Approved,Funded,Exported' });
   }
   if (can(role, 'hmo.view')) {
     const count = (hmo.enrollments || 0) + (hmo.dependents || 0);

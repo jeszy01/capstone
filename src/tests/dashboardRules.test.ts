@@ -12,30 +12,27 @@ const data={
 const byKey=(rows:ReturnType<typeof pendingApprovals>)=>Object.fromEntries(rows.map(row=>[row.key,[row.count,row.action,row.link]]));
 
 describe('Pending approvals per role',()=>{
- it('Admin: claims, payroll to approve and fund, runs awaiting export or payment, HMO to view',()=>{
+ it('Admin: claims, payroll to approve, runs awaiting export or payment, HMO to view',()=>{
   expect(byKey(pendingApprovals(admin,data))).toEqual({
    claims:[2,'Review','/claims-reimbursement/claims?status=pending'],
    'payroll-approval':[2,'Review','/payroll?status=Pending%20Approval'],
-   'payroll-funding':[1,'Review','/payroll?status=Approved'],
-   'payroll-payment':[2,'View','/payroll?status=Funded,Exported'],
+   'payroll-payment':[3,'View','/payroll?status=Approved,Funded,Exported'],
    hmo:[3,'View','/hmo-benefits/hmo/employee-enrollment?status=pending'],
   });
  });
- it('HR: claims to verify, payroll to approve (never their own run) and fund (Finance page), runs awaiting export or payment, HMO to view',()=>{
+ it('HR: claims to verify, payroll to approve (never their own run, Finance page), runs awaiting export or payment, HMO to view',()=>{
   const rows=pendingApprovals(hr,data);
   expect(byKey(rows)).toEqual({
    claims:[2,'Review','/claims-reimbursement/claims?status=pending'],
    'payroll-approval':[1,'Review','/payroll?status=Pending%20Approval'],
-   'payroll-funding':[1,'Review','/payroll?status=Approved'],
-   'payroll-payment':[2,'View','/payroll?status=Funded,Exported'],
+   'payroll-payment':[3,'View','/payroll?status=Approved,Funded,Exported'],
    hmo:[3,'View','/hmo-benefits/hmo/employee-enrollment?status=pending'],
   });
   expect(rows.find(row=>row.key==='claims')?.detail).toBe('2 claims to verify');
  });
- it('Finance: payroll to approve (never a run they prepared) and to fund',()=>{
+ it('Finance: payroll to approve (never a run they prepared)',()=>{
   expect(byKey(pendingApprovals(finance,data))).toEqual({
    'payroll-approval':[1,'Review','/payroll?status=Pending%20Approval'],
-   'payroll-funding':[1,'Review','/payroll?status=Approved'],
   });
  });
  it('a role without permissions gets no rows (the card is hidden)',()=>{
