@@ -1,7 +1,7 @@
 // Demo data for the Render database: 12 employees (DEMO-001..DEMO-012) across every department and grade, each with a
 // salary, government IDs, bank details and HR2 attendance for the September 26–October 9 and October 10–25, 2026
 // cutoffs, together covering every case payroll handles:
-//   DEMO-001 perfect attendance, minimum wage (tax exempt)   DEMO-007 company loan, transport and rice allowances
+//   DEMO-001 perfect attendance, G1 step 1 (minimum wage)    DEMO-007 company loan, transport and rice allowances
 //   DEMO-002 lates (probationary)                            DEMO-008 cash advance and an SSS loan
 //   DEMO-003 undertime (contractual)                         DEMO-009 Pag-IBIG loan, approved bonus, lates and overtime
 //   DEMO-004 approved overtime (+ pending overtime, not paid) DEMO-010 high earner (withholding tax), allowances
@@ -11,6 +11,7 @@
 //   node scripts/demo-data.js clean   removes them (refused while a payroll run includes one)
 // Needs DATABASE_URL set to the Render database's External Database URL. Reload PBMS afterwards.
 import pg from 'pg';
+import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, gradeStructure, resolvePosition } from '../gradeStructure.js';
 
 const { DATABASE_URL } = process.env;
 const mode = process.argv[2];
@@ -22,24 +23,23 @@ const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthor
 
 const PREFIX = 'DEMO-';
 const isDemo = no => String(no ?? '').startsWith(PREFIX);
-const FROM = '2026-09-26', TO = '2026-10-25', WORK_DAYS = 22;
+const FROM = '2026-09-26', TO = '2026-10-25';
 
-// [no, first, last, position, department, employment, status, hired, daily rate, birth date]
+// [no, first, last, position, department, employment, status, hired, salary step (1-5) in the position's grade, birth date]
 const EMPLOYEES = [
-  ['DEMO-001', 'Juan', 'Dela Cruz', 'Rider', 'Fleet and Transportation', 'Regular', 'Active', '2023-03-01', 755, '1996-04-12'],
-  ['DEMO-002', 'Maria', 'Santos', 'Warehouse Helper', 'Supply Chain', 'Probationary', 'Active', '2026-06-01', 760, '2001-08-23'],
-  ['DEMO-003', 'Pedro', 'Reyes', 'Utility Staff', 'Facilities', 'Contractual', 'Active', '2026-01-15', 760, '1990-11-05'],
-  ['DEMO-004', 'Jose', 'Garcia', 'Driver', 'Fleet and Transportation', 'Regular', 'Active', '2022-07-18', 794, '1988-02-14'],
-  ['DEMO-005', 'Ana', 'Mendoza', 'Customer Support', 'E-Commerce Support', 'Regular', 'Active', '2024-09-02', 965, '1998-06-30'],
-  ['DEMO-006', 'Liza', 'Torres', 'Records Clerk', 'Facilities and Admin', 'Regular', 'Active', '2023-11-06', 765, '1994-01-19'],
-  ['DEMO-007', 'Carlo', 'Ramos', 'HR Staff', 'HR', 'Regular', 'Active', '2022-02-01', 904, '1992-09-09'],
-  ['DEMO-008', 'Grace', 'Villanueva', 'Accounting Staff', 'Finance', 'Regular', 'Active', '2023-05-15', 838, '1995-12-03'],
-  ['DEMO-009', 'Mark', 'Bautista', 'Fleet Supervisor', 'Fleet and Transportation', 'Regular', 'Active', '2021-08-09', 1155, '1987-07-27'],
-  ['DEMO-010', 'Sofia', 'Aquino', 'Finance Manager', 'Finance', 'Regular', 'Active', '2020-01-06', 2254, '1983-03-15'],
-  ['DEMO-011', 'Rosa', 'Navarro', 'HR Manager', 'HR', 'On Leave', 'On Leave', '2019-10-01', 2062, '1985-05-21'],
-  ['DEMO-012', 'Paolo', 'Castillo', 'Dispatcher', 'Fleet and Transportation', 'Resigned', 'Inactive', '2024-04-01', 799, '1999-10-10'],
+  ['DEMO-001', 'Juan', 'Dela Cruz', 'Rider', 'Fleet and Transportation', 'Regular', 'Active', '2023-03-01', 1, '1996-04-12'],
+  ['DEMO-002', 'Maria', 'Santos', 'Warehouse Helper', 'Supply Chain', 'Probationary', 'Active', '2026-06-01', 1, '2001-08-23'],
+  ['DEMO-003', 'Pedro', 'Reyes', 'Utility Staff', 'Facilities', 'Contractual', 'Active', '2026-01-15', 1, '1990-11-05'],
+  ['DEMO-004', 'Jose', 'Garcia', 'Driver', 'Fleet and Transportation', 'Regular', 'Active', '2022-07-18', 3, '1988-02-14'],
+  ['DEMO-005', 'Ana', 'Mendoza', 'Customer Support', 'E-Commerce Support', 'Regular', 'Active', '2024-09-02', 2, '1998-06-30'],
+  ['DEMO-006', 'Liza', 'Torres', 'Records Clerk', 'Facilities and Admin', 'Regular', 'Active', '2023-11-06', 2, '1994-01-19'],
+  ['DEMO-007', 'Carlo', 'Ramos', 'HR Staff', 'HR', 'Regular', 'Active', '2022-02-01', 3, '1992-09-09'],
+  ['DEMO-008', 'Grace', 'Villanueva', 'Accounting Staff', 'Finance', 'Regular', 'Active', '2023-05-15', 2, '1995-12-03'],
+  ['DEMO-009', 'Mark', 'Bautista', 'Fleet Supervisor', 'Fleet and Transportation', 'Regular', 'Active', '2021-08-09', 3, '1987-07-27'],
+  ['DEMO-010', 'Sofia', 'Aquino', 'Finance Manager', 'Finance', 'Regular', 'Active', '2020-01-06', 4, '1983-03-15'],
+  ['DEMO-011', 'Rosa', 'Navarro', 'HR Manager', 'HR', 'On Leave', 'On Leave', '2019-10-01', 5, '1985-05-21'],
+  ['DEMO-012', 'Paolo', 'Castillo', 'Dispatcher', 'Fleet and Transportation', 'Resigned', 'Inactive', '2024-04-01', 1, '1999-10-10'],
 ];
-const monthly = rate => Math.round(rate * WORK_DAYS * 100) / 100;
 const digits = (no, length) => no.replace(/\D/g, '').padStart(length, '0');
 
 const hhmm = minutes => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -121,9 +121,17 @@ const demoIds = async client => (await client.query('select id from employees wh
 async function seed(client) {
   await refuseIfInPayroll(client, 'seed');
   await removeRecords(client, await demoIds(client));
+  // Salaries follow Compensation: the step's daily rate in the position's grade (HR's saved grades and positions) times
+  // the working days per month in Payroll Settings, so Salary Structure shows each employee exactly on their step.
+  const grades = gradeStructure(await readApp(client, GRADE_STRUCTURE_KEY, null));
+  const positions = await readApp(client, POSITION_GRADES_KEY, {});
+  const rates = await readApp(client, 'payroll:rates', {});
+  const days = Number(rates?.daysPerMonth) >= 1 && Number(rates?.daysPerMonth) <= 31 ? Number(rates.daysPerMonth) : 22;
   const ids = {};
-  for (const [no, first, last, position, department, employment, status, hired, rate, birth] of EMPLOYEES) {
-    const salary = monthly(rate), n = digits(no, 3);
+  for (const [no, first, last, position, department, employment, status, hired, step, birth] of EMPLOYEES) {
+    const code = resolvePosition(position, positions)?.grade, grade = grades.find(item => item.code === code);
+    if (!grade) throw new Error(`${position} has no salary grade.`);
+    const rate = grade.steps[step - 1], salary = Math.round(rate * days * 100) / 100, n = digits(no, 3);
     const { rows: [{ id }] } = await client.query(
       `insert into employees(employee_number,first_name,last_name,email,position,department,hire_date,employment_status,status,basic_salary,position_rate,
          phone,address,birth_date,sss_number,philhealth_number,pagibig_number,tin,bank_name,bank_account_number)
@@ -138,8 +146,8 @@ async function seed(client) {
         Number(n) % 2 ? 'BDO' : 'BPI', `00${n}12345${n}`]);
     ids[no] = id;
     await client.query(
-      `insert into employee_compensation(employee_id,position,basic_salary,daily_rate,effective_date,source)
-       values($1,$2,$3,$4,$5,'Initial Assignment')`, [id, position, salary, rate, hired]);
+      `insert into employee_compensation(employee_id,salary_code,position,basic_salary,daily_rate,effective_date,source)
+       values($1,$2,$3,$4,$5,$6,'Initial Assignment')`, [id, grade.code, position, salary, rate, hired]);
     await client.query(
       `insert into compensation_history(employee_id,source,event_type,previous_salary,new_salary,adjustment_amount,reason,effective_date,status,applied_at,actor_name)
        values($1,'Employee Compensation','Initial Assignment',0,$2,$2,'Initial compensation assignment',$3::date,'Applied',$3::date::timestamptz,'Demo data')`, [id, salary, hired]);
@@ -176,7 +184,7 @@ async function seed(client) {
 
   const records = EMPLOYEES.flatMap(([no]) => dates.map(date => attendance(no, date)).filter(Boolean));
   await setAttendance(client, records);
-  console.log(`Seeded ${EMPLOYEES.length} demo employees with salaries, ${allowances.length} allowances, a bonus, a company loan, a cash advance,`);
+  console.log(`Seeded ${EMPLOYEES.length} demo employees with salaries on their grade steps (${days} working days a month), ${allowances.length} allowances, a bonus, a company loan, a cash advance,`);
   console.log(`an SSS loan, a Pag-IBIG loan and ${records.length} attendance records (${FROM} to ${TO}).`);
 }
 
