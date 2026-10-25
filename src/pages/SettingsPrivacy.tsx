@@ -14,7 +14,7 @@ import {accountService,passkeyProblems,passwordProblems} from '../features/auth/
 import type {AccountSecurity,AccountSession} from '../features/auth/accountService';
 import {employeeService} from '../features/employees/employeeService';
 import {notificationSoundOn,setNotificationSoundOn} from '../features/notifications/notificationSound';
-import {CURRENCIES,DATE_FORMATS,DEFAULT_APPEARANCE,DEFAULT_LOGO,LANGUAGES,TIME_ZONES,FONT_SIZES,SESSION_TIMEOUTS,UI_COLORS,loadAppearance,loadBackup,loadBranding,loadCompany,loadPrivacy,loadRegional,loadSessionTimeout,saveAppearance,saveBackup,saveBranding,saveCompany,savePrivacy,saveRegional,saveSessionTimeout} from '../features/settings/systemSettings';
+import {CURRENCIES,DATE_FORMATS,DEFAULT_APPEARANCE,DEFAULT_LOGO,LANGUAGES,TIME_ZONES,FONT_SIZES,UI_COLORS,loadAppearance,loadBackup,loadBranding,loadCompany,loadPrivacy,loadRegional,saveAppearance,saveBackup,saveBranding,saveCompany,savePrivacy,saveRegional} from '../features/settings/systemSettings';
 import type {Appearance,Branding,CompanyProfile,DateFormat,PrivacySettings,Regional} from '../features/settings/systemSettings';
 import {formatWithSetting} from '../features/settings/systemSettings';
 
@@ -214,17 +214,16 @@ type PasskeyMode='set'|'change'|'reset';
 function SecuritySection({onDirty}:{onDirty:(dirty:boolean)=>void}){
  const [security,setSecurity]=useState<AccountSecurity|null>(null),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
  const [passwords,setPasswords]=useState({current:'',next:'',confirm:''}),[errors,setErrors]=useState<string[]>([]),[busy,setBusy]=useState(false),[saved,flash]=useSaved();
- const [timeout,setTimeoutMinutes]=useState(loadSessionTimeout);
  const [confirmingOtp,setConfirmingOtp]=useState<boolean|null>(null);
  const [passkeyOpen,setPasskeyOpen]=useState(false),[passkeyMode,setPasskeyMode]=useState<PasskeyMode>('set'),[passkeys,setPasskeys]=useState({current:'',next:'',confirm:''}),[passkeyErrors,setPasskeyErrors]=useState<string[]>([]),[confirmingPasskey,setConfirmingPasskey]=useState(false),[passkeyBusy,setPasskeyBusy]=useState(false);
  const [signingOut,setSigningOut]=useState<AccountSession|'others'|null>(null),[notice,setNotice]=useState('');
  const load=useCallback(async()=>{setLoading(true);setLoadError('');try{setSecurity(await accountService.load())}catch(cause){setLoadError(errorText(cause,'Security settings could not be loaded.'))}finally{setLoading(false)}},[]);
  useEffect(()=>{void load()},[load]);
  useEffect(()=>{if(!notice)return;const timer=window.setTimeout(()=>setNotice(''),3000);return()=>window.clearTimeout(timer)},[notice]);
- const dirty=Boolean(passwords.current||passwords.next||passwords.confirm||passkeys.current||passkeys.next||passkeys.confirm)||timeout!==loadSessionTimeout();
+ const dirty=Boolean(passwords.current||passwords.next||passwords.confirm||passkeys.current||passkeys.next||passkeys.confirm);
  useEffect(()=>{onDirty(dirty)},[dirty,onDirty]);
 
- // Save Changes applies the session timeout, and the new password when one is typed in.
+ // Save Changes applies the new password when one is typed in.
  const save=async()=>{
   const problems:string[]=[];
   const changing=Boolean(passwords.current||passwords.next||passwords.confirm);
@@ -233,7 +232,6 @@ function SecuritySection({onDirty}:{onDirty:(dirty:boolean)=>void}){
    else{problems.push(...passwordProblems(passwords.next));if(passwords.next!==passwords.confirm)problems.push('New passwords do not match.');if(passwords.next===passwords.current)problems.push('The new password must be different from the current password.')}
   }
   setErrors(problems);if(problems.length)return;
-  if(timeout!==loadSessionTimeout())saveSessionTimeout(timeout);
   if(changing){
    setBusy(true);
    try{
@@ -304,7 +302,6 @@ function SecuritySection({onDirty}:{onDirty:(dirty:boolean)=>void}){
     <Field label="Confirm Password"><TextInput type="password" autoComplete="new-password" value={passwords.confirm} onChange={event=>setPasswords({...passwords,confirm:event.target.value})}/></Field>
    </div>
    <div className="mt-3"><Toggle label="Two-Factor Authentication (OTP)" checked={security.otpEnabled} disabled={!security.otpAvailable} onChange={value=>setConfirmingOtp(value)}/></div>
-   <div className="mt-3 sm:w-1/2"><Field label="Session Timeout"><select className={input} value={timeout} onChange={event=>setTimeoutMinutes(Number(event.target.value))}>{SESSION_TIMEOUTS.map(minutes=><option key={minutes} value={minutes}>{minutes?`${minutes} minutes`:'Never'}</option>)}</select></Field></div>
    <Problems items={errors}/>
   </Section>
   <Card className="min-w-0">
@@ -321,9 +318,9 @@ function SecuritySection({onDirty}:{onDirty:(dirty:boolean)=>void}){
   </Card>
   <Card className="min-w-0">
    <h3 className="m-0 mb-4 text-[15px] font-bold text-gray-900">Session History</h3>
-   {table(['Device','Browser','Signed In','Last Active','Ended','Status'],!security.history.length?<tr><td colSpan={6}><Empty>No sessions recorded.</Empty></td></tr>:security.history.map(item=><tr key={item.id}>
+   {table(['Device','Browser','Signed In','Last Active','Status'],!security.history.length?<tr><td colSpan={5}><Empty>No sessions recorded.</Empty></td></tr>:security.history.map(item=><tr key={item.id}>
     <td>{item.device}{item.current&&<span className="ml-2 inline-flex rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-2 py-0.5 text-[11px] font-semibold text-white">This device</span>}</td>
-    <td>{item.browser}</td><td>{when(item.createdAt)}</td><td>{when(item.lastActiveAt)}</td><td>{when(item.endedAt)}</td>
+    <td>{item.browser}</td><td>{when(item.createdAt)}</td><td>{when(item.lastActiveAt)}</td>
     <td><StatusBadge status={item.status==='Active'?'Active':item.status==='Expired'?'Expired':'Closed'} label={item.status}/></td>
    </tr>))}
   </Card>

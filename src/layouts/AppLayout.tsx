@@ -10,23 +10,8 @@ import {accountService} from '../features/auth/accountService';
 import {PasskeyGateHost} from '../features/auth/passkeyGate';
 import {useNotifications} from '../features/notifications/notificationService';
 import {watchNotificationSound} from '../features/notifications/notificationSound';
-import {SETTINGS_EVENT,loadSessionTimeout} from '../features/settings/systemSettings';
 // Sign out ends this device's server session, then clears the local session.
 const endSession=()=>{void accountService.signOut().catch(()=>undefined);logout()};
-/** Settings → Security → Session timeout: after that many idle minutes the session ends and the app returns to sign-in. */
-function useIdleSignOut(){
- const[minutes,setMinutes]=useState(loadSessionTimeout);
- useEffect(()=>{const refresh=()=>setMinutes(loadSessionTimeout());window.addEventListener(SETTINGS_EVENT,refresh);return()=>window.removeEventListener(SETTINGS_EVENT,refresh)},[]);
- useEffect(()=>{
-  if(!minutes)return;
-  let timer=0;
-  const reset=()=>{window.clearTimeout(timer);timer=window.setTimeout(()=>{endSession();window.location.assign('/')},minutes*60_000)};
-  const events=['mousemove','mousedown','keydown','scroll','touchstart'];
-  events.forEach(name=>window.addEventListener(name,reset,{passive:true}));reset();
-  return()=>{window.clearTimeout(timer);events.forEach(name=>window.removeEventListener(name,reset))};
- },[minutes]);
-}
-
 export default function AppLayout(){
  const {pathname}=useLocation(),navigate=useNavigate();
  const [mobileOpen,setMobileOpen]=useState(false),[adminOpen,setAdminOpen]=useState(false),[theme,setTheme]=useState<'light'|'dark'>(()=>localStorage.getItem('pbms:theme')==='dark'?'dark':'light');
@@ -54,7 +39,6 @@ export default function AppLayout(){
  // The bell, the Notifications page and the sound use only the signed-in role's notifications.
  const unreadCount=useNotifications().filter(item=>!item.read).length;
  useEffect(()=>watchNotificationSound(),[]);
- useIdleSignOut();
  return <div className="pbms-shell flex min-h-screen bg-[#F8FAFC] text-gray-800 max-md:overflow-x-clip">
   {mobileOpen&&<button aria-label="Close navigation" className="pbms-mobile-scrim fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden" onClick={()=>setMobileOpen(false)}/>}
   {/* Below lg the sidebar is a drawer that slides in from the left. */}

@@ -118,6 +118,18 @@ async function setAllowance(employee:Employee,type:PolicyType,amount:number,effe
  }
 }
 
+/** "All employees" types are given at their monthly amount to every active employee who has none yet (new hires included); amounts already set are kept. Returns how many were added. */
+export async function fillAllEmployeeAllowances(employees:Employee[],rewards:BonusIncentive[],policy:PolicyType[]=loadAllowancePolicy()){
+ if(!can('compensation.manage'))return 0;
+ const allowances=rewards.filter(item=>item.type==='Allowance'),date=today();
+ let added=0;
+ for(const type of policy.filter(item=>item.allEmployees&&item.defaultAmount>0))for(const employee of employees.filter(item=>item.status!=='Inactive')){
+  if(allowances.some(item=>item.status==='Active'&&findCompensationEmployee(employees,item.employeeId)?.id===employee.id&&policyTypeFor(item.allowanceType,policy)?.id===type.id))continue;
+  await setAllowance(employee,type,type.defaultAmount,date,employees,allowances,policy);added++;
+ }
+ return added;
+}
+
 /** Allowance Type · Monthly · All employees: a ticked type is given to every active employee at its monthly amount; unticked is Custom (set with Assign). */
 function CoverageTable({policy,employees,activeEmployees,allowances,canManage,onSaved}:{policy:PolicyType[];employees:Employee[];activeEmployees:Employee[];allowances:BonusIncentive[];canManage:boolean;onSaved:(policy:PolicyType[])=>Promise<void>}){
  const initial=()=>Object.fromEntries(policy.map(type=>[type.id,{monthly:String(type.defaultAmount||''),all:Boolean(type.allEmployees)}]));

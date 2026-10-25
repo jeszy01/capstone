@@ -11,7 +11,7 @@ import {compactPeso,compensationRows,compensationSummary} from './compensationSu
 import {activeCompensations,findCompensationEmployee,today} from './compensationState';
 import type {BonusIncentive,CompensationHistory,CompensationProposal,EmployeeCompensation} from './compensationState';
 import {AwardsPanel} from './AwardsPanel';
-import {AllowancesPanel} from './AllowancesPanel';
+import {AllowancesPanel,fillAllEmployeeAllowances} from './AllowancesPanel';
 import {SalaryStructurePanel} from './SalaryStructurePanel';
 import {Avatar,MessageRow,PanelHeader,Segmented,SummaryCard,panelClass,theadClass} from './compensationWidgets';
 
@@ -44,7 +44,9 @@ export default function CompensationPlanning(){
   const load=useCallback(async()=>{
     setLoading(true);
     try{
-      const [data,people]=await Promise.all([compensationService.load(),employeeService.getAll().catch(()=>[] as Employee[])]);
+      let [data,people]=await Promise.all([compensationService.load(),employeeService.getAll().catch(()=>[] as Employee[])]);
+      // "All employees" allowances reach employees added since they were set.
+      if(await fillAllEmployeeAllowances(people,data.bonuses).catch(()=>0))data=await compensationService.load();
       setAssignments(data.assignments);
       setBonuses(data.bonuses);
       setProposals(data.proposals);

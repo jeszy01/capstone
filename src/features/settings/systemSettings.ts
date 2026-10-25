@@ -26,7 +26,7 @@ export interface Appearance{color:UiColor;fontSize:FontSize}
 
 export const DEFAULT_LOGO='/logo.png';
 export const COMPANY_KEY='settings:company',REGIONAL_KEY='settings:regional',BRANDING_KEY='settings:branding',PRIVACY_KEY='settings:privacy',BACKUP_KEY='settings:backup';
-const APPEARANCE_KEY='pbms:appearance',TIMEOUT_KEY='pbms:session-timeout';
+const APPEARANCE_KEY='pbms:appearance';
 export const SETTINGS_EVENT='pbms:settings';
 
 export const DEFAULT_COMPANY:CompanyProfile={name:'Archon Nell Incorporated',address:'',contactNumber:'',email:'',tin:'',sssNo:'',philhealthNo:'',pagibigNo:'',logo:''};
@@ -80,11 +80,6 @@ export function applyAppearance(value=loadAppearance()){
  root.dataset.uiColor=value.color;root.dataset.fontSize=value.fontSize;
 }
 export const saveAppearance=(value:Appearance)=>{write(APPEARANCE_KEY,value);applyAppearance(value)};
-
-/** Minutes of inactivity before the app signs out; 0 keeps the session until it expires. */
-export const SESSION_TIMEOUTS=[5,15,30,60,0];
-export const loadSessionTimeout=()=>{const value=read<number>(TIMEOUT_KEY,30);return SESSION_TIMEOUTS.includes(value)?value:30};
-export const saveSessionTimeout=(minutes:number)=>{write(TIMEOUT_KEY,minutes);window.dispatchEvent(new Event(SETTINGS_EVENT))};
 
 /** A YYYY-MM-DD date in the chosen format. */
 export function formatWithSetting(year:number,month:number,day:number,format=loadRegional().dateFormat){
