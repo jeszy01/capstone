@@ -1,6 +1,7 @@
 // Demo data for the Render database: 12 employees (DEMO-001..DEMO-012) across every department and grade, each with a
-// salary, government IDs, bank details and HR2 attendance for the September 26–October 9 and October 10–25, 2026
-// cutoffs, together covering every case payroll handles:
+// salary, government IDs, bank details and HR2 attendance for the August 10 to October 25, 2026 cutoffs, together covering
+// every case payroll handles. Work on a rest day (Saturday), on Ninoy Aquino Day (Aug 21, special non-working) and on
+// National Heroes Day (Aug 31, regular holiday) fills the Rest day, Special and Holiday columns of the timesheet:
 //   DEMO-001 perfect attendance, G1 step 1 (minimum wage)    DEMO-007 company loan, transport and rice allowances
 //   DEMO-002 lates (probationary)                            DEMO-008 cash advance and an SSS loan
 //   DEMO-003 undertime (contractual)                         DEMO-009 Pag-IBIG loan, approved bonus, lates and overtime
@@ -23,7 +24,15 @@ const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthor
 
 const PREFIX = 'DEMO-';
 const isDemo = no => String(no ?? '').startsWith(PREFIX);
-const FROM = '2026-09-26', TO = '2026-10-25';
+const FROM = '2026-08-10', TO = '2026-10-25';
+// The 2026 holidays inside the demo dates; added to the Holiday Calendar when it has nothing on that date.
+const HOLIDAYS = [
+  { date: '2026-08-21', name: 'Ninoy Aquino Day', type: 'Special Non-Working Day' },
+  { date: '2026-08-31', name: 'National Heroes Day', type: 'Regular Holiday' },
+];
+// Who works on a holiday (everyone else has the day off, with no record) and on a rest day (Saturday).
+const HOLIDAY_WORK = { '2026-08-21': ['DEMO-004', 'DEMO-009'], '2026-08-31': ['DEMO-001', 'DEMO-007'] };
+const REST_DAY_WORK = { '2026-09-12': ['DEMO-009'], '2026-10-17': ['DEMO-004'] };
 
 // [no, first, last, position, department, employment, status, hired, salary step (1-5) in the position's grade, birth date]
 const EMPLOYEES = [
@@ -48,9 +57,10 @@ for (let d = new Date(`${FROM}T00:00:00Z`); d.toISOString().slice(0, 10) <= TO; 
 
 // Each employee's day: status, minutes late / undertime / overtime, leave type and whether the overtime is still pending.
 function day(no, date) {
-  const weekend = [0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
-  if (weekend) return { status: 'Day Off' };
   if (no === 'DEMO-012' && date > '2026-10-09') return null;
+  if (HOLIDAY_WORK[date]) return HOLIDAY_WORK[date].includes(no) ? { status: 'Present' } : null;
+  const weekend = [0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
+  if (weekend) return REST_DAY_WORK[date]?.includes(no) ? { status: 'Present' } : { status: 'Day Off' };
   switch (no) {
     case 'DEMO-002': return { status: 'Present', late: { '2026-09-29': 10, '2026-10-02': 25, '2026-10-13': 15, '2026-10-19': 40 }[date] ?? 0 };
     case 'DEMO-003': return { status: 'Present', undertime: { '2026-10-01': 60, '2026-10-15': 90, '2026-10-22': 30 }[date] ?? 0 };
@@ -184,8 +194,12 @@ async function seed(client) {
 
   const records = EMPLOYEES.flatMap(([no]) => dates.map(date => attendance(no, date)).filter(Boolean));
   await setAttendance(client, records);
+  const calendar = await readApp(client, 'payroll:holidays', []);
+  const list = Array.isArray(calendar) ? calendar : [];
+  const added = HOLIDAYS.filter(holiday => !list.some(item => item?.date === holiday.date));
+  if (added.length) await writeApp(client, 'payroll:holidays', [...list, ...added.map(holiday => ({ id: crypto.randomUUID(), ...holiday }))].sort((a, b) => a.date.localeCompare(b.date)));
   console.log(`Seeded ${EMPLOYEES.length} demo employees with salaries on their grade steps (${days} working days a month), ${allowances.length} allowances, a bonus, a company loan, a cash advance,`);
-  console.log(`an SSS loan, a Pag-IBIG loan and ${records.length} attendance records (${FROM} to ${TO}).`);
+  console.log(`an SSS loan, a Pag-IBIG loan and ${records.length} attendance records (${FROM} to ${TO})${added.length ? `; added ${added.map(holiday => holiday.name).join(' and ')} to the Holiday Calendar` : ''}.`);
 }
 
 async function clean(client) {
