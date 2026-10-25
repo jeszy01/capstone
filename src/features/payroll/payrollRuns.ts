@@ -137,9 +137,11 @@ export async function releaseDepartments(id:string,departments:string[],all:bool
  if(data.runs)write(RUNS_KEY,data.runs);
  return {verified:true};
 }
-/** Publishes the run's unreleased payslips to ESS; the server checks the status and role, notifies each employee and logs it. */
-export async function releaseToEss(id:string){
- const {data}=await apiClient.post<Record<string,never>,{data:{sent:number;released:number;total:number;runs:PayrollRun[]}}>(`/payroll/runs/${id}/ess-release`,{});
- write(RUNS_KEY,data.runs);
- return data;
+/** Publishes the run's unreleased payslips to ESS once the server verifies the user's passkey; it checks the status and role, notifies each employee and logs it. */
+export async function releaseToEss(id:string,passkey:string):Promise<PayslipPasskeyCheck&{sent?:number;released?:number;total?:number}>{
+ const {data}=await apiClient.post<{passkey:string},{data:{verified:boolean;reason?:'not_set'|'locked'|'invalid';locked_until?:string|null;sent?:number;released?:number;total?:number;runs?:PayrollRun[]}}>(`/payroll/runs/${id}/ess-release`,{passkey});
+ if(!data.verified)return {verified:false,reason:data.reason??'invalid',lockedUntil:data.locked_until??null};
+ if(data.runs)write(RUNS_KEY,data.runs);
+ return {verified:true,sent:data.sent,released:data.released,total:data.total};
 }
+export const passkeyMessage=(reason:'not_set'|'locked'|'invalid')=>reason==='not_set'?'Passkey not set. Set it in My Account first.':reason==='locked'?'Passkey locked. Try again in 15 minutes.':'Incorrect passkey';

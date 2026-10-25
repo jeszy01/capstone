@@ -1,12 +1,12 @@
 import {useState} from 'react';
-import {Card,Empty,Modal,button,ghost} from '../../components/common/ui';
+import {Card,Empty,Field,Modal,TextInput,button,ghost} from '../../components/common/ui';
 import {Link,useNavigate,useSearchParams} from 'react-router-dom';
 import {peso,read} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {can} from '../auth/permissions';
 import type {Employee} from '../../types/domain';
 import {cutoffNumberFor,loadRates} from '../settings/payrollSettings';
-import {APPROVED_STATUSES,RUNS_KEY,deleteRun,isThirteenthMonthRun,releaseToEss,runLabel,runStatus} from './payrollRuns';
+import {APPROVED_STATUSES,RUNS_KEY,deleteRun,isThirteenthMonthRun,passkeyMessage,releaseToEss,runLabel,runStatus} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
 import {processRun} from './computeRun';
 import {StatusBadge} from '../../components/common/StatusBadge';
@@ -22,7 +22,7 @@ const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.mes
 export function PayrollRuns({employees}:{employees:Employee[]}){
  // ?status=Pending Approval (or a comma list) shows only runs in those statuses, as the Dashboard links do.
  const[params,setParams]=useSearchParams();const nav=useNavigate();
- const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleting,setDeleting]=useState<PayrollRun|null>(null),[releasing,setReleasing]=useState<PayrollRun|null>(null),[,setTick]=useState(0);
+ const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[deleting,setDeleting]=useState<PayrollRun|null>(null),[releasing,setReleasing]=useState<PayrollRun|null>(null),[passkey,setPasskey]=useState(''),[,setTick]=useState(0);
  const statusFilter=(params.get('status')??'').split(',').map(item=>item.trim()).filter(Boolean);
  const clearFilter=()=>{const next=new URLSearchParams(params);next.delete('status');setParams(next,{replace:true})};
  const runs=[...read<PayrollRun[]>(RUNS_KEY,[])].filter(run=>!statusFilter.length||statusFilter.includes(runStatus(run))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
@@ -50,7 +50,7 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
    return <>
     <Link className={ghost} to={`/payroll?tab=payslip&run=${run.id}`}>Payslips</Link>
     {total>0&&sent===total?<StatusBadge status="Released"/>
-     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Available once every employee is Paid.'} onClick={()=>{setError('');setReleasing(run)}}>Release payslips ({sent}/{total})</button>}
+     :canRelease&&<button type="button" className={button} disabled={Boolean(busy)||!releaseOpen(run)} title={releaseOpen(run)?undefined:'Available once every employee is Paid.'} onClick={()=>{setError('');setPasskey('');setReleasing(run)}}>Release payslips ({sent}/{total})</button>}
     {details}
     {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}
    </>;
@@ -89,8 +89,9 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
   </Card>
   {releasing&&<Modal title="Release payslips" onClose={()=>{if(!busy)setReleasing(null)}}>
    <p className="mt-0 text-[13px] text-gray-600">Publish the payslips for {runLabel(releasing)} to each employee's ESS Payslips page? {releasing.rows.length-essCount(releasing)} of {releasing.rows.length} {releasing.rows.length===1?'payslip is':'payslips are'} not released yet; only those are sent, and each employee is notified in ESS.</p>
+   <div className="mt-4"><Field label="Passkey"><TextInput type="password" autoComplete="off" autoFocus value={passkey} onChange={event=>setPasskey(event.target.value)}/></Field></div>
    {error&&<p role="alert" className="mb-0 mt-3 rounded-lg bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
-   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setReleasing(null)}>Cancel</button><button type="button" className={button} disabled={Boolean(busy)} onClick={()=>void act('release',async()=>{const result=await releaseToEss(releasing.id);setReleasing(null);setNotice(result.sent?`Released ${result.sent} ${result.sent===1?'payslip':'payslips'} to ESS (${result.released}/${result.total}).`:'Every payslip of this run is already in ESS; nothing was sent.')})}>{busy==='release'?'Releasing…':'Release'}</button></div>
+   <div className="mt-6 flex justify-end gap-2"><button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setReleasing(null)}>Cancel</button><button type="button" className={button} disabled={Boolean(busy)||!passkey} onClick={()=>void act('release',async()=>{const result=await releaseToEss(releasing.id,passkey);if(!result.verified)throw new Error(passkeyMessage(result.reason));setReleasing(null);setPasskey('');setNotice(result.sent?`Released ${result.sent} ${result.sent===1?'payslip':'payslips'} to ESS (${result.released}/${result.total}).`:'Every payslip of this run is already in ESS; nothing was sent.')})}>{busy==='release'?'Releasing…':'Release'}</button></div>
   </Modal>}
   {deleting&&<Modal title="Delete payroll run" onClose={()=>{if(!busy)setDeleting(null)}}>
    <p className="mt-0 text-[13px] text-gray-600">Delete the {runStatus(deleting)} payroll for {runLabel(deleting)}? {runStatus(deleting)==='Draft'?'It has not been processed, so no figures are lost.':'Its computed figures are removed with it.'} This cannot be undone.</p>

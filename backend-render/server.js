@@ -11,6 +11,7 @@ import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
+import { CORRECTION_STATUSES, correctionDecision, correctionFields, correctionView } from './correctionRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 import { lockedRuleChange } from './withholdingRuleLock.js';
@@ -570,6 +571,8 @@ const ACTION_LABELS = {
   'payroll.released': 'Released payroll', 'payroll.payslips_released': 'Released payslips', 'payroll.release_reverted': 'Reverted payroll release',
   'payroll.payslips_generated': 'Generated payslips', 'payroll.payslips_generate_failed': 'Failed passkey attempt',
   'payroll.released_to_finance': 'Released payroll to Finance', 'payroll.release_failed': 'Failed passkey attempt',
+  'payroll.correction_requested': 'Requested payroll correction', 'payroll.correction_approved': 'Approved payroll correction',
+  'payroll.correction_rejected': 'Rejected payroll correction', 'payroll.correction_completed': 'Completed payroll correction',
   'leave.approved': 'Approved leave', 'leave.rejected': 'Rejected leave',
   'deduction.added': 'Added authorized deduction', 'deduction.stopped': 'Stopped authorized deduction',
   'claim.approved': 'Approved claim', 'claim.rejected': 'Rejected claim', 'claim.returned': 'Returned claim', 'claim.paid': 'Marked claim as Paid',
@@ -957,6 +960,15 @@ await pool.query(`
     id uuid primary key default gen_random_uuid(), employee_no text not null, title text not null, message text not null,
     run_id text, created_at timestamptz not null default now(), read_at timestamptz);
   create index if not exists idx_ess_notifications_employee on ess_notifications(lower(employee_no));`);
+// Payroll corrections requested from ESS (see correctionRules.js and ESS_CORRECTIONS_API.md).
+await pool.query(`
+  create table if not exists payroll_corrections(
+    id uuid primary key default gen_random_uuid(), correction_number text not null unique, employee_no text not null,
+    employee_name text not null default '', run_id text not null, period text not null, request text not null,
+    amount numeric(12,2) not null, status text not null default 'Pending', decision_comment text, decided_by uuid,
+    decided_by_name text, decided_at timestamptz, completed_by uuid, completed_by_name text, completed_at timestamptz,
+    completion_note text, ess_reference text unique, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+  create index if not exists idx_payroll_corrections_employee on payroll_corrections(lower(employee_no));`);
 const payrollRows = payrollRun => (Array.isArray(payrollRun.rows) ? payrollRun.rows : []).filter(r => r?.input?.empId);
 // Each employee's department, as the Payslips page groups them (employee number -> department, or Unassigned).
 async function runDepartments(client, payrollRun) {
@@ -982,11 +994,14 @@ async function publishPayslips(client, req, payrollRun, include, at) {
   const essReleased = { ...done, ...Object.fromEntries(sent.map(no => [no, at])) };
   return { sent, essReleased, released: rows.filter(r => essReleased[String(r.input.empId)]).length, total: rows.length };
 }
+// The user's passkey is verified first, as for a release by department.
 app.post('/payroll/runs/:id/ess-release', auth, allow('payroll.release'), async (req, res) => {
   const runId = req.params.id, at = new Date().toISOString();
   const { result, payrollRun } = await withLockedRun(runId, async (client, runs, payrollRun) => {
     const status = runStatus(payrollRun);
     if (!['Paid', 'Closed'].includes(status)) throw new HttpError(409, 'RELEASE_NOT_ALLOWED', `Payslips are released to ESS once every employee is Paid. This run is ${status}.`);
+    const check = await checkPayslipPasskey(req, input(req).passkey, payrollRun, `Release payslips of ${runPeriod(payrollRun)} to ESS`);
+    if (!check.verified) return check;
     const departmentOf = await runDepartments(client, payrollRun);
     const { sent, essReleased, released, total } = await publishPayslips(client, req, payrollRun, () => true, at);
     const closes = sent.length > 0 && released === total && status === 'Paid';
@@ -996,11 +1011,15 @@ app.post('/payroll/runs/:id/ess-release', auth, allow('payroll.release'), async 
     const releasedDepartments = { ...Object.fromEntries(done.map(d => [d, at])), ...payrollRun.released };
     const next = runs.map(r => r && String(r.id) === runId ? { ...r, essReleased, released: releasedDepartments, ...(closes ? { status: 'Closed', closedAt: at } : {}) } : r);
     if (sent.length) await client.query('update app_data set value=$2, updated_at=now(), updated_by=$3 where key=$1', ['payroll:runs', JSON.stringify(next), req.user.id]);
-    return { sent: sent.length, released, total, closes, runs: sent.length ? next : runs };
+    return { verified: true, sent: sent.length, released, total, closes, runs: sent.length ? next : runs };
   });
+  if (!result.verified) {
+    if (result.wrong) await logWrongPayslipPasskey(req, runId, payrollRun, result, 'payroll.release_failed', 'releasing payslips to ESS for');
+    return ok(res, { verified: false, ...passkeyFailure(result) });
+  }
   if (result.sent) await audit('payroll.ess_released', req.user.id, 'Payroll', runId, { description: `Released ${result.sent} payslip${result.sent === 1 ? '' : 's'} of ${runPeriod(payrollRun)} to ESS (${result.released} of ${result.total} released).` }, ipDevice(req));
   if (result.closes) await audit('payroll.closed', req.user.id, 'Payroll', runId, { description: `Closed payroll for ${runPeriod(payrollRun)}: every payslip is released to ESS.` }, ipDevice(req));
-  ok(res, { sent: result.sent, released: result.released, total: result.total, runs: result.runs });
+  ok(res, { verified: true, sent: result.sent, released: result.released, total: result.total, runs: result.runs });
 });
 
 // ---- /users (admin user management) ----
@@ -2582,6 +2601,78 @@ app.get('/integrations/ess/notifications', essAuth, async (req, res) => {
   const employee = await essEmployee(req.query.employee_no);
   const { rows } = await pool.query('select id, title, message, run_id, created_at, read_at from ess_notifications where lower(employee_no)=lower($1) order by created_at desc limit 100', [employee.employee_number]);
   ok(res, rows);
+});
+
+// ---- Payroll corrections ----
+// ESS sends the employee's request (Pending); Finance approves or rejects it with a comment; Payroll pays an approved
+// one manually outside the system and marks it Completed. Never added to a payroll run. Every step is logged.
+app.post('/integrations/ess/corrections', essAuth, async (req, res) => {
+  const b = input(req), employee = await essEmployee(b.employee_no);
+  const parsed = correctionFields(b, await storedRuns(), employee.employee_number);
+  if (parsed.error) return fail(res, 400, 'VALIDATION_ERROR', parsed.error);
+  const reference = text(b.ess_reference).slice(0, 100) || null;
+  if (reference) {
+    const { rows: [existing] } = await pool.query('select * from payroll_corrections where ess_reference=$1', [reference]);
+    if (existing) return res.status(200).json({ data: correctionView(existing) });
+  }
+  const client = await pool.connect();
+  let row;
+  try {
+    await client.query('begin');
+    await client.query(`select pg_advisory_xact_lock(hashtext('payroll_corrections.number'))`);
+    const prefix = `COR-${manilaDate().slice(0, 4)}-`;
+    const { rows: [{ highest }] } = await client.query(`select coalesce(max(substring(correction_number from length($1) + 1)::int), 0) as highest from payroll_corrections where correction_number like $1 || '%'`, [prefix]);
+    const name = [employee.first_name, employee.last_name].filter(Boolean).join(' ');
+    ({ rows: [row] } = await client.query(
+      'insert into payroll_corrections(correction_number,employee_no,employee_name,run_id,period,request,amount,ess_reference) values($1,$2,$3,$4,$5,$6,$7,$8) returning *',
+      [`${prefix}${String(highest + 1).padStart(4, '0')}`, employee.employee_number, name, parsed.fields.runId, parsed.fields.period, parsed.fields.request, parsed.fields.amount, reference]));
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  const label = `${row.correction_number} · ${pesoText(Number(row.amount))}`;
+  await audit('payroll.correction_requested', null, 'Payroll', row.id, { description: `${employee.employee_number} requested correction ${label} for ${row.period} from ESS.` });
+  await notifyRoles(['finance'], 'correction_requested', 'Correction requested from ESS', label, '/payroll?tab=corrections');
+  res.status(201).json({ data: correctionView(row) });
+});
+app.get('/integrations/ess/corrections', essAuth, async (req, res) => {
+  const employee = await essEmployee(req.query.employee_no);
+  const { rows } = await pool.query('select * from payroll_corrections where lower(employee_no)=lower($1) order by created_at desc', [employee.employee_number]);
+  ok(res, rows.map(correctionView));
+});
+app.get('/payroll/corrections', auth, allow('payroll.view'), async (req, res) => {
+  const { rows } = await pool.query('select * from payroll_corrections order by created_at desc');
+  ok(res, rows.map(correctionView));
+});
+// action: approve or reject (Finance, payroll.approve; a comment is required to reject), complete (Payroll, payroll.release).
+app.post('/payroll/corrections/:id', auth, async (req, res) => {
+  const b = input(req), action = text(b.action);
+  if (!can(req.user.role, action === 'complete' ? 'payroll.release' : 'payroll.approve')) throw new AccessError();
+  const actor = await first('users', { id: req.user.id }).catch(() => undefined), by = actor ? actor.name || actor.email : '';
+  const client = await pool.connect();
+  let row;
+  try {
+    await client.query('begin');
+    const { rows: [before] } = await client.query('select * from payroll_corrections where id::text=$1 for update', [req.params.id]);
+    if (!before) throw new HttpError(404, 'CORRECTION_NOT_FOUND', 'The correction was not found.');
+    const next = correctionDecision(before.status, action, b.comment);
+    if (next.error) throw new HttpError(409, 'CORRECTION_NOT_ALLOWED', next.error);
+    ({ rows: [row] } = await client.query(action === 'complete'
+      ? 'update payroll_corrections set status=$2, completion_note=$3, completed_by=$4, completed_by_name=$5, completed_at=now(), updated_at=now() where id=$1 returning *'
+      : 'update payroll_corrections set status=$2, decision_comment=$3, decided_by=$4, decided_by_name=$5, decided_at=now(), updated_at=now() where id=$1 returning *',
+    [before.id, next.status, next.comment || null, req.user.id, by]));
+    await client.query('commit');
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
+  } finally { client.release(); }
+  const label = `${row.correction_number} (${row.employee_no}, ${pesoText(Number(row.amount))}, ${row.period})`;
+  await audit(`payroll.correction_${row.status.toLowerCase()}`, req.user.id, 'Payroll', row.id, { description: row.status === 'Completed'
+    ? `Marked correction ${label} Completed: paid outside the system${row.completion_note ? ` (${row.completion_note})` : ''}.`
+    : `${row.status} correction ${label}${row.decision_comment ? `: ${row.decision_comment}` : ''}.` }, ipDevice(req));
+  if (row.status === 'Approved') await notifyRoles(['hr'], 'correction_approved', 'Correction approved: pay it outside the system', label, '/payroll?tab=corrections');
+  ok(res, correctionView(row));
 });
 
 // Row counts for checking which database this service reads; attendance is the HR2 store in app_data "attendance:hr2".

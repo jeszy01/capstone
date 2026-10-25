@@ -3,12 +3,12 @@ import {PROCESS_STAGES,RUN_STATUSES,stageIndex} from '../../backend-render/payro
 import {bankFileRecords} from '../features/payroll/payouts';
 
 describe('payroll process steps',()=>{
- it('follows Draft, Review, Submit to finance, Approved, Export file, Paid, Release payslip',()=>{
-  expect(PROCESS_STAGES.map(stage=>stage.label)).toEqual(['Draft','Review','Submit to finance','Approved','Export file','Paid','Release payslip']);
+ it('follows Draft, Review, Submit to finance, Approved, Export file, Paid, Release payslip, Closed',()=>{
+  expect(PROCESS_STAGES.map(stage=>stage.label)).toEqual(['Draft','Review','Submit to finance','Approved','Export file','Paid','Release payslip','Closed']);
  });
  it('places every run status in one step',()=>{
   expect(RUN_STATUSES.map(status=>[status,stageIndex(status)])).toEqual([
-   ['Draft',0],['Computed',1],['Pending Approval',2],['Returned',1],['Rejected',2],['Approved',3],['Funded',3],['Exported',4],['Paid',5],['Closed',6],
+   ['Draft',0],['Computed',1],['Pending Approval',2],['Returned',1],['Rejected',2],['Approved',3],['Funded',3],['Exported',4],['Paid',5],['Closed',7],
   ]);
  });
 });

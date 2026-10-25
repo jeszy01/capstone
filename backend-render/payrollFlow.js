@@ -1,6 +1,7 @@
 // The payroll run process, shared by the server's checks (accessRules.js, server.js) and the app.
-// Draft -> Review -> Submit to finance -> Approved -> Export file -> (bank portal upload, outside the system) -> Paid ->
-// Release payslip (PROCESS_STAGES).
+// Draft -> Review -> Submit to finance -> Approved -> Export file -> (bank portal upload, outside the system) -> Paid
+// (the attached bank result marks each employee Paid or Failed; Failed ones are fixed, exported and attached again) ->
+// Release payslip (with the passkey) -> Closed (PROCESS_STAGES).
 // Statuses: Draft -> Computed -> Pending Approval -> Approved -> Exported -> Paid -> Closed, plus Returned and Rejected.
 //   Draft: HR created the run for a cutoff.             Computed: HR computed (or recomputed) its figures.
 //   Pending Approval: HR submitted it.                  Returned: the Admin sent it back with a comment; HR recomputes.
@@ -13,9 +14,10 @@ export const RUN_STATUSES = ['Draft', 'Computed', 'Pending Approval', 'Returned'
 /** The main path, in order. */
 export const PROCESS_STEPS = ['Draft', 'Computed', 'Pending Approval', 'Approved', 'Exported', 'Paid', 'Closed'];
 /**
- * The seven steps, each with the statuses it covers: Review (computed, or returned for changes), Submit to finance
- * (awaiting approval, or rejected), Approved (by Finance), Export file (exported, awaiting payment results), Paid,
- * Release payslip. The bank portal upload between Export file and Paid happens outside the system.
+ * The eight steps, each with the statuses it covers: Review (computed, or returned for changes), Submit to finance
+ * (awaiting approval, or rejected), Approved (by Finance), Export file (exported, awaiting the bank result), Paid (every
+ * employee Paid; payslips being released), Release payslip (done once every payslip is released), Closed (locked).
+ * The bank portal upload between Export file and Paid happens outside the system.
  */
 export const PROCESS_STAGES = [
   { id: 'draft', label: 'Draft', statuses: ['Draft'] },
@@ -24,7 +26,8 @@ export const PROCESS_STAGES = [
   { id: 'approved', label: 'Approved', statuses: ['Approved', 'Funded'] },
   { id: 'export', label: 'Export file', statuses: ['Exported'] },
   { id: 'paid', label: 'Paid', statuses: ['Paid'] },
-  { id: 'released', label: 'Release payslip', statuses: ['Closed'] },
+  { id: 'released', label: 'Release payslip', statuses: [] },
+  { id: 'closed', label: 'Closed', statuses: ['Closed'] },
 ];
 /** The index of the stage a status belongs to. */
 export const stageIndex = status => PROCESS_STAGES.findIndex(stage => stage.statuses.includes(status));
