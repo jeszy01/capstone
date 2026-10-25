@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import {PROCESS_STAGES,RUN_STATUSES,stageIndex} from '../../backend-render/payrollFlow.js';
-import {bankFileRecords} from '../features/payroll/payouts';
+import {bankBatch,bankFileRecords,bankRemarks} from '../features/payroll/payouts';
 
 describe('payroll process steps',()=>{
  it('follows Draft, Review, Submit to finance, Approved, Export file, Paid, Release payslip, Closed',()=>{
@@ -13,19 +13,25 @@ describe('payroll process steps',()=>{
  });
 });
 
-describe('bank payroll credit file',()=>{
+describe('bank payroll file',()=>{
  const records=bankFileRecords([
-  {empId:'EMP-0001',name:'Maria Santos, Jr.',bankName:'BPI',accountNumber:'1234-5678-90',amount:15000.5},
-  {empId:'EMP-0002',name:'José dela Cruz',bankName:'BDO',accountNumber:'0098 7654 32',amount:12345.678},
- ],{batch:'PR-ABCD1234-01',creditDate:'2026-10-30',remarks:'PAYROLL 2026-10-16 TO 2026-10-31'});
- it('has a header with the batch, credit date, record count and total',()=>{
-  expect(records[0]).toEqual(['H','ARCHON NELL INC.','PR-ABCD1234-01','10/30/2026',2,'27346.18','PHP']);
+  {empId:'EMP-0001',name:'Maria Santos, Jr.',bankName:'bdo',accountNumber:'0012-3456-7890',amount:12500},
+  {empId:'EMP-0002',name:'José dela Cruz',bankName:'Metrobank',accountNumber:'0044 5566 7788',amount:10350.754},
+ ],{batch:'PR-2026-10B',payDate:'2026-10-30',remarks:'SALARY OCT 10-25 2026'});
+ it('has the header Batch, Pay Date, Employee, Account Name, Bank, Account Number, Amount, Currency, Remarks',()=>{
+  expect(records[0]).toEqual(['Batch','Pay Date','Employee','Account Name','Bank','Account Number','Amount','Currency','Remarks']);
+  expect(records).toHaveLength(3);
  });
- it('has one detail line per employee with digits-only accounts and capitalized names',()=>{
-  expect(records[1]).toEqual(['D',1,'1234567890','MARIA SANTOS JR.','15000.50','BPI','EMP-0001','PAYROLL 2026-10-16 TO 2026-10-31']);
-  expect(records[2]).toEqual(['D',2,'0098765432','JOSE DELA CRUZ','12345.68','BDO','EMP-0002','PAYROLL 2026-10-16 TO 2026-10-31']);
+ it('has one row per employee: capitals, digits-only accounts with leading zeros, two-decimal amounts, PHP',()=>{
+  expect(records[1]).toEqual(['PR-2026-10B','2026-10-30','EMP-0001','MARIA SANTOS JR.','BDO','001234567890','12500.00','PHP','SALARY OCT 10-25 2026']);
+  expect(records[2]).toEqual(['PR-2026-10B','2026-10-30','EMP-0002','JOSE DELA CRUZ','METROBANK','004455667788','10350.75','PHP','SALARY OCT 10-25 2026']);
  });
- it('ends with a trailer of record count, total and account hash total',()=>{
-  expect(records[3]).toEqual(['T',2,'27346.18',String(1234567890+98765432)]);
+ it('names the batch by pay month and cutoff (A paid the 15th, B the end of the month), with matching remarks',()=>{
+  expect(bankBatch({from:'2026-10-10',to:'2026-10-25',payDate:'2026-10-30'})).toBe('PR-2026-10B');
+  expect(bankBatch({from:'2026-09-26',to:'2026-10-09',payDate:'2026-10-15'})).toBe('PR-2026-10A');
+  expect(bankBatch({from:'2026-12-20',to:'2026-12-20',runType:'thirteenth-month'})).toBe('PR-2026-13M');
+  expect(bankRemarks({from:'2026-10-10',to:'2026-10-25'})).toBe('SALARY OCT 10-25 2026');
+  expect(bankRemarks({from:'2026-09-26',to:'2026-10-09'})).toBe('SALARY SEP 26-OCT 09 2026');
+  expect(bankRemarks({from:'2026-12-20',to:'2026-12-20',runType:'thirteenth-month'})).toBe('13TH MONTH PAY 2026');
  });
 });

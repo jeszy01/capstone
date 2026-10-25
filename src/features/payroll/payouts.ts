@@ -33,26 +33,33 @@ export const payoutAccount=(details:PayoutDetails)=>details.method==='Bank'?[det
 const csvCell=(value:unknown)=>`"${String(value??'').replace(/"/g,'""')}"`;
 const money=(value:number)=>(Math.round(value*100)/100).toFixed(2);
 
-export const BANK_FILE_COMPANY='ARCHON NELL INC.';
 const digits=(value?:string)=>String(value??'').replace(/\D/g,'');
 // Bank upload files take names in plain capitals without punctuation (É -> E, Ñ -> N), at most 40 characters.
 const bankName=(value:string)=>value.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9 .-]/g,' ').replace(/\s+/g,' ').trim().slice(0,40);
-const mmddyyyy=(iso:string)=>`${iso.slice(5,7)}/${iso.slice(8,10)}/${iso.slice(0,4)}`;
+const MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const monthDay=(iso:string)=>`${MONTHS[Number(iso.slice(5,7))-1]} ${iso.slice(8,10)}`;
+/** The batch reference: PR-<pay year>-<pay month> and A (1st cutoff, paid the 15th) or B (2nd); 13th month pay is -13M. */
+export function bankBatch(run:Pick<PayrollRun,'from'|'to'|'payDate'|'runType'>){
+ const payDate=run.payDate??run.to;
+ return `PR-${payDate.slice(0,4)}-${run.runType==='thirteenth-month'?'13M':`${payDate.slice(5,7)}${Number(payDate.slice(8,10))<=15?'A':'B'}`}`;
+}
+/** The remarks: SALARY OCT 10-25 2026 (or SALARY SEP 26-OCT 09 2026 across months); 13TH MONTH PAY 2026. */
+export function bankRemarks(run:Pick<PayrollRun,'from'|'to'|'runType'>){
+ if(run.runType==='thirteenth-month')return `13TH MONTH PAY ${run.to.slice(0,4)}`;
+ const sameMonth=run.from.slice(0,7)===run.to.slice(0,7);
+ return `SALARY ${monthDay(run.from)}-${sameMonth?run.to.slice(8,10):monthDay(run.to)} ${run.to.slice(0,4)}`;
+}
 export type BankFileLine={empId:string;name:string;bankName?:string;accountNumber?:string;amount:number};
+export const BANK_FILE_HEADER=['Batch','Pay Date','Employee','Account Name','Bank','Account Number','Amount','Currency','Remarks'];
 /**
- * A bank payroll credit file in the batch layout banks take for bulk payroll uploads, one record per line:
- *  H, company, batch reference, credit date (MM/DD/YYYY), record count, total amount, currency
- *  D, sequence, account number (digits only), account name (capitals), amount, bank, employee no., remarks
- *  T, record count, total amount, hash total (sum of the account numbers, last 15 digits)
- * Amounts have two decimals and no thousands separators.
+ * The bank payroll file: a header row, then one row per employee with the batch reference, pay date (YYYY-MM-DD),
+ * employee no., account name and bank (capitals), account number (digits only), amount (two decimals, no thousands
+ * separators), PHP and the remarks.
  */
-export function bankFileRecords(lines:BankFileLine[],{company=BANK_FILE_COMPANY,batch,creditDate,remarks}:{company?:string;batch:string;creditDate:string;remarks:string}){
- const total=money(lines.reduce((sum,line)=>sum+Math.round(line.amount*100),0)/100);
- const hash=String(lines.reduce((sum,line)=>sum+BigInt(digits(line.accountNumber)||'0'),0n)%10n**15n);
+export function bankFileRecords(lines:BankFileLine[],{batch,payDate,remarks}:{batch:string;payDate:string;remarks:string}){
  return [
-  ['H',company,batch,mmddyyyy(creditDate),lines.length,total,'PHP'],
-  ...lines.map((line,index)=>['D',index+1,digits(line.accountNumber),bankName(line.name),money(line.amount),line.bankName??'',line.empId,remarks.slice(0,40)]),
-  ['T',lines.length,total,hash],
+  BANK_FILE_HEADER,
+  ...lines.map(line=>[batch,payDate,line.empId,bankName(line.name),bankName(line.bankName??''),digits(line.accountNumber),money(line.amount),'PHP',remarks]),
  ];
 }
 const FILE_NAMES:Record<PayoutMethod,string>={'Bank':'bank-file','E-wallet':'e-wallet','Cash':'cash'};
@@ -63,8 +70,10 @@ export function payoutFile(run:PayrollRun,exportId:string,departmentOf:(empId:st
  const rows=run.rows.filter(row=>entry.employees.includes(row.input.empId));
  const reference=`PR-${run.id.slice(0,8).toUpperCase()}`,payDate=run.payDate??run.to;
  if(entry.method==='Bank'){
-  const batch=`${reference}-${String((run.exports??[]).findIndex(item=>item.id===exportId)+1).padStart(2,'0')}`;
-  const records=bankFileRecords(rows.map(row=>{const line=run.payouts?.[row.input.empId];return {empId:row.input.empId,name:row.input.name,bankName:line?.bankName,accountNumber:line?.accountNumber,amount:row.result.net}}),{batch,creditDate:payDate,remarks:`PAYROLL ${run.from} TO ${run.to}`});
+  // A later bank export of the same run (failed payouts sent again) gets -2, -3, … after the batch reference.
+  const bankExports=(run.exports??[]).filter(item=>item.method==='Bank'),order=bankExports.findIndex(item=>item.id===exportId)+1;
+  const batch=`${bankBatch(run)}${order>1?`-${order}`:''}`;
+  const records=bankFileRecords(rows.map(row=>{const line=run.payouts?.[row.input.empId];return {empId:row.input.empId,name:row.input.name,bankName:line?.bankName,accountNumber:line?.accountNumber,amount:row.result.net}}),{batch,payDate,remarks:bankRemarks(run)});
   return {name:`payroll-${FILE_NAMES.Bank}-${batch}-${payDate}.csv`,csv:records.map(record=>record.map(csvCell).join(',')).join('\r\n'),label:`Bank file · ${runLabel(run)}`};
  }
  const header=entry.method==='E-wallet'?['Employee No','Employee Name','Provider','Wallet Number','Amount','Pay Date','Reference']
