@@ -17,7 +17,7 @@ import {processRun,submitBlocked} from './computeRun';
 import {loadReviewChecks,lockTimesheet} from './runChecks';
 import {cutoffSynced} from '../attendance/attendanceService';
 import type {RunCheck} from './runChecks';
-import {addPayoutLines,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
+import {addPayoutLines,bankBatch,bankName,bankRemarks,digits,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
 import {PayoutDetailsModal} from './PayoutDetails';
 import {matchBankResult} from './bankResult';
 import type {BankResultRow} from './bankResult';
@@ -93,6 +93,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const flagged=checks.reduce((count,check)=>count+check.items.length,0);
  const payouts=run.payouts??{};
  const lines=run.rows.map(row=>({row,line:payouts[row.input.empId]}));
+ const payDate=run.payDate??run.to;
  const pendingOf=(method:PayoutMethod)=>lines.filter(({line})=>line?.method===method&&line.status==='Pending').length;
  const exported=lines.filter(({line})=>line?.status==='Exported');
  const paidCount=lines.filter(({line})=>line?.status==='Paid').length;
@@ -212,12 +213,15 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    </Card>}
 
    {approved&&<Card className="min-w-0 !p-0">
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-     <div><h2 className="m-0 text-[15px] font-semibold text-gray-900">Payouts</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">{['Approved','Funded','Exported'].includes(status)?'Export each method’s file and upload it to the bank portal, then attach the bank result: it marks each employee Paid or Failed. Fix a failed payout, export it again and attach the new result.':`${paidCount} of ${run.rows.length} employees paid.`}</p></div>
+    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+     <div className="flex items-center gap-3"><h2 className="m-0 text-[18px] font-bold text-gray-900">Export bank file</h2><StatusBadge status={status}/></div>
      {canRelease&&run.payouts&&['Approved','Funded','Exported'].includes(status)&&<div className="flex flex-wrap gap-2">
       {PAYOUT_METHODS.map(method=>{const count=pendingOf(method);return <button key={method} type="button" className={ghost} disabled={Boolean(busy)||!count} onClick={()=>void exportMethod(method)}><Download size={14}/>{busy===`export-${method}`?'Exporting…':`${METHOD_FILES[method]} (${count})`}</button>})}
       {status==='Exported'&&exported.length>0&&<label className={`${ghost} cursor-pointer ${busy?'pointer-events-none opacity-50':''}`}><Upload size={14}/>{busy==='import'?'Attaching…':'Attach bank result'}<input type="file" accept=".csv,.txt,text/csv,text/plain" className="sr-only" disabled={Boolean(busy)} onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file)void importResult(file)}}/></label>}
      </div>}
+    </div>
+    <div className="grid gap-3 border-b border-gray-100 px-5 pb-4 sm:grid-cols-2 lg:grid-cols-4">
+     {[['Batch reference',bankBatch(run)],['Pay date',payDate],['Employees',String(lines.length)],['Total amount',peso(totals.net)]].map(([labelText,value])=><div key={labelText} className="rounded-xl border border-gray-200 bg-white px-4 py-3"><div className="text-[12px] text-gray-500">{labelText}</div><div className="mt-1 text-[18px] font-bold text-gray-900">{value}</div></div>)}
     </div>
     {imported&&imported.unmatched.length>0&&<div className="border-b border-gray-100 bg-amber-50 px-5 py-3 text-[12px] text-amber-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold">Unmatched rows · {imported.file} ({imported.unmatched.length})</span><button type="button" className="font-semibold underline" onClick={()=>setImported(null)}>Dismiss</button></div>
      <table className="mt-2 w-full text-left"><thead><tr className="text-[11px] uppercase tracking-wide text-amber-800">{['Line','Employee No','Account','Status','Reason'].map(labelText=><th key={labelText} className="py-1 pr-3 font-semibold">{labelText}</th>)}</tr></thead>
@@ -225,13 +229,18 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
     {failedLines.length>0&&<div className="border-b border-gray-100 bg-red-50 px-5 py-3 text-[12px] text-red-800"><div className="font-semibold">Failed payouts ({failedLines.length})</div>
      <ul className="m-0 mt-1 list-none space-y-1 p-0">{failedLines.map(({row,line})=><li key={row.input.empId} className="flex flex-wrap items-center gap-2"><span className="font-semibold">{row.input.name}</span><span>{row.input.empId} · {payoutAccount(line!)} · {peso(row.result.net)}</span>{line!.reason&&<span>· {line!.reason}</span>}{canRelease&&<button type="button" className="font-semibold underline" disabled={Boolean(busy)} onClick={()=>setFixing(row.input.empId)}>Fix and retry</button>}</li>)}</ul></div>}
     {!run.payouts?<div className="px-5 py-4 text-[12px] text-gray-600">{['Approved','Funded'].includes(status)?<>This run was approved before payouts were tracked per employee. {canRelease&&<button type="button" className={`${ghost} ml-2`} disabled={Boolean(busy)} onClick={()=>void act('setup',async()=>{await addPayoutLines(run.id,await staff())})}>Set up payouts</button>}</>:'Paid before payouts were tracked per employee.'}</div>
-    :<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-[13px]">
-     <thead><tr className="border-b border-blue-100 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">{['Employee','Method','Account','Net','Status',''].map(labelText=><th key={labelText||'actions'} className={`px-4 py-3 ${labelText==='Net'?'text-right':''}`}>{labelText}</th>)}</tr></thead>
+    :<div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-[13px]">
+     <thead><tr className="border-b border-blue-100 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">{['Batch','Pay date','Employee','Account name','Bank','Account number','Amount','Currency','Remarks','Status',''].map(labelText=><th key={labelText||'actions'} className={`whitespace-nowrap px-4 py-3 ${labelText==='Amount'?'text-right':''}`}>{labelText}</th>)}</tr></thead>
      <tbody>{lines.map(({row,line})=>line&&<tr key={row.input.empId} className="border-b border-gray-100">
-      <td className="px-4 py-3"><div className="font-semibold text-gray-800">{row.input.name}</div><div className="text-[11px] text-gray-500">{row.input.empId}</div></td>
-      <td className="px-4 py-3">{line.method}</td>
-      <td className="px-4 py-3">{payoutAccount(line)}{missingPayout(line)&&<div className="text-[11px] text-amber-700">Missing {missingPayout(line)}</div>}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{peso(row.result.net)}</td>
+      <td className="whitespace-nowrap px-4 py-3">{bankBatch(run)}</td>
+      <td className="whitespace-nowrap px-4 py-3">{payDate}</td>
+      <td className="whitespace-nowrap px-4 py-3">{row.input.empId}</td>
+      <td className="px-4 py-3">{bankName(row.input.name)}</td>
+      <td className="px-4 py-3">{line.method==='Bank'?bankName(line.bankName??''):line.method==='E-wallet'?bankName(line.provider??''):'CASH'}</td>
+      <td className="px-4 py-3 tabular-nums">{line.method==='Cash'?'—':digits(line.method==='Bank'?line.accountNumber:line.walletNumber)||'—'}{missingPayout(line)&&<div className="text-[11px] text-amber-700">Missing {missingPayout(line)}</div>}</td>
+      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{row.result.net.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td className="px-4 py-3">PHP</td>
+      <td className="px-4 py-3">{bankRemarks(run)}</td>
       <td className="px-4 py-3"><StatusBadge status={line.status}/>{line.status==='Failed'&&line.reason&&<div className="mt-1 text-[11px] text-red-700">{line.reason}</div>}</td>
       <td className="px-4 py-3 text-right"><div className="flex justify-end gap-2 whitespace-nowrap">{canRelease&&['Approved','Funded','Exported'].includes(status)&&<>
        {['Pending','Failed'].includes(line.status)&&<button type="button" className={ghost} disabled={Boolean(busy)} onClick={()=>setFixing(row.input.empId)}>{line.status==='Failed'?'Fix':'Edit'}</button>}

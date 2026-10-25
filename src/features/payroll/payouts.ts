@@ -33,9 +33,9 @@ export const payoutAccount=(details:PayoutDetails)=>details.method==='Bank'?[det
 const csvCell=(value:unknown)=>`"${String(value??'').replace(/"/g,'""')}"`;
 const money=(value:number)=>(Math.round(value*100)/100).toFixed(2);
 
-const digits=(value?:string)=>String(value??'').replace(/\D/g,'');
+export const digits=(value?:string)=>String(value??'').replace(/\D/g,'');
 // Bank upload files take names in plain capitals without punctuation (É -> E, Ñ -> N), at most 40 characters.
-const bankName=(value:string)=>value.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9 .-]/g,' ').replace(/\s+/g,' ').trim().slice(0,40);
+export const bankName=(value:string)=>value.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9 .-]/g,' ').replace(/\s+/g,' ').trim().slice(0,40);
 const MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const monthDay=(iso:string)=>`${MONTHS[Number(iso.slice(5,7))-1]} ${iso.slice(8,10)}`;
 /** The batch reference: PR-<pay year>-<pay month> and A (1st cutoff, paid the 15th) or B (2nd); 13th month pay is -13M. */
