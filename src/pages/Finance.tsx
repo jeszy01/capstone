@@ -11,6 +11,7 @@ import {notifyPayrollDecided} from '../features/notifications/notificationServic
 import {RUNS_KEY,expectStatus,runLabel,runStatus,updateRun} from '../features/payroll/payrollRuns';
 import type {PayrollRun} from '../features/payroll/payrollRuns';
 import {cell,flushCard,rowHeader,tableHead} from '../components/common/tableUi';
+import {PayrollRegister} from '../features/payroll/PayrollRegister';
 
 type Action={kind:'Approved'|'Returned'|'Rejected';run:PayrollRun};
 const message=(cause:unknown,fallback:string)=>cause instanceof Error&&cause.message?cause.message:fallback;
@@ -19,7 +20,7 @@ const netOf=(run:PayrollRun)=>run.rows.reduce((total,row)=>total+row.result.net,
 /** Finance (account menu): approve, return or reject payroll submitted by HR. */
 export default function Finance(){
  const user=getCurrentUser(),canApprove=can('payroll.approve');
- const[,setTick]=useState(0),[action,setAction]=useState<Action|null>(null),[comment,setComment]=useState('');
+ const[,setTick]=useState(0),[action,setAction]=useState<Action|null>(null),[comment,setComment]=useState(''),[reviewing,setReviewing]=useState<PayrollRun|null>(null);
  const[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const runs=read<PayrollRun[]>(RUNS_KEY,[]).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
  const pending=runs.filter(run=>runStatus(run)==='Pending Approval');
@@ -58,10 +59,12 @@ export default function Finance(){
   {error&&!action&&<p role="alert" className="m-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
   {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
   {canApprove&&table('Awaiting approval','Submitted by HR. You cannot approve a payroll you prepared.',pending,'No payroll is waiting for approval.',run=>{const own=Boolean(run.preparedById&&run.preparedById===user?.id);return <>
+   <button type="button" className={ghost} onClick={()=>setReviewing(run)}>Review</button>
    <button type="button" className={`${ghost} text-red-700`} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Rejected',run)}>Reject</button>
    <button type="button" className={ghost} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Returned',run)}>Return</button>
    <button type="button" className={button} disabled={own} title={own?'You prepared this payroll':undefined} onClick={()=>open('Approved',run)}>Approve</button>
   </>})}
+  {reviewing&&<Modal title={`Review ${runLabel(reviewing)}`} wide="full" onClose={()=>setReviewing(null)}><PayrollRegister runId={reviewing.id} refresh={0}/></Modal>}
   {action&&<Modal title={action.kind==='Approved'?'Approve payroll':action.kind==='Returned'?'Return for changes':'Reject payroll'} onClose={close}>
    <p className="mt-0 text-[13px] text-gray-600">{action.kind==='Approved'?`Approve ${runLabel(action.run)} (${action.run.rows.length} employees, net ${peso(netOf(action.run))})?`:action.kind==='Returned'?'HR can fix and recompute the run, then submit it again.':'A rejected run is locked; HR creates a new payroll for this cutoff.'}</p>
    <Field label={action.kind==='Approved'?'Comment (optional)':'Comment (required)'}><textarea className={`${input} min-h-[90px]`} maxLength={500} value={comment} onChange={event=>setComment(event.target.value)}/></Field>
