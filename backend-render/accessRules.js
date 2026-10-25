@@ -245,12 +245,8 @@ function claimEvents(user, before, after) {
       if (!['Pending Approval', 'Returned'].includes(was) || !CLAIM_DECISIONS.includes(now)) throw forbid('This claim status change is not allowed.');
       events.push([`claim.${now.toLowerCase()}`, 'Claims', id, `${now} claim ${label}.`]);
     }
-    if (paid(claim)) {
-      need(user, 'claims.pay');
-      if (own) throw forbid('This is your own claim. Another user must mark it as paid.');
-      if (now !== 'Approved') throw forbid('Only approved claims can be paid.');
-      events.push(['claim.paid', 'Reimbursement', id, `Marked claim ${label} as Paid.`]);
-    }
+    // A reimbursement is recorded with POST /claims/:id/payment (method, reference, proof), not in a browser save.
+    if (old.paymentStatus !== claim.paymentStatus) throw forbid('Record the reimbursement with Process on the Reimbursement page.');
   }
   return events;
 }

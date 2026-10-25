@@ -4,8 +4,12 @@
 export const CLAIM_TYPES = ['Food', 'Transportation', 'Office Supplies'];
 export const ESS_RECEIPT_MAX_BYTES = 3_000_000;
 const RECEIPT_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
-/** The only claim fields PBMS users may change; everything else is the employee's submission from ESS. */
-export const CLAIM_WORKFLOW_FIELDS = ['approvalStatus', 'paymentStatus', 'paymentMethod', 'paymentDate', 'notes', 'updatedAt'];
+// Fields the server keeps: the payment (recorded with POST /claims/:id/payment) and who decided the claim. A browser
+// save never changes them; the stored values are kept (keepServerClaimFields).
+export const CLAIM_SERVER_FIELDS = ['paymentStatus', 'paymentMethod', 'paymentDate', 'paymentReference', 'paidAt', 'paidBy', 'paidById',
+  'hasPaymentProof', 'paymentProofName', 'decidedAt', 'decidedBy', 'decidedById', 'hasReceipt'];
+/** Claim fields that are not the employee's ESS submission: the review a PBMS user makes, and the server's fields. */
+export const CLAIM_WORKFLOW_FIELDS = ['approvalStatus', 'notes', 'updatedAt', ...CLAIM_SERVER_FIELDS];
 
 const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00.000Z`).toISOString().slice(0, 10) === v;
 const fail = message => ({ error: message });
@@ -50,7 +54,7 @@ export const essClaimView = claim => ({
   claim_number: claim.claimNumber, claim_type: claim.claimType, amount: claim.amount, date: claim.date,
   business_purpose: claim.businessPurpose, project_site: claim.projectSite || null, receipt_name: claim.receiptName || null,
   status: essClaimStatus(claim), notes: claim.notes || null,
-  payment_method: claim.paymentMethod || null, payment_date: claim.paymentDate || null,
+  payment_method: claim.paymentMethod || null, payment_date: claim.paymentDate || null, payment_reference: claim.paymentReference || null,
   submitted_at: claim.createdAt, updated_at: claim.updatedAt, ess_reference: claim.essReference ?? null,
 });
 
@@ -80,6 +84,62 @@ export function essClaimNotice(action, claim) {
   if (action === 'claim.approved') return { title: 'Claim approved', message: `${number} for ${amount} was approved and will be reimbursed.` };
   if (action === 'claim.returned') return { title: 'Claim returned for correction', message: `${number}: ${reason || 'see the review notes'}. Correct it and resubmit it in ESS.` };
   if (action === 'claim.rejected') return { title: 'Claim rejected', message: `${number} for ${amount} was rejected${reason ? `: ${reason}` : '.'}` };
-  if (action === 'claim.paid') return { title: 'Claim reimbursed', message: `${number} for ${amount} was reimbursed${claim?.paymentDate ? ` on ${claim.paymentDate}` : ''}.` };
+  if (action === 'claim.paid') return { title: 'Claim reimbursed', message: `${number} for ${amount} was reimbursed${claim?.paymentMethod ? ` by ${String(claim.paymentMethod).toLowerCase()}` : ''}${claim?.paymentDate ? ` on ${claim.paymentDate}` : ''}${claim?.paymentReference ? ` (reference ${claim.paymentReference})` : ''}.` };
   return null;
+}
+
+const listOf = value => (Array.isArray(value) ? value : []);
+/** The claims a browser saves, with the server's fields as stored: a browser cannot record or change a payment. */
+export function keepServerClaimFields(before, after) {
+  const stored = new Map(listOf(before).filter(Boolean).map(claim => [String(claim.id), claim]));
+  return listOf(after).map(claim => {
+    const old = claim && stored.get(String(claim.id));
+    if (!old) return claim;
+    const kept = { ...claim };
+    for (const field of CLAIM_SERVER_FIELDS) { if (field in old) kept[field] = old[field]; else delete kept[field]; }
+    return kept;
+  });
+}
+const DECISIONS = { 'claim.approved': 'Approved', 'claim.returned': 'Returned', 'claim.rejected': 'Rejected' };
+/** The claims with who approved, returned or rejected them (from the save's audit events) and when. */
+export function stampClaimDecisions(claims, events, user, at) {
+  const decided = new Set(listOf(events).filter(([action]) => DECISIONS[action]).map(([, , id]) => String(id)));
+  if (!decided.size) return claims;
+  const by = String(user?.name || user?.email || 'PBMS user');
+  return listOf(claims).map(claim => (claim && decided.has(String(claim.id)) ? { ...claim, decidedAt: at, decidedBy: by, decidedById: String(user?.id ?? '') } : claim));
+}
+
+// ---- Reimbursement: recording a payment made outside PBMS ----
+// The money is sent outside PBMS (the company's bank portal or e-wallet app, or cash); PBMS records how, the reference
+// and an optional proof, then marks the claim Reimbursed.
+export const CLAIM_PAYMENT_METHODS = ['Bank Transfer', 'Cash', 'E-wallet'];
+const approved = claim => ['Approved', 'Ready for Claim', 'Sent to Finance'].includes(claim?.approvalStatus ?? claim?.status);
+/**
+ * Why this payment cannot be recorded, or '' when it can. payment: { method, reference, date, proof? } from the request;
+ * own: the claim is the user's own; today: YYYY-MM-DD in Manila.
+ */
+export function claimPaymentError({ claim, payment, userId, own, today }) {
+  const p = payment && typeof payment === 'object' ? payment : {};
+  if (!approved(claim) || claim.paymentStatus === 'Paid') return 'Only an approved claim that is not yet reimbursed can be paid.';
+  if (own) return 'This is your own claim. Another user must record its payment.';
+  if (claim.decidedById && String(claim.decidedById) === String(userId)) return 'You approved this claim. Another user must record its payment.';
+  if (!CLAIM_PAYMENT_METHODS.includes(p.method)) return `method must be one of ${CLAIM_PAYMENT_METHODS.join(', ')}.`;
+  const reference = typeof p.reference === 'string' ? p.reference.trim() : '';
+  if (reference.length < 3 || reference.length > 100) return 'Enter the reference: the bank or e-wallet transaction number, or the cash voucher number (3 to 100 characters).';
+  if (!isDate(p.date) || p.date > today) return 'The payment date must be a valid date, not in the future.';
+  if (claim.date && p.date < claim.date) return 'The payment date cannot be before the expense date.';
+  if (p.proof !== undefined && p.proof !== null) {
+    const proof = p.proof;
+    if (typeof proof?.name !== 'string' || !proof.name.trim() || !RECEIPT_TYPES.includes(proof.mime_type) || typeof proof.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(proof.data))
+      return `The proof must be a JPEG, PNG or PDF file.`;
+    if (Math.floor(proof.data.length * 3 / 4) > ESS_RECEIPT_MAX_BYTES) return 'The proof must be 3 MB or smaller.';
+  } else if (p.method === 'Cash') return 'Attach the signed cash voucher or acknowledgment for a cash payment.';
+  return '';
+}
+/** The claim once reimbursed, with how it was paid and who recorded it. */
+export function paidClaim(claim, payment, user, at) {
+  const proofName = payment.proof ? String(payment.proof.name).trim().slice(0, 200) : '';
+  return { ...claim, paymentStatus: 'Paid', paymentMethod: payment.method, paymentReference: payment.reference.trim(), paymentDate: payment.date,
+    paidAt: at, paidBy: String(user?.name || user?.email || 'PBMS user'), paidById: String(user?.id ?? ''),
+    hasPaymentProof: Boolean(proofName), paymentProofName: proofName, updatedAt: at };
 }

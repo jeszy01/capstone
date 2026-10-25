@@ -10,7 +10,7 @@ import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
-import { essClaimFields, essClaimNotice, essClaimView, nextClaimNumber, receiptOf, withoutReceipt } from './claimRules.js';
+import { claimPaymentError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
 import { CORRECTION_STATUSES, correctionDecision, correctionFields, correctionView } from './correctionRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
@@ -171,13 +171,17 @@ async function saveAppData(req, key, isDel, value) {
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
       // Receipt files live in claim_receipts; a browser copy saved before they moved does not bring them back.
       if (key === 'claims:records' && Array.isArray(next)) next = next.map(withoutReceipt);
+      // Payments and who decided a claim are kept by the server; a browser save cannot set or change them.
+      if (key === 'claims:records' && Array.isArray(next)) next = keepServerClaimFields(existed ? appValue(row.value) : null, next);
     }
     // For claims, the employee records with the user's email: nobody decides or pays their own claim.
     const actor = key === 'claims:records'
       ? { ...req.user, employeeIds: (await client.query(`select id from employees where $1 <> '' and lower(email) = lower($1)`, [String(req.user.email ?? '').trim()])).rows.map(r => String(r.id)) }
       : req.user;
     events = await appDataEvents(actor, key, existed ? appValue(row.value) : null, next, existed);
-    // The employee is told in ESS when their claim is approved, returned, rejected or paid (saved with the decision).
+    // Who approved, returned or rejected a claim, and when: the approver cannot also record its payment.
+    if (key === 'claims:records') next = stampClaimDecisions(next, events, req.user, new Date().toISOString());
+    // The employee is told in ESS when their claim is approved, returned or rejected (saved with the decision).
     if (key === 'claims:records') for (const [action, , claimId] of events) {
       const claim = next.find(item => String(item?.id) === String(claimId)), notice = essClaimNotice(action, claim);
       if (!notice) continue;
@@ -2559,7 +2563,8 @@ async function saveClaimsList(client, claims) {
   const list = claims.map(withoutReceipt);
   await client.query(`insert into app_data(key,value,deleted) values('claims:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(list)]);
 }
-// Reads and saves the claims list in one locked transaction; change returns the claim it added or changed.
+// Reads and saves the claims list in one locked transaction; change returns the claim it added or changed. change may
+// be async and use the transaction's connection (client).
 async function withClaims(change) {
   const client = await pool.connect();
   try {
@@ -2567,7 +2572,7 @@ async function withClaims(change) {
     await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:claims:records']);
     const { rows: [row] } = await client.query(`select value, deleted from app_data where key='claims:records'`);
     const claims = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
-    const { claims: next, claim, created } = change(claims);
+    const { claims: next, claim, created } = await change(claims, client);
     if (next !== claims) await saveClaimsList(client, next);
     await client.query('commit');
     return { claim, created };
@@ -2579,6 +2584,41 @@ async function withClaims(change) {
 // Receipts saved inside the claims list before claim_receipts existed move there once, at startup.
 const movedReceipts = await withClaims(claims => claims.some(claim => receiptOf(claim)) ? { claims: [...claims], claim: claims.filter(claim => receiptOf(claim)).length } : { claims, claim: 0 });
 if (movedReceipts.claim) console.log(`Moved ${movedReceipts.claim} claim receipt(s) to claim_receipts.`);
+
+// Proof of a reimbursement (bank confirmation, e-wallet screenshot or signed cash voucher), one per claim.
+await pool.query(`
+  create table if not exists claim_payment_proofs(
+    claim_id text primary key, file_name text not null, mime_type text not null, data text not null,
+    uploaded_by uuid, uploaded_at timestamptz not null default now());`);
+// Records the reimbursement of an approved claim, paid outside PBMS: method, reference, date and an optional proof.
+// The claim, the proof and the employee's ESS notification are saved together; the payment is logged.
+app.post('/claims/:id/payment', auth, allow('claims.pay'), async (req, res) => {
+  const payment = input(req), at = new Date().toISOString();
+  const { rows: mine } = await pool.query(`select id from employees where $1 <> '' and lower(email) = lower($1)`, [String(req.user.email ?? '').trim()]);
+  const ownIds = new Set(mine.map(r => String(r.id)));
+  const { claim } = await withClaims(async (claims, client) => {
+    const current = claims.find(item => item && String(item.id) === String(req.params.id));
+    if (!current) throw new HttpError(404, 'CLAIM_NOT_FOUND', 'This claim was not found. Reload the page and try again.');
+    const problem = claimPaymentError({ claim: current, payment, userId: req.user.id, own: ownIds.has(String(current.employeeId)), today: manilaDate() });
+    if (problem) throw new HttpError(problem.startsWith('This is your own') || problem.startsWith('You approved') ? 403 : problem.startsWith('Only an approved') ? 409 : 400, 'CLAIM_PAYMENT_REFUSED', problem);
+    const claim = paidClaim(current, payment, req.user, at);
+    if (payment.proof) await client.query(
+      `insert into claim_payment_proofs(claim_id,file_name,mime_type,data,uploaded_by) values($1,$2,$3,$4,$5)
+       on conflict(claim_id) do update set file_name=$2, mime_type=$3, data=$4, uploaded_by=$5, uploaded_at=now()`,
+      [String(claim.id), claim.paymentProofName, payment.proof.mime_type, `data:${payment.proof.mime_type};base64,${payment.proof.data}`, req.user.id]);
+    const notice = essClaimNotice('claim.paid', claim);
+    const { rows: [owner] } = await client.query('select employee_number from employees where id::text = $1', [String(claim.employeeId)]);
+    if (owner && notice) await client.query('insert into ess_notifications(employee_no, title, message) values($1,$2,$3)', [owner.employee_number, notice.title, notice.message]);
+    return { claims: claims.map(item => item === current ? claim : item), claim };
+  });
+  await audit('claim.paid', req.user.id, 'Reimbursement', claim.id, { description: `Reimbursed claim ${claim.claimNumber} (${pesoText(claim.amount)}) by ${claim.paymentMethod}, reference ${claim.paymentReference}, on ${claim.paymentDate}.` }, ipDevice(req));
+  ok(res, withoutReceipt(claim));
+});
+app.get('/claims/:id/payment-proof', auth, allow('claims.view'), async (req, res) => {
+  const { rows: [proof] } = await pool.query('select file_name, mime_type, data from claim_payment_proofs where claim_id=$1', [req.params.id]);
+  if (!proof) return fail(res, 404, 'PROOF_NOT_FOUND', 'No proof of payment was attached to this claim.');
+  ok(res, { name: proof.file_name, mime_type: proof.mime_type, data_url: proof.data });
+});
 
 // One claim's receipt file, loaded when someone opens it.
 app.get('/claims/:id/receipt', auth, allow('claims.view'), async (req, res) => {
@@ -2720,6 +2760,12 @@ app.get('/api/health', async (_req, res) => {
   const { rows: [row] } = await pool.query(`select value, deleted from app_data where key='attendance:hr2'`);
   const records = row && !row.deleted ? appValue(row.value)?.records ?? [] : [];
   res.json({ ok: true, database: db.database, employees: db.employees, attendance: records.length });
+});
+// Routes registered after the handler above (claims, ESS and other integrations) get the same error replies.
+app.use((err, _req, res, next) => {
+  if (err instanceof HttpError || err instanceof AccessError) return fail(res, err.status, err.code, err.message);
+  if (err?.type === 'entity.too.large') return fail(res, 413, 'FILE_TOO_LARGE', 'The file is too large.');
+  next(err);
 });
 app.use((err, _req, res, _next) => { console.error(err); fail(res, 500, 'INTERNAL_ERROR', 'Internal server error'); });
 app.listen(process.env.PORT || 3000);

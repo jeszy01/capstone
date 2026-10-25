@@ -26,15 +26,13 @@ describe('nobody decides or pays their own claim',()=>{
   for(const approvalStatus of ['Approved','Returned','Rejected'])
    await expect(save(hrWhoIsE1,claim(),claim({approvalStatus,notes:'x'}))).rejects.toThrow('This is your own claim');
  });
- it("refuses marking your own claim as paid",async()=>{
-  const approved=claim({approvalStatus:'Approved'});
-  await expect(save(hrWhoIsE1,approved,{...approved,paymentStatus:'Paid',paymentDate:'2026-10-25'})).rejects.toThrow('Another user must mark it as paid');
- });
- it("allows deciding and paying other employees' claims",async()=>{
+ it("allows deciding other employees' claims",async()=>{
   const theirs=claim({employeeId:'e2'});
   await expect(save(hrWhoIsE1,theirs,{...theirs,approvalStatus:'Approved'})).resolves.toHaveLength(1);
+ });
+ it('refuses paying in a save: payments are recorded with Process (POST /claims/:id/payment)',async()=>{
   const approved=claim({employeeId:'e2',approvalStatus:'Approved'});
-  await expect(save(hrWhoIsE1,approved,{...approved,paymentStatus:'Paid',paymentDate:'2026-10-25'})).resolves.toHaveLength(1);
+  await expect(save(hr,approved,{...approved,paymentStatus:'Paid',paymentDate:'2026-10-25'})).rejects.toThrow('Record the reimbursement with Process');
  });
 });
 

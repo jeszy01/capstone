@@ -7,9 +7,9 @@ import {employeeService} from '../features/employees/employeeService';
 import {can} from '../features/auth/permissions';
 import {getCurrentUser} from '../features/auth/authService';
 import {notifyClaimDecided} from '../features/notifications/notificationService';
-import {employeeName,fetchReceipt,normalizeClaims,updateClaim} from '../features/claims/claimsTypes';
+import {employeeName,normalizeClaims,updateClaim} from '../features/claims/claimsTypes';
 import type {ClaimReview,ExpenseClaim} from '../features/claims/claimsTypes';
-import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,rowHeader,tableHead} from '../features/claims/claimsUi';
+import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,openClaimFile,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
 
 // Returned claims wait for the employee to correct and resubmit them from ESS; meanwhile they can only be rejected.
@@ -125,7 +125,8 @@ function DetailsModal({claim,employees,onClose}:{claim:ExpenseClaim;employees:Em
    <Detail label="Expense Date">{claimDate(claim.date)}</Detail>
    <Detail label="Amount"><span className="font-semibold tabular-nums">{peso(claim.amount)}</span></Detail>
    <Detail label="Status"><ClaimStatusBadge claim={claim}/></Detail>
-   {claim.paymentStatus!=='Unpaid'&&<Detail label="Payment Date">{claimDate(claim.paymentDate)}</Detail>}
+   {claim.decidedBy&&<Detail label="Decided By">{claim.decidedBy}</Detail>}
+   {claim.paymentStatus!=='Unpaid'&&<><Detail label="Payment Date">{claimDate(claim.paymentDate)}</Detail><Detail label="Paid By">{[claim.paymentMethod,claim.paymentReference&&`ref. ${claim.paymentReference}`].filter(Boolean).join(' · ')||'—'}</Detail><Detail label="Recorded By">{claim.paidBy||'—'}</Detail><Detail label="Proof of Payment">{claim.hasPaymentProof?<button className="text-blue-600 underline" onClick={()=>void openClaimFile(claim,'proof')}>View proof</button>:'—'}</Detail></>}
    <Detail label="Receipt">{claim.receiptName?<span className="flex flex-wrap items-center gap-2"><span className="break-all">{claim.receiptName}</span>{claim.hasReceipt&&<button className="text-blue-600 underline" onClick={()=>void viewReceipt(claim)}>View receipt</button>}</span>:<span className="font-medium text-red-700">Missing</span>}</Detail>
    <div className="sm:col-span-2"><Detail label="Business Purpose"><p className="m-0 rounded-lg bg-gray-50 p-3 text-gray-500">{claim.businessPurpose||'—'}</p></Detail></div>
    <Detail label="Submitted">{claim.source==='ESS'?'By the employee through ESS':'Encoded in PBMS (before ESS)'}</Detail>
@@ -135,20 +136,4 @@ function DetailsModal({claim,employees,onClose}:{claim:ExpenseClaim;employees:Em
  </Modal>;
 }
 
-// The receipt is loaded from the server when it is opened. The window opens first so the browser does not block it.
-async function viewReceipt(claim:ExpenseClaim){
- if(!claim.hasReceipt)return;
- const popup=window.open('','_blank','width=900,height=800');if(!popup)return;
- const heading=`<title>${escapeHtml(claim.receiptName)}</title><body style="margin:20px;font-family:Arial"><h2>${escapeHtml(claim.claimNumber)} — ${escapeHtml(claim.receiptName)}</h2>`;
- popup.document.write(`${heading}<p>Loading receipt…</p></body>`);popup.document.close();
- try{
-  const receipt=await fetchReceipt(claim.id);
-  // Only JPEG, PNG and PDF receipts are accepted from ESS; anything else is not shown.
-  const src=/^data:(image\/(jpeg|png)|application\/pdf);base64,/.test(receipt.data_url)?escapeHtml(receipt.data_url):'';
-  const body=!src?'<p>This receipt cannot be displayed.</p>':receipt.data_url.startsWith('data:application/pdf')?`<embed src="${src}" type="application/pdf" width="100%" height="90%"/>`:`<img src="${src}" alt="${escapeHtml(claim.receiptName)}" style="max-width:100%;max-height:90%;object-fit:contain"/>`;
-  popup.document.open();popup.document.write(`${heading}${body}</body>`);popup.document.close();
- }catch(cause){
-  popup.document.open();popup.document.write(`${heading}<p>${escapeHtml(cause instanceof Error&&cause.message?cause.message:'The receipt could not be loaded.')}</p></body>`);popup.document.close();
- }
-}
-function escapeHtml(value:string){return value.replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[char]??char))}
+const viewReceipt=(claim:ExpenseClaim)=>openClaimFile(claim,'receipt');
