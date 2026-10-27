@@ -13,7 +13,8 @@ import {numberValue,peso,read,write} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,isThirteenthMonthRun,markPayouts,passkeyMessage,releaseToEss,runLabel,runStatus,settleRunLoans,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
-import {processRun,submitBlocked} from './computeRun';
+import {calcRow,processRun,submitBlocked} from './computeRun';
+import {loadRates} from '../settings/payrollSettings';
 import {loadReviewChecks,lockTimesheet} from './runChecks';
 import {cutoffSynced} from '../attendance/attendanceService';
 import type {RunCheck} from './runChecks';
@@ -116,7 +117,8 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   const next=rows.map(row=>{
    const manualAdjustments=changes.filter(change=>change.empId===row.input.empId).map(({field,label,original,amount,empId})=>({field,label,original,amount,reason:(reasons[reasonKey(empId,field)]??'').trim()}));
    const {manualAdjustments:_previous,...rest}=row;
-   return {...rest,...(manualAdjustments.length?{manualAdjustments}:{})};
+   // Amounts typed in change the pay, so the row's tax and net pay are computed again before saving.
+   return {...rest,result:calcRow(row,run,loadRates()),...(manualAdjustments.length?{manualAdjustments}:{})};
   });
   await updateRun(run.id,item=>{expectStatus(item,'Computed');return {...item,rows:next,totals:totalsOf(next)}});
   if(changes.length)recordAudit({action:'Changed payroll amounts by hand',module:'Payroll',description:`${title}: ${changes.map(change=>`${change.name} ${change.label} ${peso(change.original)} → ${peso(change.amount)} (${(reasons[reasonKey(change.empId,change.field)]??'').trim()})`).join('; ')}.`});

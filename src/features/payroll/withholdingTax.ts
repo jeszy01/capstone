@@ -103,7 +103,13 @@ export function calculateWithholdingTax(input:WithholdingTaxInput):WithholdingTa
  const gross=regular+supp+benefits+exempt;
  if(input.benefitOnly&&!input.finalPeriod)return benefitPaymentTax({input,rule,prior,regular,supp,benefits,benefitExemption,exempt,contrib,taxablePeriod,ytdTaxable,gross});
  const payrollPeriods=Math.max(1,(prior.payrollPeriods||0)+1);
- const cumulativeRequired=Boolean(prior.cumulativeAverage)||taxableRegular<(periodTable[1]?.over??0)||(supp+Math.max(0,benefits-benefitExemption))>=taxableRegular;
+ // RR 11-2018 Sec. 2.79(B)(5)(a): the cumulative-average method applies when the regular compensation is below the
+ // first taxable bracket "but supplementary compensation is paid during the calendar year" (in this cutoff or an
+ // earlier one), or when this cutoff's supplementary compensation is equal to or more than its regular compensation;
+ // once used, it continues for the year. Low regular pay in a year without supplementary pay keeps the regular method.
+ const taxableSupplementaryPay=supp+Math.max(0,benefits-benefitExemption);
+ const supplementaryThisYear=taxableSupplementaryPay>0||priorSupp>0||priorBenefits>rule.annualBenefitsExemption;
+ const cumulativeRequired=Boolean(prior.cumulativeAverage)||(supplementaryThisYear&&taxableRegular<(periodTable[1]?.over??0))||(taxableSupplementaryPay>0&&taxableSupplementaryPay>=taxableRegular);
  const cumulativeTax=taxFromTable(ytdTaxable/payrollPeriods,periodTable)*payrollPeriods;
  const periodTax=cumulativeRequired?round(Math.max(0,cumulativeTax-Math.max(0,prior.withheld||0))):taxBefore;
  if(input.finalPeriod){

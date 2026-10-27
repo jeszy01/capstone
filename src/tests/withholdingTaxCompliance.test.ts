@@ -116,10 +116,10 @@ describe('4. Annualization when an employee leaves before year end',()=>{
  });
  it('marks only a separated employee as a final row; the year-end payroll is final for everyone',async()=>{
   const {isFinalTaxRow}=await import('../features/payroll/taxHistory');
-  expect(isFinalTaxRow({runType:'regular',to:'2026-05-31'},{separated:true})).toBe(true);
-  expect(isFinalTaxRow({runType:'regular',to:'2026-05-31'},{})).toBe(false);
-  expect(isFinalTaxRow({runType:'regular',to:'2026-12-31'},{})).toBe(true);
-  expect(isFinalTaxRow({runType:'thirteenth-month',to:'2026-12-31'},{separated:true})).toBe(false);
+  expect(isFinalTaxRow({runType:'regular',to:'2026-05-31'},{separated:true},DEFAULT_RATES)).toBe(true);
+  expect(isFinalTaxRow({runType:'regular',to:'2026-05-31'},{},DEFAULT_RATES)).toBe(false);
+  expect(isFinalTaxRow({runType:'regular',to:'2026-12-31'},{},DEFAULT_RATES)).toBe(true);
+  expect(isFinalTaxRow({runType:'thirteenth-month',to:'2026-12-31'},{separated:true},DEFAULT_RATES)).toBe(false);
  });
 });
 

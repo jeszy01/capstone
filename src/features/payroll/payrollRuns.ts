@@ -1,4 +1,4 @@
-import type {PayrollInput,PayrollResult} from '../../types/domain';
+import type {PayrollInput,PayrollRates,PayrollResult} from '../../types/domain';
 import {peso,read,write} from '../../utils/storage';
 import {recordAudit} from '../audit/auditService';
 import {apiClient} from '../../services/api/apiClient';
@@ -7,7 +7,7 @@ import {governmentLoanService} from '../governmentLoans/governmentLoanService';
 import type {GovernmentLoanDeduction} from '../governmentLoans/governmentLoanPayroll';
 import {cutoffContaining,cutoffFor} from '../settings/payrollSettings';
 import type {PayrollSettingsSnapshot} from '../settings/payrollSettings';
-import {runStatus} from '../../../backend-render/payrollFlow.js';
+import {cutoffPayDate,runStatus} from '../../../backend-render/payrollFlow.js';
 import type {PayoutMethod,PayoutStatus,RunStatus} from '../../../backend-render/payrollFlow.js';
 
 // The process (statuses, allowed changes, pay date) is shared with the server: backend-render/payrollFlow.js.
@@ -49,6 +49,21 @@ export const runStatusLabel=(run:StatusFields)=>runStatus(run);
 const label=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 export const periodLabel=(from:string,to:string)=>`${label(from)} - ${label(to)}`;
 export const isThirteenthMonthRun=(run:Pick<PayrollRun,'runType'>)=>run.runType==='thirteenth-month';
+/** The day a run is paid: its pay date, or for a run saved without one, its cutoff's pay date (a 13th month run: its release day). */
+export const payDateOf=(run:Pick<PayrollRun,'runType'|'to'|'payDate'>)=>run.payDate||(isThirteenthMonthRun(run)?run.to:cutoffPayDate(run.to));
+/** The tax year of a run: the year it is paid. The BIR tables apply to compensation paid (RR 11-2018; RR 2-98 Sec. 2.83.6). */
+export const taxYearOf=(run:Pick<PayrollRun,'runType'|'to'|'payDate'>)=>payDateOf(run).slice(0,4);
+/**
+ * The year-end payroll: the last regular payroll paid in its tax year, because the next cutoff is paid the next year. Its
+ * withholding is the year-end adjustment (RR 11-2018 Sec. 2.79(B)(5)(b)). With cutoffs 26 - 9 and 10 - 25 it is Dec 10 - 25,
+ * paid Dec 31; Dec 26 - Jan 9 is paid on Jan 15 and is the first payroll of the new year.
+ */
+export function isYearEndRun(run:Pick<PayrollRun,'runType'|'to'|'payDate'>,rates:PayrollRates){
+ if(isThirteenthMonthRun(run))return false;
+ const next=new Date(`${run.to}T00:00:00Z`);next.setUTCDate(next.getUTCDate()+1);
+ const cutoff=cutoffContaining(next.toISOString().slice(0,10),rates);
+ return cutoffPayDate(cutoffFor(cutoff.month,cutoff.cutoff,rates).to).slice(0,4)>taxYearOf(run);
+}
 // A 13th month run is dated on its release day; tax it with the regular pay-period table.
 export const runTaxPeriod=(run:Pick<PayrollRun,'runType'>,payPeriodsPerMonth:number)=>isThirteenthMonthRun(run)?(payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const):undefined;
 /** The most recently created regular payroll run that has figures and was not rejected; the Dashboard and payroll cards summarize it. */

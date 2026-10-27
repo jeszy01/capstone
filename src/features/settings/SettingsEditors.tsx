@@ -7,6 +7,8 @@ import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate,saveWithholdi
 import type {PayrollPeriod,TaxBracket,WithholdingTaxRuleSet} from '../payroll/withholdingTax';
 import {lockedRuleChange} from '../../../backend-render/withholdingRuleLock.js';
 import {RUNS_KEY} from '../payroll/payrollRuns';
+import {loadMinimumWages,saveMinimumWages,validateMinimumWages} from '../payroll/minimumWage';
+import type {MinimumWageOrder} from '../payroll/minimumWage';
 import type {PayrollRun} from '../payroll/payrollRuns';
 import {loadThirteenthMonthRules,saveThirteenthMonthRules,validateThirteenthMonthRules} from '../payroll/thirteenthMonth';
 import type {ThirteenthMonthRules} from '../payroll/thirteenthMonth';
@@ -56,21 +58,38 @@ function RateInput({field,draft,setDraft,editing}:{field:RateField;draft:RateDra
 const fieldOf=(group:keyof typeof RATE_FIELDS,key:keyof PayrollRates)=>RATE_FIELDS[group].find(field=>field.key===key)!;
 
 export function WorkingTimeSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){
- const {draft,setDraft}=useDraft(()=>({rates:toRateDraft(loadRates()),time:loadTimeSettings()}),editing,onDirty);
+ const {draft,setDraft}=useDraft(()=>({rates:toRateDraft(loadRates()),time:loadTimeSettings(),wages:loadMinimumWages()}),editing,onDirty);
  const keys=RATE_FIELDS.time.map(field=>field.key);
- const save=useSave(()=>[...validateRates(fromRateDraft(draft.rates,keys)),...validateTimeSettings(draft.time)],()=>{
+ const save=useSave(()=>[...validateRates(fromRateDraft(draft.rates,keys)),...validateTimeSettings(draft.time),...validateMinimumWages(draft.wages)],()=>{
   const after=fromRateDraft(draft.rates,keys);
-  saveRates(after);saveTimeSettings(draft.time);
+  saveRates(after);saveTimeSettings(draft.time);saveMinimumWages(draft.wages);
   onDone('Working Time & Overtime saved.');
  });
  const rate=(key:keyof PayrollRates)=><RateInput field={fieldOf('time',key)} draft={draft.rates} setDraft={rates=>setDraft({...draft,rates})} editing={editing}/>;
  const time=(key:keyof Omit<TimeSettings,'otRounding'>,label:string)=><Field label={label}><TextInput type="time" disabled={!editing} value={draft.time[key]} onChange={event=>setDraft({...draft,time:{...draft.time,[key]:event.target.value}})}/></Field>;
  return <SectionShell title="Working Time & Overtime" editing={editing} canEdit={canEdit} onEdit={onEdit} onCancel={()=>onDone()} save={save}><div className={grid}>
-  {rate('hoursPerDay')}{rate('daysPerMonth')}{time('shiftStart','Shift start')}{time('shiftEnd','Shift end')}{rate('otMultiplier')}{rate('otRestMultiplier')}{rate('ndRate')}{time('ndStart','Night differential start')}{time('ndEnd','Night differential end')}{rate('otMinMinutes')}{rate('statutoryMinimumWage')}
+  {rate('hoursPerDay')}{rate('daysPerMonth')}{time('shiftStart','Shift start')}{time('shiftEnd','Shift end')}{rate('otMultiplier')}{rate('otRestMultiplier')}{rate('ndRate')}{time('ndStart','Night differential start')}{time('ndEnd','Night differential end')}{rate('otMinMinutes')}
   <Field label="Rounding rule"><select className={input} disabled={!editing} value={draft.time.otRounding} onChange={event=>setDraft({...draft,time:{...draft.time,otRounding:event.target.value as OvertimeRounding}})}>{OVERTIME_ROUNDING.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field>
  </div>
+  <MinimumWageTable orders={draft.wages} editing={editing} onChange={wages=>setDraft({...draft,wages})}/>
   <p className="mb-0 mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-[12px] text-gray-600">Shift start and end and the overtime minimum threshold are for reference only: HR2 computes late, undertime and overtime minutes (overtime is paid only when approved). Payroll applies the rounding rule to each day's figures: round down applies to overtime; round up to 1 hour applies to overtime, late and undertime.</p>
  </SectionShell>;
+}
+
+/** The regional wage orders: an employee whose daily rate is at or below the one in effect is a minimum wage earner. */
+function MinimumWageTable({orders,editing,onChange}:{orders:MinimumWageOrder[];editing:boolean;onChange:(orders:MinimumWageOrder[])=>void}){
+ const set=(index:number,patch:Partial<MinimumWageOrder>)=>onChange(orders.map((order,i)=>i===index?{...order,...patch}:order));
+ return <div className="mt-6">
+  <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="m-0 text-[14px] font-semibold text-gray-900">Minimum wage</h3><p className="mb-0 mt-1 text-[11px] text-gray-500">Daily minimum wage of the region where employees work, from the wage orders on nwpc.dole.gov.ph. Used for the minimum wage earner tax exemption.</p></div>{editing&&<button type="button" className={ghost} onClick={()=>onChange([...orders,{effectiveFrom:'',dailyRate:Number.NaN,wageOrder:''}])}><Plus size={15}/>Add wage order</button>}</div>
+  <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200"><table className="w-full min-w-[440px] text-left text-[13px]"><thead><tr className="border-b bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500"><th className="px-4 py-3">Effective from</th><th className="px-4 py-3">Daily rate (₱)</th><th className="px-4 py-3">Wage order</th>{editing&&<th className="px-4 py-3 text-right">Actions</th>}</tr></thead><tbody>
+   {orders.map((order,index)=><tr key={index} className="border-b border-gray-100 last:border-0">
+    <td className="px-4 py-2">{editing?<TextInput type="date" aria-label={`Effective from ${index+1}`} value={order.effectiveFrom} onChange={event=>set(index,{effectiveFrom:event.target.value})}/>:formatDate(order.effectiveFrom)}</td>
+    <td className="px-4 py-2">{editing?<TextInput type="number" min="0" step="0.01" aria-label={`Daily rate ${index+1}`} value={numberInput(order.dailyRate)} onChange={event=>set(index,{dailyRate:num(event.target.value)})}/>:peso(order.dailyRate)}</td>
+    <td className="px-4 py-2">{editing?<TextInput aria-label={`Wage order ${index+1}`} value={order.wageOrder} onChange={event=>set(index,{wageOrder:event.target.value})}/>:order.wageOrder}</td>
+    {editing&&<td className="px-4 py-2 text-right"><button type="button" className={`${ghost} text-red-700 hover:bg-red-50`} aria-label={`Delete wage order ${index+1}`} onClick={()=>onChange(orders.filter((_,i)=>i!==index))}><Trash2 size={14}/></button></td>}
+   </tr>)}
+  </tbody></table></div>
+ </div>;
 }
 
 export function PayScheduleSection({editing,canEdit,onEdit,onDone,onDirty}:SectionProps){

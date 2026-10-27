@@ -28,7 +28,7 @@ export const isSettingsKey = key => (key.startsWith('payroll:') && !PAYROLL_DATA
 // The settings values payroll needs for its calculations. Roles without Payroll Settings access read only these,
 // read-only, through GET /app-data?scope=payroll-rules.
 export const PAYROLL_RULE_KEYS = ['payroll:rates', 'payroll:time-settings', 'payroll:holidays', 'payroll:withholding-tax-rules', 'payroll:tax-brackets',
-  'payroll:thirteenth-month-rules', 'compensation:thirteenth-month-rules', 'payroll:run-options'];
+  'payroll:thirteenth-month-rules', 'compensation:thirteenth-month-rules', 'payroll:run-options', 'payroll:minimum-wages'];
 export const readableKey = (user, key) => !key.startsWith('audit:') && (key !== 'admin:users' || can(user.role, 'users.manage'))
   && (!isSettingsKey(key) || can(user.role, 'settings.view'))
   // Employees' claims and receipts: only roles that review or pay claims.
@@ -314,7 +314,7 @@ function attendanceEvents(user, before, after, existed) {
 }
 const SETTINGS_LABELS = { 'payroll:rates': 'Payroll rates', 'payroll:time-settings': 'Working time', 'payroll:holidays': 'Holiday calendar',
   'payroll:tax-brackets': 'Tax brackets', 'payroll:withholding-tax-rules': 'Withholding tax', 'payroll:thirteenth-month-rules': '13th month rules',
-  'compensation:thirteenth-month-rules': '13th month rules', 'payroll:run-options': 'Payroll run options' };
+  'compensation:thirteenth-month-rules': '13th month rules', 'payroll:run-options': 'Payroll run options', 'payroll:minimum-wages': 'Minimum wage orders' };
 const humanize = key => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
 const settingText = v => v === undefined || v === null ? 'none' : Array.isArray(v) ? `${v.length} entries` : typeof v === 'object' ? 'updated' : String(v);
 function describeChanges(before, after) {
