@@ -40,11 +40,37 @@ Newest release first. Amounts are pesos rounded to 2 decimals, the same figures 
       "basic": 15000, "allowance": 500, "bonuses": 0, "overtime": 360.58, "holidayLeave": 0, "gross": 15860.58,
       "absences": 0, "lateUt": 144.23, "sss": 750, "philhealth": 375, "pagibig": 100, "hmo": 250, "tax": 611.15,
       "loans": 0, "other": 0, "totalDeductions": 2230.38, "net": 13630.2,
+      "employmentStatus": "Regular",
+      "earnings": [
+        { "label": "Basic Salary", "amount": 15000 }, { "label": "Overtime", "amount": 360.58 }, { "label": "Allowances", "amount": 500 }
+      ],
+      "deductionGroups": [
+        { "title": "Time not paid", "lines": [{ "label": "Late", "amount": 144.23 }], "subtotal": 144.23 },
+        { "title": "Government contributions", "lines": [{ "label": "SSS", "amount": 750 }, { "label": "PhilHealth", "amount": 375 }, { "label": "Pag-IBIG", "amount": 100 }], "subtotal": 1225 },
+        { "title": "Tax", "lines": [{ "label": "Withholding Tax", "amount": 611.15 }], "subtotal": 611.15 },
+        { "title": "Other deductions", "lines": [{ "label": "HMO Dependents", "amount": 250 }], "subtotal": 250 }
+      ],
       "releasedAt": "2026-10-15T08:30:00.000Z"
     }
   ]
 }
 ```
+
+The payslip as PBMS shows it:
+
+- `employmentStatus`: as when the payroll was computed.
+- `earnings`: each earning with an amount. They add up to `gross`.
+- `deductionGroups`: in this order, each group only when it has an amount:
+  1. Time not paid
+  2. Government contributions
+  3. Tax
+  4. Loans
+  5. Other deductions
+
+  Their `subtotal`s add up to `totalDeductions`. Show each group under its title; PBMS shows the subtotal when a group has more than one line.
+
+Payslips released before October 29, 2026 do not have `employmentStatus`, `earnings` or `deductionGroups`; show their
+register figures.
 
 ## Notifications of an employee
 

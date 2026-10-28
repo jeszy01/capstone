@@ -2,7 +2,7 @@ import type {Employee,PayrollInput,PayrollRates} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
 import {hmoService} from '../hmo/hmoService';
 import {hmoCompanyCutoffShare,hmoCutoffDeduction} from '../hmo/hmoPayroll';
-import {loadOtherDeductions,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
+import {loadOtherDeductions,otherDeductionItemsForCutoff,otherDeductionsForCutoff} from '../deductions/otherDeductionService';
 import {fetchAttendance} from '../attendance/attendanceService';
 import {attendanceGaps} from '../attendance/workDays';
 import {calculateRunRow,earlierPendingBlocked,finalCutoffBlocked} from './taxHistory';
@@ -91,7 +91,8 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   // An employee who is no longer active is checked only up to their last attendance day.
   const lastDay=mine.map(record=>record.date).sort().pop()??to;
   const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to:employee.status==='Active'?to:lastDay,holidays});
-  built.push({position:employee.position,rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))});
+  const otherDeductionItems=otherDeductionItemsForCutoff(loadOtherDeductions(),employee.id,from,to);
+  built.push({position:employee.position,...(employee.employmentStatus?{employmentStatus:employee.employmentStatus}:{}),...(otherDeductionItems.length?{otherDeductionItems}:{}),rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))});
  }
  return built;
 }

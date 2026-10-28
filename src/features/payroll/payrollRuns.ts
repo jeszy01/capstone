@@ -20,7 +20,8 @@ export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:
 // separated: the employee had left (Inactive or Resigned) when the run was prepared; this is their last pay, and its
 // withholding annualizes the year to date (RR 2-98 Sec. 2.79(B)(1)(b)(i)).
 export type ManualAdjustment={field:string;label:string;original:number;amount:number;reason:string};
-export type RunRow={position:string;rest:number;hmo:number;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];separated?:boolean;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
+/** otherDeductionItems: the other deductions one by one, for the payslip. employmentStatus: as when the row was computed. */
+export type RunRow={position:string;rest:number;hmo:number;otherDeductionItems?:Array<{label:string;amount:number}>;employmentStatus?:string;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];separated?:boolean;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
 /** One employee's payout in a run: where the net pay goes and whether it was paid. */
 export type PayoutLine={method:PayoutMethod;bankName?:string;accountNumber?:string;provider?:string;walletNumber?:string;status:PayoutStatus;reason?:string;exportId?:string;updatedAt?:string;updatedBy?:string};
 /** One exported payout file. */

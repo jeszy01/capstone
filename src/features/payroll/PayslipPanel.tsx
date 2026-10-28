@@ -1,4 +1,5 @@
 import {useMemo,useState} from 'react';
+import type {ReactNode} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Button,Card,Empty,Field,Modal,TextInput,ghost} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
@@ -7,6 +8,8 @@ import {RUNS_KEY,runLabel,releaseDepartments,runStatus} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {can} from '../auth/permissions';
 import {buildPayslipBreakdownFromRun} from './payslipMath';
+import {payslipLines} from '../../../backend-render/payslipLines.js';
+import type {PayslipLine} from '../../../backend-render/payslipLines.js';
 import {StatusBadge} from '../../components/common/StatusBadge';
 import {formatDate} from '../../utils/date';
 import {documentLogo,loadBranding} from '../settings/systemSettings';
@@ -26,6 +29,8 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
  const runs=useMemo(()=>read<PayrollRun[]>(RUNS_KEY,[]).filter(r=>(['Paid','Closed'].includes(runStatus(r))&&generatedAt(r))||r.id===linked).sort((a,b)=>(generatedAt(b)??'').localeCompare(generatedAt(a)??'')),[tick,linked]);
  const[runId,setRunId]=useState(linked),[dept,setDept]=useState(''),[slip,setSlip]=useState<RunRow|null>(null);
  const deptOf=(row:RunRow)=>employees.find(e=>e.employeeNo===row.input.empId)?.department||'Unassigned';
+ // Employee status as saved when the payroll was computed; runs computed before it was kept use the employee record.
+ const statusOf=(row:RunRow)=>{const employee=employees.find(e=>e.employeeNo===row.input.empId);return row.employmentStatus||employee?.employmentStatus||employee?.status||'—'};
  const deptsOf=(run:PayrollRun)=>[...new Set(run.rows.map(deptOf))].sort();
  const run=runs.find(r=>r.id===runId);
  // Payslips are released only while the run is Paid; it closes when every department is released.
@@ -52,7 +57,7 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
    <Card className="border-blue-100"><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="m-0 text-[17px] font-semibold text-gray-900">{dept}</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">{runLabel(run)} · {rows.length} employees</p></div><span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">Paid payroll</span></div>
     <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full text-left text-[13px]"><thead><tr className={head}>{['Employee','Gross Pay','Deductions','Net Pay','Action'].map(l=><th key={l} className={th}>{l}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.input.empId} className="border-b border-gray-100 transition-colors hover:bg-blue-50/40"><td className="px-4 py-3"><div className="font-semibold text-gray-800">{row.input.name}</div><div className="text-[11px] text-gray-400">{row.input.empId}</div></td><td className="px-4 py-3 tabular-nums">{peso(row.result.gross)}</td><td className="px-4 py-3 tabular-nums text-rose-700">{peso(row.result.deductions)}</td><td className="px-4 py-3 tabular-nums font-semibold text-gray-900">{peso(row.result.net)}</td><td className="px-4 py-3"><button className={ghost} onClick={()=>setSlip(row)}>View Payslip</button></td></tr>)}</tbody></table></div>
    </Card>
-   {slip&&<SlipModal run={run} row={slip} dept={dept} onClose={()=>setSlip(null)}/>}
+   {slip&&<SlipModal run={run} row={slip} dept={dept} status={statusOf(slip)} onClose={()=>setSlip(null)}/>}
   </section>;
  }
 
@@ -83,25 +88,26 @@ export function PayslipPanel({employees}:{employees:Employee[]}){
 }
 
 const nf=(n:number)=>n.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const dash=(n:number)=>n?nf(n):'-';
-const ONES=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
-const TENS=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
-const below1000=(n:number):string=>n<20?ONES[n]:n<100?`${TENS[Math.floor(n/10)]}${n%10?' '+ONES[n%10]:''}`:`${ONES[Math.floor(n/100)]} Hundred${n%100?' '+below1000(n%100):''}`;
-const words=(n:number)=>{let r='';for(const[v,l]of [[1e9,'Billion'],[1e6,'Million'],[1e3,'Thousand']] as [number,string][]){if(n>=v){r+=`${below1000(Math.floor(n/v))} ${l} `;n%=v}}if(n>0)r+=below1000(n);return r.trim()||'Zero'};
-const pesoWords=(amount:number)=>{const totalCents=Math.round((Math.abs(amount)+Number.EPSILON)*100),whole=Math.floor(totalCents/100),cents=totalCents%100;return `${amount<0?'Negative ':''}${words(whole)} and ${String(cents).padStart(2,'0')}/100 Pesos`};
 
-function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string;onClose:()=>void}){
+/** One payslip: earnings with an amount, deductions in groups with subtotals, and net pay (the saved figures). */
+function SlipModal({run,row,dept,status,onClose}:{run:PayrollRun;row:RunRow;dept:string;status:string;onClose:()=>void}){
  const c=row.result;
- const breakdown=buildPayslipBreakdownFromRun(row);
- const earnings:[string,string][] = breakdown.earnings.map(line=>[line.label,dash(line.amount)]);
- const deductions:[string,string][] = breakdown.deductions.map(line=>[line.label,dash(line.amount)]);
+ const breakdown=buildPayslipBreakdownFromRun(row),slip=payslipLines(row);
  const period=runLabel(run);
  const info=(l:string,v:string)=><div className="flex gap-2"><span className="text-gray-500">{l}:</span><span className="font-semibold text-gray-800">{v}</span></div>;
- const table=(title:string,rows:[string,string][],totalLabel:string,total:number)=><div className="overflow-hidden rounded-lg border border-gray-200">
+ const line=(item:PayslipLine,index:number,indent=false)=><div key={index} className={`flex justify-between px-3 py-1.5 text-[12px] ${indent?'pl-6':''}`}><span>{item.label}</span><span className="tabular-nums">{nf(item.amount)}</span></div>;
+ const table=(title:string,body:ReactNode,totalLabel:string,total:number)=><div className="flex flex-col overflow-hidden rounded-lg border border-gray-200">
   <div className="flex justify-between bg-gray-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-gray-600"><span>{title}</span><span>Amount (PHP)</span></div>
-  <div className="divide-y divide-gray-100">{rows.map(([l,v])=><div key={l} className="flex justify-between px-3 py-1.5 text-[12px]"><span>{l}</span><span className="tabular-nums">{v}</span></div>)}</div>
+  <div className="flex-1">{body}</div>
   <div className="flex justify-between border-t border-gray-200 bg-gray-50 px-3 py-2 text-[12px] font-bold"><span>{totalLabel}</span><span className="tabular-nums">{nf(total)}</span></div>
  </div>;
+ const earnings=<div className="divide-y divide-gray-100">{slip.earnings.map((item,index)=>line(item,index))}</div>;
+ // Each group under its own heading; a group of more than one line ends with its subtotal.
+ const deductions=<div className="divide-y divide-gray-200">{slip.deductionGroups.map(group=><div key={group.title} className="py-1">
+  <div className="px-3 pb-0.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">{group.title}</div>
+  {group.lines.map((item,index)=>line(item,index,true))}
+  {group.lines.length>1&&<div className="flex justify-between px-3 py-1.5 pl-6 text-[12px] font-semibold"><span>Subtotal</span><span className="tabular-nums">{nf(group.subtotal)}</span></div>}
+ </div>)}</div>;
  const brand=loadBranding();
  return <Modal title="Payslip" wide onClose={onClose}>
   <style>{`@media print{body *{visibility:hidden}.payslip-print,.payslip-print *{visibility:visible}.payslip-print{position:absolute;left:0;top:0;width:100%;border:0!important}.no-print{display:none!important}}`}</style>
@@ -111,7 +117,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
     <div className="text-right"><div className="text-[13px] font-semibold">{period}</div><span className="mt-1 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Approved</span></div>
    </div>
    <div className="grid gap-1.5 border-b border-gray-200 py-4 text-[12px] sm:grid-cols-2">
-    <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}</div>
+    <div className="space-y-1.5">{info('Name',row.input.name)}{info('Position',row.position||'—')}{info('Department',dept)}{info('Employee Status',status)}</div>
     <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',formatDate(run.payDate??run.paidAt))}{info('Payment Method',run.payouts?.[row.input.empId]?.method??run.paymentMethod??'—')}</div>
    </div>
    {Math.abs(breakdown.earningsDifference)>0.01||Math.abs(breakdown.deductionsDifference)>0.01||Math.abs(breakdown.netDifference)>0.01?<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-900">This saved payroll does not reconcile. Earnings difference: {nf(breakdown.earningsDifference)}; deductions difference: {nf(breakdown.deductionsDifference)}; net-pay difference: {nf(breakdown.netDifference)}. Have Payroll review the run before relying on this payslip.</div>:null}
@@ -119,7 +125,7 @@ function SlipModal({run,row,dept,onClose}:{run:PayrollRun;row:RunRow;dept:string
     {table('Earnings',earnings,'Total Salary',c.gross)}
     {table('Deductions',deductions,'Total Deductions',c.deductions)}
    </div>
-  <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-gray-900"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div><div className="mt-1 text-[11px] italic text-gray-500">{pesoWords(c.net)}</div></div>
+  <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-gray-900"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div></div>
    <div className="mt-10 flex justify-end text-[11px]"><div className="w-48 border-t border-gray-500 pt-1 text-center">Received By</div></div>
    <div className="mt-6 text-[11px] text-gray-500">This is a system-generated payslip for {run.from} to {run.to}.</div>
    {brand.footerText&&<div className="mt-2 border-t border-gray-200 pt-2 text-center text-[11px] text-gray-500">{brand.footerText}</div>}

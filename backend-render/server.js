@@ -8,6 +8,7 @@ import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from '.
 import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
 import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
+import { payslipLines } from './payslipLines.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { claimantError, claimPaymentError, claimTotals, paymentProofError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
@@ -1010,9 +1011,14 @@ async function publishPayslips(client, req, payrollRun, include, at) {
   const runId = String(payrollRun.id), rows = payrollRows(payrollRun);
   const done = payrollRun.essReleased && typeof payrollRun.essReleased === 'object' ? payrollRun.essReleased : {};
   const sent = [];
+  // Employee status as saved when the payroll was computed; rows computed before it was kept take the employee record's.
+  const { rows: staff } = await client.query('select employee_number, employment_status, status from employees where employee_number = any($1)', [rows.map(r => String(r.input.empId))]);
+  const statusOf = row => row.employmentStatus || staff.find(e => String(e.employee_number) === String(row.input.empId))?.employment_status || staff.find(e => String(e.employee_number) === String(row.input.empId))?.status || null;
   for (const row of rows.filter(r => include(r) && !done[String(r.input.empId)])) {
     const line = registerLine(row);
-    const payslip = { runId, period: runPeriod(payrollRun), from: payrollRun.from, to: payrollRun.to, payDate: payrollRun.payDate ?? payrollRun.to, ...line };
+    // The register figures, plus the payslip's earnings and deduction groups as PBMS shows them.
+    const { earnings, deductionGroups } = payslipLines(row);
+    const payslip = { runId, period: runPeriod(payrollRun), from: payrollRun.from, to: payrollRun.to, payDate: payrollRun.payDate ?? payrollRun.to, ...line, employmentStatus: statusOf(row), earnings, deductionGroups };
     const { rowCount } = await client.query('insert into ess_payslips(run_id, employee_no, payslip, released_by) values($1,$2,$3,$4) on conflict do nothing',
       [runId, line.empId, JSON.stringify(payslip), String(req.user.id)]);
     if (rowCount) await client.query('insert into ess_notifications(employee_no, title, message, run_id) values($1,$2,$3,$4)',
