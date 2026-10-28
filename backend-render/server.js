@@ -9,6 +9,7 @@ import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financ
 import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
 import { payslipLines } from './payslipLines.js';
+import { bonusTaxType } from './bonusTax.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
 import { claimantError, claimPaymentError, claimTotals, paymentProofError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
@@ -357,6 +358,8 @@ await pool.query(`
     created_by uuid, created_at timestamptz not null default now(), updated_at timestamptz,
     approved_by uuid, approved_at timestamptz, legacy_id text);
   create unique index if not exists uq_compensation_rewards_legacy_id on compensation_rewards(legacy_id) where legacy_id is not null;
+  -- A bonus or incentive's tax type (bonusTax.js); null on bonuses entered before tax types, which use taxable.
+  alter table compensation_rewards add column if not exists tax_category text;
 
   create table if not exists compensation_history(
     id uuid primary key default gen_random_uuid(), employee_id uuid not null, source text not null, event_type text not null,
@@ -1384,8 +1387,15 @@ function rewardValues(b, type) {
   if (!isBonusType(type)) throw new HttpError(400, 'INVALID_REWARD_TYPE', 'Type must be Allowance, Incentive, or Bonus.');
   const cutoffStart = compDate(b.cutoff_start, 'cutoff_start'), cutoffEnd = compDate(b.cutoff_end, 'cutoff_end');
   if (cutoffStart > cutoffEnd) throw new HttpError(400, 'INVALID_CUTOFF', 'The cutoff start must be on or before its end.');
+  const base = { ...values, cutoff_start: cutoffStart, cutoff_end: cutoffEnd, effective_date: cutoffEnd, notes: required(b.notes, 'notes').trim() };
+  // The tax type decides whether it is taxable; a request without one (an older client) still sends taxable.
+  if (b.tax_category !== undefined && b.tax_category !== null && b.tax_category !== '') {
+    const taxType = bonusTaxType(String(b.tax_category));
+    if (!taxType) throw new HttpError(400, 'INVALID_TAX_CATEGORY', 'Choose the bonus tax type.');
+    return { ...base, tax_category: taxType.id, taxable: !taxType.benefit };
+  }
   if (typeof b.taxable !== 'boolean') throw new HttpError(400, 'INVALID_TAXABLE', 'Taxable must be true or false.');
-  return { ...values, cutoff_start: cutoffStart, cutoff_end: cutoffEnd, effective_date: cutoffEnd, notes: required(b.notes, 'notes').trim(), taxable: b.taxable };
+  return { ...base, tax_category: null, taxable: b.taxable };
 }
 async function findReward(id) {
   const reward = await first('compensation_rewards', { id });

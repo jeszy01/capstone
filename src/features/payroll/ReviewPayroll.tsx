@@ -26,10 +26,11 @@ import {RunStepper} from './RunProgress';
 import {PayrollRegister} from './PayrollRegister';
 
 // Amounts HR may type in while a run is Computed; each change needs a reason.
-type EditKey='otherDeductions'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
-const EDIT_LABELS:Record<EditKey,string>={otherDeductions:'Other Deductions',taxExemptBenefits:'Tax-exempt benefits',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
+type EditKey='otherDeductions'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
+const EDIT_LABELS:Record<EditKey,string>={otherDeductions:'Other Deductions',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
 const PRIOR_KEYS:EditKey[]=['priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
-const EDIT_KEYS:EditKey[]=['otherDeductions','taxExemptBenefits',...PRIOR_KEYS];
+// Tax-exempt amounts are not typed in: an exemption comes from a de minimis allowance or the 13th month and benefits.
+const EDIT_KEYS:EditKey[]=['otherDeductions',...PRIOR_KEYS];
 const sameInput=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 // The amounts as computed, before any hand-typed change.
 const originalInput=(row:RunRow):PayrollInput=>({...row.input,...Object.fromEntries((row.manualAdjustments??[]).map(change=>[change.field,change.original]))});

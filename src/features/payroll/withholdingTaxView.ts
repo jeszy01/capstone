@@ -50,6 +50,8 @@ export const tableLabel=(ruleId:string,rules:WithholdingTaxRuleSet[])=>{
  const rule=rules.find(item=>item.id===ruleId);
  return ruleId===DEFAULT_WITHHOLDING_RULES.id?'Tax table 2023 (RR 11-2018)':rule?`Tax table from ${rule.effectiveFrom}`:'Tax table';
 };
+/** When the pay could not cover the tax: the part not withheld, and the tax actually withheld. */
+const notWithheld=(b:NonNullable<RunRow['result']['taxBreakdown']>,withheld:number):TaxStep[]=>b.taxNotWithheld?[{label:b.employerPaysTax?'Paid by the company':'Withheld in later payrolls',amount:-b.taxNotWithheld},{label:'Tax withheld',amount:withheld,total:true}]:[];
 const money=(n:number)=>n.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 /**
  * One row's withholding as steps: pay → exemptions → contributions → taxable pay → bracket or method → tax, and for an
@@ -74,7 +76,7 @@ export function taxSteps(run:Pick<PayrollRun,'runType'|'to'>,row:Pick<RunRow,'re
    {label:'Tax withheld before',amount:-r2(b.priorTaxWithheld??0)},
    {label:b.withholdingTax<0?'Refund this payroll':'Tax this payroll',amount:b.withholdingTax,total:true},
   );
-  return steps;
+  return [...steps,...notWithheld(b,row.result.tax)];
  }
  const table=ruleForDate(run.to,rules).tables[b.period]??[];
  const bracket=[...table].sort((x,y)=>y.over-x.over).find(item=>b.taxableRegular>=item.over);
@@ -82,5 +84,5 @@ export function taxSteps(run:Pick<PayrollRun,'runType'|'to'>,row:Pick<RunRow,'re
   :isThirteenthMonthRun(run)?'Taxed at the rate of the latest regular pay bracket'
   :bracket?`Bracket over ${money(bracket.over)}: ${money(bracket.base)} + ${bracket.rate}% of the excess`:undefined;
  steps.push({label:'Tax this payroll',amount:b.withholdingTax,total:true,note:method});
- return steps;
+ return [...steps,...notWithheld(b,row.result.tax)];
 }

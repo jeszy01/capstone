@@ -151,19 +151,35 @@ import type {BonusIncentive} from '../features/compensation/compensationState';
 const allowance=(allowanceType:string,amount:number,frequency:'Monthly'|'Per Cutoff'='Monthly',taxable=false):BonusIncentive=>({id:allowanceType,employeeId:'e1',type:'Allowance',amount,effectiveDate:'2026-01-01',notes:'',status:'Active',createdAt:'',allowanceType,frequency,taxable,cutoffStart:'',cutoffEnd:''});
 
 describe('6. De minimis ceilings (RR 29-2025 from January 6, 2026) and monetized leave',()=>{
- it('exempts a rice subsidy up to ₱2,500 a month; the excess is other benefits',()=>{
-  expect(allowancePay([allowance('Rice Subsidy',3000)],2,'2026-10-15')).toEqual({taxable:0,exempt:1250,otherBenefits:250});
+ // Allowance types with their de minimis category set in Allowance Types; no allowance policy.
+ const types=[{id:'r',name:'Rice Subsidy',taxTreatment:'rice' as const},{id:'c',name:'Clothing',taxTreatment:'uniform' as const},{id:'m',name:'Medical',taxTreatment:'medicalAssistance' as const},{id:'l',name:'Laundry',taxTreatment:'laundry' as const}];
+ const pay=(items:BonusIncentive[],date:string,used={})=>allowancePay(items,2,date,types,used,[]);
+ it('exempts a rice subsidy up to ₱2,500 in the month it is paid; the excess is other benefits',()=>{
+  // ₱3,000 a month = ₱1,500 a cutoff: the 1st cutoff of the month is all exempt, the 2nd only the ₱1,000 left.
+  expect(pay([allowance('Rice Subsidy',3000)],'2026-10-09')).toMatchObject({taxable:0,exempt:1500,otherBenefits:0,byCategory:{rice:1500}});
+  expect(pay([allowance('Rice Subsidy',3000)],'2026-10-25',{month:{rice:1500}})).toMatchObject({taxable:0,exempt:1000,otherBenefits:500,byCategory:{rice:1000}});
  });
- it('uses the RR 11-2018 ceiling (₱2,000) before January 6, 2026',()=>{
-  expect(allowancePay([allowance('Rice Subsidy',3000)],2,'2025-12-15')).toEqual({taxable:0,exempt:1000,otherBenefits:500});
+ it('uses the RR 11-2018 limit (₱2,000) before January 6, 2026',()=>{
+  expect(pay([allowance('Rice Subsidy',3000)],'2025-12-25',{month:{rice:1500}})).toMatchObject({exempt:500,otherBenefits:1000});
  });
- it('spreads annual ceilings over the cutoffs: uniform ₱8,000 a year, actual medical assistance ₱12,000 a year',()=>{
-  expect(allowancePay([allowance('Clothing',1000)],2,'2026-10-15')).toEqual({taxable:0,exempt:333.33,otherBenefits:166.67});
-  expect(allowancePay([allowance('Medical',1000)],2,'2026-10-15')).toEqual({taxable:0,exempt:500,otherBenefits:0});
-  expect(allowancePay([allowance('Laundry',500)],2,'2026-10-15')).toEqual({taxable:0,exempt:200,otherBenefits:50});
+ it('counts yearly limits over the year: uniform ₱8,000, actual medical assistance ₱12,000',()=>{
+  // A ₱8,000 uniform allowance paid once is all exempt; after ₱6,000 used this year, only ₱2,000.
+  expect(pay([allowance('Clothing',8000,'Per Cutoff')],'2026-10-25')).toMatchObject({exempt:8000,otherBenefits:0});
+  expect(pay([allowance('Clothing',8000,'Per Cutoff')],'2026-10-25',{year:{uniform:6000}})).toMatchObject({exempt:2000,otherBenefits:6000});
+  expect(pay([allowance('Medical',1000)],'2026-10-25',{year:{medicalAssistance:11800}})).toMatchObject({exempt:200,otherBenefits:300});
+  // A monthly limit is not reduced by what was used in other months.
+  expect(pay([allowance('Laundry',500)],'2026-10-25',{month:{laundry:250},year:{laundry:3000}})).toMatchObject({exempt:150,otherBenefits:100});
  });
- it('taxes a fixed allowance that is not a de minimis benefit even when marked non-taxable',()=>{
-  expect(allowancePay([allowance('Transportation',2000,'Per Cutoff')],2,'2026-10-15')).toEqual({taxable:2000,exempt:0,otherBenefits:0});
+ it('taxes a non-taxable allowance whose type has no tax treatment set, and lists it',()=>{
+  expect(pay([allowance('Transportation',2000,'Per Cutoff')],'2026-10-25')).toMatchObject({taxable:2000,exempt:0,otherBenefits:0,unclassified:['Transportation']});
+ });
+ it('does not exempt an allowance from its name alone',()=>{
+  expect(allowancePay([allowance('Rice Subsidy',3000)],2,'2026-10-09',[],{},[])).toMatchObject({taxable:1500,exempt:0,unclassified:['Rice Subsidy']});
+ });
+ it('uses the tax treatment of the allowance policy type of the same name',()=>{
+  const policy=[{id:'rice',name:'Rice Allowance',code:'ALW-RC',taxTreatment:'rice' as const,defaultAmount:0}];
+  expect(allowancePay([allowance('Rice Allowance',2000)],2,'2026-10-09',[],{},policy)).toMatchObject({taxable:0,exempt:1000,unclassified:[]});
+  expect(allowancePay([allowance('Rice Subsidy (old)',2000)],2,'2026-10-09',[],{},policy)).toMatchObject({taxable:1000,exempt:0});
  });
  it('counts de minimis excess toward the ₱90,000 exemption, not taxable pay',()=>{
   const c=cutoff({dailyRate:2000,daysWorked:11,allowancesExempt:1250,allowancesOtherBenefits:250});
@@ -219,13 +235,14 @@ describe('8. Contribution schedule defaults (2025–2026)',()=>{
 
 import {allowanceTreatment} from '../features/compensation/allowanceRules';
 describe('Policy settings for accountant decisions',()=>{
- it('uses the tax treatment chosen in Allowance Types over the name-based suggestion',()=>{
+ it('uses only the tax treatment chosen in Allowance Types, never one suggested from the name',()=>{
   const types=[{id:'m',name:'Medical',taxTreatment:'medicalDependents' as const},{id:'g',name:'Grocery',taxTreatment:'rice' as const},{id:'r',name:'Rice Subsidy',taxTreatment:'taxable' as const}];
-  expect(allowanceTreatment('Medical',types)).toBe('medicalDependents');
-  expect(allowanceTreatment('Laundry',types)).toBe('laundry');
-  expect(allowancePay([allowance('Medical',1000)],2,'2026-10-15',types)).toEqual({taxable:0,exempt:166.5,otherBenefits:333.5});
-  expect(allowancePay([allowance('Grocery',2000)],2,'2026-10-15',types)).toEqual({taxable:0,exempt:1000,otherBenefits:0});
-  expect(allowancePay([allowance('Rice Subsidy',2000)],2,'2026-10-15',types)).toEqual({taxable:1000,exempt:0,otherBenefits:0});
+  expect(allowanceTreatment('Medical',types,[])).toBe('medicalDependents');
+  expect(allowanceTreatment('Laundry',types,[])).toBeNull();
+  // Medical cash allowance to dependents: ₱333 a month.
+  expect(allowancePay([allowance('Medical',1000)],2,'2026-10-15',types,{},[])).toMatchObject({taxable:0,exempt:333,otherBenefits:167});
+  expect(allowancePay([allowance('Grocery',2000)],2,'2026-10-15',types,{},[])).toMatchObject({taxable:0,exempt:1000,otherBenefits:0});
+  expect(allowancePay([allowance('Rice Subsidy',2000)],2,'2026-10-15',types,{},[])).toMatchObject({taxable:1000,exempt:0,otherBenefits:0,unclassified:[]});
  });
  it('classifies paid leave as set on the withholding rule version (supplementary unless set to regular)',()=>{
   const input={dailyRate:1000,daysWorked:5,vlDays:6};

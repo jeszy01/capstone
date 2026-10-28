@@ -11,7 +11,9 @@ import {loadAttendanceSchedule,loadHolidays,loadRates,loadTimeSettings,payrollSe
 import {holidayPay,nightDifferentialPay} from './premiumPay';
 import {computeDeductions} from '../deductions/deductionService';
 import {calculatePayroll} from './payrollCalculator';
-import {BLANK_PAYROLL_INPUT,RUNS_KEY,expectStatus,isThirteenthMonthRun,isYearEndRun,periodLabel,runStatus,taxYearOf,updateRun} from './payrollRuns';
+import {BLANK_PAYROLL_INPUT,RUNS_KEY,expectStatus,isApprovedRun,isThirteenthMonthRun,isYearEndRun,payDateOf,periodLabel,runStatus,taxYearOf,updateRun} from './payrollRuns';
+import {countsTowardBenefits} from '../../../backend-render/bonusTax.js';
+import type {DeMinimisUsed} from '../compensation/allowanceRules';
 import {payoutLinesFor} from './payouts';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
@@ -27,6 +29,23 @@ import {governmentLoanDeductions,governmentLoanTotals} from '../governmentLoans/
 type RunScope=Pick<PayrollRun,'id'|'runType'|'from'|'to'|'payDate'>;
 const blank=BLANK_PAYROLL_INPUT;
 const payPeriodOf=(rates:PayrollRates)=>rates.payPeriodsPerMonth===1?'monthly' as const:'semi-monthly' as const;
+
+/**
+ * De minimis already exempted for an employee in the approved runs before this one: in the calendar month the run is
+ * paid (monthly limits) and in its tax year (yearly limits). Rows computed before amounts were kept count as nothing.
+ */
+export function deMinimisUsed(runs:PayrollRun[],empId:string,run:RunScope):DeMinimisUsed{
+ const paid=payDateOf(run),used:Required<DeMinimisUsed>={month:{},year:{}};
+ for(const other of runs){
+  if(other.id===run.id||!isApprovedRun(other)||taxYearOf(other)!==paid.slice(0,4))continue;
+  const row=other.rows.find(item=>item.input.empId===empId);
+  for(const [category,amount] of Object.entries(row?.deMinimisByCategory??{}) as Array<[keyof typeof used.year,number]>){
+   used.year[category]=(used.year[category]??0)+amount;
+   if(payDateOf(other).slice(0,7)===paid.slice(0,7))used.month[category]=(used.month[category]??0)+amount;
+  }
+ }
+ return used;
+}
 
 /** One employee's pay with their year-to-date tax history; the last payroll paid in the year and a separated employee's last pay annualize. */
 export function calcRow(row:Pick<RunRow,'input'|'hmo'|'separated'>,run:RunScope,rates:PayrollRates,runs=read<PayrollRun[]>(RUNS_KEY,[])){
@@ -65,12 +84,16 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   const mine=records.filter(record=>(record.empId===employee.employeeNo||record.empId===employee.id)&&record.date>=from&&record.date<=to);
   const employeeIds=[employee.id,employee.employeeNo];
   const approvedBonuses=rewards.filter(entry=>isBonusReward(entry)&&entry.status==='Approved'&&employeeIds.includes(entry.employeeId)&&entry.cutoffEnd>=from&&entry.cutoffEnd<=to);
-  const taxableBonus=approvedBonuses.filter(entry=>entry.taxable).reduce((total,entry)=>total+entry.amount,0);
-  const nonTaxableBonus=approvedBonuses.filter(entry=>!entry.taxable).reduce((total,entry)=>total+entry.amount,0);
+  // A bonus's tax type decides: benefits of the ₱90,000 exemption, or taxable. One entered before tax types follows its
+  // taxable flag, and a non-taxable one is listed for HR to choose a type.
+  const benefit=(entry:typeof approvedBonuses[number])=>entry.taxCategory?countsTowardBenefits(entry.taxCategory):!entry.taxable;
+  const taxableBonus=approvedBonuses.filter(entry=>!benefit(entry)).reduce((total,entry)=>total+entry.amount,0);
+  const nonTaxableBonus=approvedBonuses.filter(benefit).reduce((total,entry)=>total+entry.amount,0);
+  const untypedBonuses=approvedBonuses.filter(entry=>!entry.taxCategory&&!entry.taxable).map(entry=>entry.notes.split('\n')[0]||entry.type);
   // Allowances are paid for a cutoff with at least one day worked or on paid leave; a cutoff entirely absent or on leave
   // without pay earns none.
   const paidDays=item.daysWorked+mine.filter(record=>record.status==='On Leave'&&record.paidLeave!==false).length;
-  const allowance=allowancePay(paidDays?activeAllowances(rewards,employeeIds,to):[],rates.payPeriodsPerMonth,to);
+  const allowance=allowancePay(paidDays?activeAllowances(rewards,employeeIds,to):[],rates.payPeriodsPerMonth,to,undefined,deMinimisUsed(read<PayrollRun[]>(RUNS_KEY,[]),employee.employeeNo,run));
   // The same HMO cutoff deduction shown under Deductions → HMO.
   const hmo=hmoCutoffDeduction(hmoLines,employee.id),hmoCompany=hmoCompanyCutoffShare(hmoLines,employee.id);
   const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
@@ -92,7 +115,7 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   const lastDay=mine.map(record=>record.date).sort().pop()??to;
   const gaps=attendanceGaps({records,employeeKeys:employeeIds,hiredOn:employee.dateHired,from,to:employee.status==='Active'?to:lastDay,holidays});
   const otherDeductionItems=otherDeductionItemsForCutoff(loadOtherDeductions(),employee.id,from,to);
-  built.push({position:employee.position,...(employee.employmentStatus?{employmentStatus:employee.employmentStatus}:{}),...(otherDeductionItems.length?{otherDeductionItems}:{}),rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))});
+  built.push({position:employee.position,...(employee.employmentStatus?{employmentStatus:employee.employmentStatus}:{}),...(otherDeductionItems.length?{otherDeductionItems}:{}),...(Object.keys(allowance.byCategory).length?{deMinimisByCategory:allowance.byCategory}:{}),...(allowance.unclassified.length?{unclassifiedAllowances:allowance.unclassified}:{}),...(untypedBonuses.length?{untypedBonuses}:{}),rest:mine.filter(record=>record.status==='Day Off').length,...(separated?{separated}:{}),...(gaps.missingDays.length||gaps.incompleteDays.length?{attendanceGaps:gaps}:{}),hmo,...(hmoCompany?{hmoCompany}:{}),input,result:compute(input),...(governmentLoans.length?{governmentLoans}:{}),loanRepayments:loanRepayments.map(({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount})=>({loanId,employeeId,recordType,loanType,amount,installmentNumber,installmentCount}))});
  }
  return built;
 }

@@ -88,8 +88,13 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const otherBenefits=round(otherBenefitAllowances+monetizedLeave-monetizedLeaveExempt);
  const computedTax=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:round(thirteenth+otherBenefits),taxExemptBenefits:round(taxExempt+monetizedLeaveExempt),mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules,benefitOnly:taxContext.benefitOnly});
  const withDeMinimis={...computedTax,deMinimisExempt:round(exemptAllowances+monetizedLeaveExempt),monetizedLeaveExempt};
- const taxBreakdown=mwe?{...withDeMinimis,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:withDeMinimis;
- const tax=taxBreakdown.withholdingTax;
+ const computed=mwe?{...withDeMinimis,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:withDeMinimis;
+ // Tax is withheld only from the pay left after time not paid and contributions; it comes before loans and other
+ // deductions. Any more is not withheld: on the year-end or final pay the employer pays it (RR 11-2018 Sec.
+ // 2.79(B)(5)(b), Step 4), otherwise later payrolls of the year withhold it.
+ const payForTax=round(Math.max(0,gross-absences-late-undertime-sss-phil-pagibig));
+ const tax=computed.withholdingTax>payForTax?payForTax:computed.withholdingTax;
+ const taxBreakdown=tax===computed.withholdingTax?computed:{...computed,taxNotWithheld:round(computed.withholdingTax-tax),...(taxContext.finalPeriod?{employerPaysTax:true}:{})};
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance)+numberValue(r.govSssLoan)+numberValue(r.govPagibigLoan));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));
  const net=round(gross-deductions);

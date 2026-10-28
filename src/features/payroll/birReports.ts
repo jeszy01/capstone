@@ -32,7 +32,9 @@ export function rowTotals(row:RunRow):CompensationTotals{
   benefitsExempt:b?.benefitExemptionApplied??0,deMinimis,contributions:b?.mandatoryContributions??0,otherExempt,
  };
  const nonTaxable=Object.values(lines).reduce((sum,value)=>sum+value,0);
- return {...lines,compensation:r2(r.gross-(r.absences??0)-(r.late??0)-(r.undertime??0)),nonTaxable:r2(nonTaxable),taxable:r2(b?.taxableCompensation??0),withheld:r2(r.tax)};
+ // Tax the employer pays for an employee whose last pay could not cover it is remitted with the tax withheld.
+ const employerPaid=b?.employerPaysTax?b.taxNotWithheld??0:0;
+ return {...lines,compensation:r2(r.gross-(r.absences??0)-(r.late??0)-(r.undertime??0)),nonTaxable:r2(nonTaxable),taxable:r2(b?.taxableCompensation??0),withheld:r2(r.tax+employerPaid)};
 }
 
 /** Approved runs in the period, each once (a run saved twice is not counted twice). */

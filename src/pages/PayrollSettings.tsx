@@ -90,12 +90,12 @@ function tables(section:SectionId):Table[]{
     ['Tax year','By pay date: a payroll paid in January counts in the new year','RR 11-2018 Sec. 2.79(B)(1)'],
     ['Regular pay',`Basic salary and taxable allowances${leaveRegular?', paid leave':''}`,'RR 11-2018 Sec. 2.79(B)(3)'],
     ['Supplementary pay',`Overtime, night differential, holiday pay, taxable bonuses${leaveRegular?'':', paid leave'}`,'RR 11-2018 Sec. 2.79(B)(3); holiday pay and leave: accountant'],
-    ['Bonuses','Taxable unless marked non-taxable; non-taxable bonuses count toward the 13th month exemption','Accountant'],
+    ['Bonuses','By tax type: Christmas bonus, productivity incentive, loyalty award, gift or similar benefit count toward the 13th month exemption; commissions and other bonuses are taxable','RR 11-2018 Sec. 2.78.1(B)(11)'],
    ]},
    {title:'2. Exemptions',columns:SETTING,rows:[
     ['Minimum wage earner',`Daily rate at or below the minimum wage (${wage?wage.wageOrder:'not set'}): minimum wage, holiday pay, overtime, night differential and paid leave are tax-free`,'RR 11-2018 Sec. 2.78.1(B)(13); paid leave: accountant'],
     ['13th month and other benefits',`Tax-free up to ${whole(rule.annualBenefitsExemption)} a year; the excess is taxed at the rate of the latest regular pay bracket`,'RA 10963; RR 11-2018 Sec. 2.78.1(B)(11)'],
-    ['De minimis',`${(Object.keys(DE_MINIMIS_LABELS) as DeMinimisCategory[]).map(category=>`${DE_MINIMIS_LABELS[category]} ${deMinimisCeilingLabel(category,today())}`).join('; ')}; monetized leave up to ${deMinimis.monetizedLeaveDays} days a year. The excess counts as other benefits`,deMinimis.source],
+    ['De minimis',`${(Object.keys(DE_MINIMIS_LABELS) as DeMinimisCategory[]).map(category=>`${DE_MINIMIS_LABELS[category]} ${deMinimisCeilingLabel(category,today())}`).join('; ')}; monetized leave up to ${deMinimis.monetizedLeaveDays} days a year. Only for allowance types set as de minimis; each limit counts per month or per year, and the excess counts as other benefits`,deMinimis.source],
     ['SSS, PhilHealth, Pag-IBIG',`Employee shares are not taxed, ${contributions}`,'RR 11-2018 Sec. 2.78.1(B)(12)'],
    ]},
    {title:'3. Taxable pay',columns:SETTING,rows:[
@@ -113,7 +113,7 @@ function tables(section:SectionId):Table[]{
     ['Year-end adjustment','In the last regular payroll paid in the year: annual tax less tax withheld','RR 11-2018 Sec. 2.79(B)(5)(b)'],
     ['Employee who left','Annualized in the last pay','RR 11-2018 Sec. 2.79(B)(5)(b)'],
     ['Over-withheld tax','Refunded in the year-end payroll or the last pay','RR 11-2018 Sec. 2.79(B)(5)(b)'],
-    ['Tax owed above the last pay','The payroll cannot be submitted with negative net pay','RR 11-2018 Sec. 2.79(B)(5)(b): the employer pays the rest'],
+    ['Tax owed above the last pay','Withheld up to the pay left; the company pays the rest','RR 11-2018 Sec. 2.79(B)(5)(b)'],
    ]},
    {title:'Payroll Register',columns:SETTING,rows:[
     ['Tax column in Payroll Register',loadRunOptions().showTax?'On':'Off','Company workflow'],

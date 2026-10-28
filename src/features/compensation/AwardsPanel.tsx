@@ -12,6 +12,7 @@ import {cutoffContaining,cutoffFor} from '../settings/payrollSettings';
 import {compensationService} from './compensationService';
 import {compactPeso} from './compensationSummary';
 import {findCompensationEmployee,today} from './compensationState';
+import {BONUS_TAX_TYPES,bonusTaxType} from '../../../backend-render/bonusTax.js';
 import type {BonusIncentive,CompensationProposal,EmployeeCompensation} from './compensationState';
 import {awardSummary,buildAwards,joinNotes} from './awardsRegister';
 import type {Award,AwardStatus,AwardType} from './awardsRegister';
@@ -112,19 +113,20 @@ function upcomingCutoffs(date:string){
 
 function NewAwardModal({employees,assignments,saving,error,onClose,onSave}:{employees:Employee[];assignments:EmployeeCompensation[];saving:boolean;error:string;onClose:()=>void;onSave:(work:()=>Promise<unknown>)=>void}){
  const cutoffs=useMemo(()=>upcomingCutoffs(today()),[]);
- const [form,setForm]=useState({type:'Incentive' as AwardType,employeeId:'',title:'',description:'',amount:'',cutoff:cutoffs[0]?.from??'',taxable:true,percent:'',effectiveDate:today()});
+ const [form,setForm]=useState({type:'Incentive' as AwardType,employeeId:'',title:'',description:'',amount:'',cutoff:cutoffs[0]?.from??'',taxCategory:'',percent:'',effectiveDate:today()});
  const set=(field:keyof typeof form)=>(event:React.ChangeEvent<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>)=>setForm(previous=>({...previous,[field]:event.target.type==='checkbox'?(event.target as HTMLInputElement).checked:event.target.value}));
  const merit=form.type==='Merit';
  const current=assignments.find(item=>findCompensationEmployee(employees,item.employeeId)?.id===form.employeeId);
  const choices=merit?employees.filter(employee=>assignments.some(item=>findCompensationEmployee(employees,item.employeeId)?.id===employee.id)):employees;
  const newSalary=current?Math.round(current.fixedSalary*(1+numberValue(form.percent)/100)*100)/100:0;
- const valid=form.employeeId&&form.title.trim()&&(merit?Boolean(current)&&numberValue(form.percent)>0&&form.effectiveDate:numberValue(form.amount)>0&&form.cutoff);
+ const taxType=bonusTaxType(form.taxCategory);
+ const valid=form.employeeId&&form.title.trim()&&(merit?Boolean(current)&&numberValue(form.percent)>0&&form.effectiveDate:numberValue(form.amount)>0&&form.cutoff&&taxType);
  const submit=()=>{
   if(!valid)return;
   const notes=joinNotes(form.title,form.description);
   if(merit){onSave(()=>compensationService.createProposal({employeeId:form.employeeId,type:'Merit Increase',newSalary,effectiveDate:form.effectiveDate,notes,salaryCode:''}));return}
   const cutoff=cutoffs.find(item=>item.from===form.cutoff)!;
-  onSave(()=>compensationService.createReward({employeeId:form.employeeId,type:form.type as 'Bonus'|'Incentive',amount:numberValue(form.amount),effectiveDate:cutoff.to,notes,status:'Pending',allowanceType:'',frequency:'Per Cutoff',taxable:form.taxable,cutoffStart:cutoff.from,cutoffEnd:cutoff.to}));
+  onSave(()=>compensationService.createReward({employeeId:form.employeeId,type:form.type as 'Bonus'|'Incentive',amount:numberValue(form.amount),effectiveDate:cutoff.to,notes,status:'Pending',allowanceType:'',frequency:'Per Cutoff',taxable:!taxType!.benefit,taxCategory:taxType!.id,cutoffStart:cutoff.from,cutoffEnd:cutoff.to}));
  };
  return <Modal title="New award" wide onClose={onClose}>
   <div className="grid gap-4 sm:grid-cols-2">
@@ -139,7 +141,7 @@ function NewAwardModal({employees,assignments,saving,error,onClose,onSave}:{empl
     :<Field label="Pay in cutoff"><select className={input} value={form.cutoff} onChange={set('cutoff')}>{cutoffs.map(cutoff=><option key={cutoff.from} value={cutoff.from}>{periodLabel(cutoff.from,cutoff.to)}</option>)}</select></Field>}
    {merit
     ?<div className="self-end rounded-xl bg-gray-50 p-3 text-[12px] text-gray-600">{current?<>Basic salary {peso(current.fixedSalary)} → <b className="text-gray-900">{peso(newSalary)}</b></>:'Select an employee with a salary.'}</div>
-    :<label className="flex items-center gap-2 self-end pb-2 text-[13px] text-gray-700"><input type="checkbox" checked={form.taxable} onChange={set('taxable')}/>Taxable</label>}
+    :<Field label="Tax type"><select className={input} value={form.taxCategory} onChange={set('taxCategory')}><option value="">Select tax type</option><optgroup label="Counts toward the ₱90,000 exemption">{BONUS_TAX_TYPES.filter(type=>type.benefit).map(type=><option key={type.id} value={type.id}>{type.label}</option>)}</optgroup><optgroup label="Taxable">{BONUS_TAX_TYPES.filter(type=>!type.benefit).map(type=><option key={type.id} value={type.id}>{type.label}</option>)}</optgroup></select></Field>}
   </div>
   <div className="mt-4"><Field label="Description"><textarea className={`${input} min-h-20`} maxLength={300} value={form.description} onChange={set('description')} placeholder="Why this award is given"/></Field></div>
   <p className="mb-0 mt-3 text-[12px] text-gray-500">{merit?'An Admin approves the merit increase; the new basic salary applies from the effective date.':'An Admin approves the award; it is then paid in the selected payroll cutoff.'}</p>

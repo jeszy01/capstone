@@ -84,6 +84,10 @@ export interface WithholdingTaxBreakdown{
  /** Minimum wage earner: the exempt statutory minimum wage, holiday pay, overtime, night differential and paid leave. */
  /** De minimis amounts exempted in this cutoff: allowances within their ceiling and monetized leave within the day limit. */
  deMinimisExempt?:number;monetizedLeaveExempt?:number;
+ /** Tax computed but not withheld because the pay left after time not paid and contributions is less (withholdingTax
+  * stays the tax computed). employerPaysTax: on a year-end or final pay, the employer pays it (RR 11-2018 Sec.
+  * 2.79(B)(5)(b), Step 4); otherwise it is withheld from later payrolls of the year. */
+ taxNotWithheld?:number;employerPaysTax?:boolean;
  minimumWageEarner?:boolean;mweExempt?:{basic:number;holidayPay:number;overtime:number;nightDifferential:number;leavePay:number};annualTaxLiability?:number;priorTaxWithheld?:number;withholdingTax:number;explanation:string;
 }
 export function calculateWithholdingTax(input:WithholdingTaxInput):WithholdingTaxBreakdown{

@@ -7,6 +7,7 @@ import {governmentLoanService} from '../governmentLoans/governmentLoanService';
 import type {GovernmentLoanDeduction} from '../governmentLoans/governmentLoanPayroll';
 import {cutoffContaining,cutoffFor} from '../settings/payrollSettings';
 import type {PayrollSettingsSnapshot} from '../settings/payrollSettings';
+import type {DeMinimisCategory} from './deMinimis';
 import {cutoffPayDate,runStatus} from '../../../backend-render/payrollFlow.js';
 import type {PayoutMethod,PayoutStatus,RunStatus} from '../../../backend-render/payrollFlow.js';
 
@@ -21,7 +22,12 @@ export type LoanRepaymentAllocation={loanId:string;employeeId:string;recordType:
 // withholding annualizes the year to date (RR 2-98 Sec. 2.79(B)(1)(b)(i)).
 export type ManualAdjustment={field:string;label:string;original:number;amount:number;reason:string};
 /** otherDeductionItems: the other deductions one by one, for the payslip. employmentStatus: as when the row was computed. */
-export type RunRow={position:string;rest:number;hmo:number;otherDeductionItems?:Array<{label:string;amount:number}>;employmentStatus?:string;hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];separated?:boolean;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
+/**
+ * deMinimisByCategory: de minimis exempted in this row per category, for the monthly and yearly limits of later cutoffs.
+ * unclassifiedAllowances / untypedBonuses: allowance types without a tax treatment (taxed) and bonuses without a tax
+ * type (treated as non-taxable, as entered), for Review Payroll's checks.
+ */
+export type RunRow={position:string;rest:number;hmo:number;otherDeductionItems?:Array<{label:string;amount:number}>;employmentStatus?:string;deMinimisByCategory?:Partial<Record<DeMinimisCategory,number>>;unclassifiedAllowances?:string[];untypedBonuses?:string[];hmoCompany?:number;attendanceGaps?:{missingDays:string[];incompleteDays:string[]};manualAdjustments?:ManualAdjustment[];separated?:boolean;input:PayrollInput;result:PayrollResult;loanRepayments?:LoanRepaymentAllocation[];governmentLoans?:GovernmentLoanDeduction[]};
 /** One employee's payout in a run: where the net pay goes and whether it was paid. */
 export type PayoutLine={method:PayoutMethod;bankName?:string;accountNumber?:string;provider?:string;walletNumber?:string;status:PayoutStatus;reason?:string;exportId?:string;updatedAt?:string;updatedBy?:string};
 /** One exported payout file. */
