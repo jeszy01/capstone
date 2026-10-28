@@ -1,8 +1,8 @@
 import {useMemo,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {CalendarDays,CalendarRange,FileText,Printer,X} from 'lucide-react';
-import {Button,Card,Segmented,ghost,input,useOverlayFocus} from '../../components/common/ui';
-import {localToday} from '../../components/common/tableUi';
+import {Button,Card,Field,Segmented,ghost,input,useOverlayFocus} from '../../components/common/ui';
+import {flushCard,localToday} from '../../components/common/tableUi';
 import type {Employee} from '../../types/domain';
 import {peso} from '../../utils/storage';
 import {getCurrentUser} from '../auth/authService';
@@ -38,26 +38,27 @@ export function PayrollPeriodReport({runs,employees}:{runs:PayrollRun[];employee
  const report=useMemo(()=>buildPayrollReport(runs,period,employees,includePending),[runs,kind,month,year,employees,includePending]); // eslint-disable-line react-hooks/exhaustive-deps
  const[previewing,setPreviewing]=useState(false);
  const canPreview=report.runs.length>0;
- return <Card className="mt-6 min-w-0 border-blue-100">
-  <div className="flex flex-wrap items-start justify-between gap-3">
-   <div className="min-w-0"><h2 className="m-0 text-[16px] font-semibold text-gray-900">Payroll Report</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">Monthly or annual totals from saved payroll runs. Open the preview to see every section and print or save it as PDF.</p></div>
-   <Button disabled={!canPreview} title={report.runs.length?undefined:'No payroll runs in this period.'} onClick={()=>setPreviewing(true)}><FileText size={15}/>Preview &amp; Print Report</Button>
+ // The totals of the period: the runs and employees counted, then pay; net pay stands out as the result.
+ const totals:Array<[string,string,boolean?]>=[['Payroll runs',String(report.runs.length)],['Employees',String(report.totals.employees)],['Gross pay',peso(report.totals.gross)],['Total deductions',peso(report.totals.deductions)],['Net pay',peso(report.totals.net),true]];
+ return <Card className={flushCard}>
+  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+   <h2 className="m-0 text-[16px] font-semibold text-gray-900">Payroll Report</h2>
+   <Button disabled={!canPreview} title={canPreview?undefined:'No payroll runs in this period.'} onClick={()=>setPreviewing(true)}><FileText size={15}/>Preview</Button>
   </div>
-  <div className="mt-4 flex flex-wrap items-end gap-3">
-   <Segmented label="Report period" value={kind} onChange={setKind} options={KINDS}/>
-   {kind==='monthly'
-    ?<label className="block text-[12px] font-semibold text-gray-600">Month<input type="month" className={`${input} mt-1.5 !w-auto`} value={month} max={today.slice(0,7)} onChange={e=>e.target.value&&setMonth(e.target.value)}/></label>
-    :<label className="block text-[12px] font-semibold text-gray-600">Year<select className={`${input} mt-1.5 !w-auto`} value={year} onChange={e=>setYear(e.target.value)}>{years.map(item=><option key={item}>{item}</option>)}</select></label>}
-   <label className="flex items-center gap-2 pb-2.5 text-[12px] text-gray-600"><input type="checkbox" checked={includePending} onChange={e=>setIncludePending(e.target.checked)}/>Include runs pending approval</label>
+  {/* Every control has its label above it, so they line up along the bottom. */}
+  <div className="flex flex-wrap items-end gap-4 border-b border-gray-100 bg-gray-50/60 px-5 py-4">
+   <div><div className="mb-1.5 text-[13px] font-medium text-gray-700">Period</div><Segmented label="Report period" value={kind} onChange={setKind} options={KINDS}/></div>
+   <div className="w-full sm:w-48">{kind==='monthly'
+    ?<Field label="Month"><input type="month" className={input} value={month} max={today.slice(0,7)} onChange={e=>e.target.value&&setMonth(e.target.value)}/></Field>
+    :<Field label="Year"><select className={input} value={year} onChange={e=>setYear(e.target.value)}>{years.map(item=><option key={item}>{item}</option>)}</select></Field>}</div>
+   <label className="flex h-[42px] items-center gap-2 text-[13px] text-gray-700"><input type="checkbox" className="h-4 w-4 rounded border-gray-300" checked={includePending} onChange={e=>setIncludePending(e.target.checked)}/>Include pending approval</label>
   </div>
-  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3">
-   {report.runs.length?<dl className="m-0 flex flex-wrap gap-x-8 gap-y-2 text-[12px]">
-    <div><dt className="text-gray-500">{report.title.split(' · ')[1]}</dt><dd className="m-0 mt-0.5 font-semibold text-gray-900">{report.runs.length} run{report.runs.length===1?'':'s'} · {report.totals.employees} employee{report.totals.employees===1?'':'s'}</dd></div>
-    <div><dt className="text-gray-500">Gross pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{peso(report.totals.gross)}</dd></div>
-    <div><dt className="text-gray-500">Total deductions</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{peso(report.totals.deductions)}</dd></div>
-    <div><dt className="text-gray-500">Net pay</dt><dd className="m-0 mt-0.5 font-semibold tabular-nums text-gray-900">{peso(report.totals.net)}</dd></div>
-   </dl>:<p className="m-0 text-[12px] text-gray-500">{runs.length?`No ${includePending?'approved or pending':'approved'} payroll runs in ${report.title.split(' · ')[1]}.`:'No payroll runs yet. Submit and approve a payroll run first.'}</p>}
-   {report.excludedPending>0&&<p className="mb-0 mt-2 text-[12px] text-amber-800">{report.excludedPending} run{report.excludedPending===1?' is':'s are'} still pending approval and {report.excludedPending===1?'is':'are'} not included.</p>}
+  <div className="px-5 py-4">
+   <h3 className="m-0 mb-3 text-[13px] font-semibold text-gray-900">{report.title.split(' · ')[1]}</h3>
+   {report.runs.length?<dl className="m-0 max-w-md divide-y divide-gray-100 rounded-xl border border-gray-200">
+    {totals.map(([label,value,strong])=><div key={label} className={`flex items-center justify-between gap-4 px-4 py-2.5 ${strong?'bg-gray-50':''}`}><dt className={strong?'text-[14px] font-semibold text-gray-900':'text-[13px] text-gray-600'}>{label}</dt><dd className={`m-0 tabular-nums ${strong?'text-[16px] font-bold text-gray-900':'text-[13px] font-semibold text-gray-900'}`}>{value}</dd></div>)}
+   </dl>:<p className="m-0 text-[13px] text-gray-500">{runs.length?`No ${includePending?'approved or pending':'approved'} payroll runs.`:'No payroll runs yet.'}</p>}
+   {report.excludedPending>0&&<p className="mb-0 mt-3 text-[12px] text-amber-800">{report.excludedPending} run{report.excludedPending===1?' is':'s are'} pending approval and not included.</p>}
   </div>
   {previewing&&canPreview&&<ReportPreview report={report} kind={kind} includePending={includePending} onClose={()=>setPreviewing(false)}/>}
  </Card>;
