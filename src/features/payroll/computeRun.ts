@@ -18,7 +18,7 @@ import {payoutLinesFor} from './payouts';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {computeThirteenthMonth,loadThirteenthMonthRules,releaseDeadlineFor} from './thirteenthMonth';
 import {activeAllowances,allowancePay} from '../compensation/allowanceRules';
-import {activeCompensations,isBonusReward} from '../compensation/compensationState';
+import {isBonusReward} from '../compensation/compensationState';
 import {read} from '../../utils/storage';
 import {loadWithholdingRules} from './withholdingTax';
 import {compensationService} from '../compensation/compensationService';
@@ -76,8 +76,6 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
  const rewards=bundle.bonuses;
  const time=loadTimeSettings(),holidays=loadHolidays();
  const base=computeDeductions({employees,records,schedule:loadAttendanceSchedule(),assignments,grades,rates,from,to}).filter(item=>item.salary);
- const activeAssignments=activeCompensations(assignments,to);
- const gradeCodes=new Set(grades.map(grade=>grade.code.trim().toLowerCase()).filter(Boolean));
  const built:RunRow[]=[];
  for(const item of base){
   const employee=item.employee;
@@ -98,9 +96,9 @@ export async function computeRunRows(run:RunScope,rates:PayrollRates):Promise<Ru
   const hmo=hmoCutoffDeduction(hmoLines,employee.id),hmoCompany=hmoCompanyCutoffShare(hmoLines,employee.id);
   const loanRepayments=scheduledLoans.filter(installment=>installment.employeeId===employee.id);
   const loanAmounts=loanRepayments.reduce((sum,installment)=>{if(installment.recordType==='Cash Advance')sum.cashAdvance+=installment.amount;else if(installment.loanType==='SSS Loan')sum.sssLoan+=installment.amount;else if(installment.loanType==='Pag-IBIG Loan')sum.pagibigLoan+=installment.amount;else sum.companyLoan+=installment.amount;return sum},{sssLoan:0,pagibigLoan:0,companyLoan:0,cashAdvance:0});
-  // A graded assignment carries the grade's whole-peso daily rate; a manual salary keeps salary ÷ working days.
-  const graded=activeAssignments.find(assignment=>employeeIds.includes(assignment.employeeId)&&gradeCodes.has(assignment.salaryCode.trim().toLowerCase()));
-  const dailyRate=graded?graded.dailyRate:(item.salary as number)/rates.daysPerMonth;
+  // The daily rate from computeDeductions (the grade's whole-peso daily rate, or salary ÷ working days), the same rate
+  // Deductions shows late and undertime with.
+  const dailyRate=item.dailyRate;
   const input:PayrollInput={...blank,empId:employee.employeeNo,name:employee.name,dailyRate,nightDifferential:nightDifferentialPay(mine,time,rates,dailyRate),holidayPay:holidayPay(mine,holidays,rates,dailyRate,from,to),daysWorked:item.daysWorked,absentDays:item.absentDays,lateMin:item.lateMin,undertimeMin:item.undertimeMin,otHours:item.otHours,vlDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave!==false).length,lwopDays:mine.filter(record=>record.status==='On Leave'&&record.paidLeave===false).length,otherEarnings:taxableBonus,bonusesNonTaxable:nonTaxableBonus,otherDeductions:otherDeductionsForCutoff(loadOtherDeductions(),employee.id,from,to),allowancesTaxable:allowance.taxable,allowancesExempt:allowance.exempt,allowancesOtherBenefits:allowance.otherBenefits,...loanAmounts};
   // Inactive or resigned: this is their last pay, so its withholding annualizes the year to date.
   const separated=employee.status==='Inactive'||employee.employmentStatus==='Resigned';

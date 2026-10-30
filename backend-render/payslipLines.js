@@ -1,10 +1,10 @@
 // The lines of an employee's payslip, from a saved payroll run row: earnings, and deductions in groups. The PBMS payslip
 // and the payslip released to ESS both use it. Only lines with an amount are listed; amounts are the saved figures.
-//   Time not paid: absences, late, undertime
-//   Government contributions: SSS, PhilHealth, Pag-IBIG (employee shares)
-//   Tax: withholding tax
-//   Loans: each government loan, then the SSS, Pag-IBIG and company loans and the cash advance recorded in PBMS
-//   Other deductions: HMO dependents, then each other deduction (or their total, for runs computed before items were kept)
+//   Statutory Contributions: SSS, PhilHealth, Pag-IBIG (employee shares)
+//   Withholding Tax: income tax (a refund at the year-end adjustment)
+//   Attendance Deductions: absences, late, undertime, each with the days or minutes deducted
+//   Other Deductions: each government loan, the SSS, Pag-IBIG and company loans and the cash advance recorded in PBMS,
+//     HMO dependents, then each other deduction (or their total, for runs computed before items were kept)
 
 const n = v => Number(v) || 0;
 const r2 = v => Math.round((n(v) + Number.EPSILON) * 100) / 100;
@@ -47,15 +47,30 @@ function otherLines(row) {
   return listed([['HMO Dependents', row?.hmo], ...(itemized ? items.map(item => [item.label, item.amount]) : [['Other Deductions', total]])]);
 }
 
+const plural = (count, unit) => `${count} ${unit}${count === 1 ? '' : 's'}`;
+/** Minutes as the payslip shows them: "25 minutes", "1 hour", "1 hour 30 minutes". */
+export function duration(minutes) {
+  const total = Math.round(n(minutes)), hours = Math.floor(total / 60), rest = total % 60;
+  return [hours ? plural(hours, 'hour') : '', rest || !hours ? plural(rest, 'minute') : ''].filter(Boolean).join(' ');
+}
+/** Absences, late and undertime with the days and minutes deducted (the row's saved attendance figures). */
+function attendanceLines(row) {
+  const input = row?.input ?? {}, result = row?.result ?? {};
+  return listed([
+    [`Absences (${plural(n(input.absentDays), 'day')})`, result.absences],
+    [`Late (${duration(input.lateMin)})`, result.late],
+    [`Undertime (${duration(input.undertimeMin)})`, result.undertime],
+  ]);
+}
+
 /** The payslip's deduction groups that have an amount, each with its lines and subtotal. */
 export function deductionGroups(row) {
   const result = row?.result ?? {};
   return [
-    ['Time not paid', listed([['Absences', result.absences], ['Late', result.late], ['Undertime', result.undertime]])],
-    ['Government contributions', listed([['SSS', result.sss], ['PhilHealth', result.phil], ['Pag-IBIG', result.pagibig]])],
-    ['Tax', listed([['Withholding Tax', result.tax]])],
-    ['Loans', loanLines(row)],
-    ['Other deductions', otherLines(row)],
+    ['Statutory Contributions', listed([['SSS Contribution', result.sss], ['PhilHealth Contribution', result.phil], ['Pag-IBIG Contribution', result.pagibig]])],
+    ['Withholding Tax', listed([[n(result.tax) < 0 ? 'Tax Refund' : 'Income Tax', result.tax]])],
+    ['Attendance Deductions', attendanceLines(row)],
+    ['Other Deductions', [...loanLines(row), ...otherLines(row)]],
   ].filter(([, lines]) => lines.length).map(([title, lines]) => ({ title, lines, subtotal: sum(lines.map(line => line.amount)) }));
 }
 

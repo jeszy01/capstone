@@ -5,3 +5,4 @@ export type Payslip={earnings:PayslipLine[];deductionGroups:DeductionGroup[];gro
 export function earningLines(row:unknown):PayslipLine[];
 export function deductionGroups(row:unknown):DeductionGroup[];
 export function payslipLines(row:unknown):Payslip;
+export function duration(minutes:unknown):string;

@@ -102,11 +102,11 @@ function SlipModal({run,row,dept,status,onClose}:{run:PayrollRun;row:RunRow;dept
   <div className="flex justify-between border-t border-gray-200 bg-gray-50 px-3 py-2 text-[12px] font-bold"><span>{totalLabel}</span><span className="tabular-nums">{nf(total)}</span></div>
  </div>;
  const earnings=<div className="divide-y divide-gray-100">{slip.earnings.map((item,index)=>line(item,index))}</div>;
- // Each group under its own heading; a group of more than one line ends with its subtotal.
+ // Each group under its own heading, ending with its subtotal.
  const deductions=<div className="divide-y divide-gray-200">{slip.deductionGroups.map(group=><div key={group.title} className="py-1">
   <div className="px-3 pb-0.5 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">{group.title}</div>
   {group.lines.map((item,index)=>line(item,index,true))}
-  {group.lines.length>1&&<div className="flex justify-between px-3 py-1.5 pl-6 text-[12px] font-semibold"><span>Subtotal</span><span className="tabular-nums">{nf(group.subtotal)}</span></div>}
+  <div className="flex justify-between px-3 py-1.5 pl-6 text-[12px] font-semibold"><span>Subtotal</span><span className="tabular-nums">{nf(group.subtotal)}</span></div>
  </div>)}</div>;
  const brand=loadBranding();
  return <Modal title="Payslip" wide onClose={onClose}>
@@ -121,11 +121,11 @@ function SlipModal({run,row,dept,status,onClose}:{run:PayrollRun;row:RunRow;dept
     <div className="space-y-1.5">{info('Employee No.',row.input.empId)}{info('Payroll Period',period)}{info('Pay Date',formatDate(run.payDate??run.paidAt))}{info('Payment Method',run.payouts?.[row.input.empId]?.method??run.paymentMethod??'—')}</div>
    </div>
    {Math.abs(breakdown.earningsDifference)>0.01||Math.abs(breakdown.deductionsDifference)>0.01||Math.abs(breakdown.netDifference)>0.01?<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-900">This saved payroll does not reconcile. Earnings difference: {nf(breakdown.earningsDifference)}; deductions difference: {nf(breakdown.deductionsDifference)}; net-pay difference: {nf(breakdown.netDifference)}. Have Payroll review the run before relying on this payslip.</div>:null}
-   <div className="grid gap-4 py-4 sm:grid-cols-2">
-    {table('Earnings',earnings,'Total Salary',c.gross)}
+   <div className="grid gap-4 py-4">
+    {table('Earnings',earnings,'Gross Pay',c.gross)}
     {table('Deductions',deductions,'Total Deductions',c.deductions)}
    </div>
-  <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-gray-900"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div></div>
+  <div className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4"><div className="flex items-center justify-between text-[17px] font-bold text-gray-900"><span>Net Pay</span><span className="tabular-nums text-blue-800">Php {nf(c.net)}</span></div><div className="mt-1 text-[11px] text-gray-500">Gross Pay − Total Deductions</div></div>
    <div className="mt-10 flex justify-end text-[11px]"><div className="w-48 border-t border-gray-500 pt-1 text-center">Received By</div></div>
    <div className="mt-6 text-[11px] text-gray-500">This is a system-generated payslip for {run.from} to {run.to}.</div>
    {brand.footerText&&<div className="mt-2 border-t border-gray-200 pt-2 text-center text-[11px] text-gray-500">{brand.footerText}</div>}

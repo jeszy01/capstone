@@ -170,8 +170,11 @@ export function Deductions(){
  const linkedRange=isIsoDate(params.get('from')??'')&&isIsoDate(params.get('to')??'')&&params.get('from')!<=params.get('to')!?{from:params.get('from')!,to:params.get('to')!}:null;
  const[customDates,setCustomDates]=useState(()=>Boolean(linkedRange&&!cutoffs.some(option=>option.from===linkedRange.from&&option.to===linkedRange.to)));
  const[employees,setEmployees]=useState<Employee[]>([]),[records,setRecords]=useState<AttendanceRecord[]>([]),[range,setRange]=useState(()=>{const start=linkedRange??defaultCutoff(cutoffs);return start?{from:start.from,to:start.to}:cutoffRange()}),[q,setQ]=useState(''),[tab,setTab]=useState<DeductionsView>(()=>tabs.find(item=>item.id===params.get('tab'))?.id??'attendance'),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0),[page,setPage]=useState(1);
- const[assignments]=useState<EmployeeCompensation[]>(()=>read<EmployeeCompensation[]>('compensation:employee-assignments',[]));
- const[grades]=useState(()=>read<{position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]));
+ // Salary assignments and grades from Compensation, as payroll loads them, so late, undertime and contributions here
+ // use the same daily rate as the payroll and payslip. The saved copies show until the server answers.
+ const[assignments,setAssignments]=useState<EmployeeCompensation[]>(()=>read<EmployeeCompensation[]>('compensation:employee-assignments',[]));
+ const[grades,setGrades]=useState(()=>read<{code?:string;position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]));
+ useEffect(()=>{let mounted=true;compensationService.load().then(bundle=>{if(!mounted)return;setAssignments(bundle.assignments);setGrades(bundle.grades)}).catch(()=>undefined);return()=>{mounted=false}},[]);
  useEffect(()=>{let mounted=true;setLoading(true);setError('');employeeService.getAll().then(async employeeRows=>[employeeRows,await fetchAttendance({from:range.from,to:range.to},employeeRows)] as const).then(([employeeRows,attendanceRows])=>{if(!mounted)return;setEmployees(employeeRows);setRecords(attendanceRows)}).catch(cause=>{if(!mounted)return;setError(cause instanceof Error&&cause.message?cause.message:'Employee and attendance records could not be loaded.')} ).finally(()=>{if(mounted)setLoading(false)});return()=>{mounted=false}},[retry,range.from,range.to]);
  // HMO cutoff deductions come from HMO & Benefits enrollments and plans; saved HMO changes, returning to the window
  // and a periodic check refresh them without a reload.
