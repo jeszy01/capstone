@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useMemo,useState} from 'react';
 import {Button,Field,Modal,TextInput,ghost,input} from '../../components/common/ui';
 import {cutoffPayDate,runLabel,updateRuns} from './payrollRuns';
 import type {PayrollRun,PayrollRunType} from './payrollRuns';
@@ -19,14 +19,20 @@ export function CutoffModal({onClose,onCreated}:{onClose:()=>void;onCreated:(run
  const pad=(n:number)=>String(n).padStart(2,'0');
  const[runType,setRunType]=useState<PayrollRunType>('regular');
  const rates=loadRates(),strict=loadRunOptions().strictMode,current=cutoffContaining(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`,rates);
- const[month,setMonth]=useState(current.month);
- const[half,setHalf]=useState<1|2>(current.cutoff);
+ // Only the past month's and the present month's cutoffs (the month the current cutoff belongs to) can be created.
+ const choices=useMemo(()=>{
+  const [y,m]=current.month.split('-').map(Number),past=m===1?`${y-1}-12`:`${y}-${pad(m-1)}`;
+  const halves:(1|2)[]=rates.payPeriodsPerMonth===2?[1,2]:[1];
+  return [past,current.month].flatMap(month=>halves.map(half=>({month,half,...cutoffFor(month,half,rates)})));
+ },[]);
+ const[choice,setChoice]=useState(()=>Math.max(0,choices.findIndex(item=>item.month===current.month&&item.half===current.cutoff)));
  const[releaseDate,setReleaseDate]=useState(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`);
  const[busy,setBusy]=useState(false),[error,setError]=useState(''),[,setTick]=useState(0);
  const deadline=releaseDate?releaseDeadlineFor(releaseDate.slice(0,4),loadThirteenthMonthRules()):'';
  const regular=runType==='regular';
  // A 13th month run is dated on its release date.
- const cutoff=regular?(month?cutoffFor(month,half,rates):null):(releaseDate?{from:releaseDate,to:releaseDate}:null);
+ const picked=choices[choice];
+ const cutoff=regular?(picked?{from:picked.from,to:picked.to}:null):(releaseDate?{from:releaseDate,to:releaseDate}:null);
  // 1st cutoff pays on the 15th, 2nd on the month's last day, moved back to the previous working day.
  const payDate=cutoff?(regular?cutoffPayDate(cutoff.to,loadHolidays()):cutoff.to):'';
  const warnings=cutoff?createWarnings(runType,cutoff):[];
@@ -44,8 +50,7 @@ export function CutoffModal({onClose,onCreated}:{onClose:()=>void;onCreated:(run
   <div className="grid gap-4">
    <Field label="Run Type"><select className={input} value={runType} onChange={event=>setRunType(event.target.value as PayrollRunType)}><option value="regular">Regular Payroll</option><option value="thirteenth-month">13th Month Pay</option></select></Field>
    {regular?<>
-    <Field label="Month"><TextInput type="month" value={month} onChange={event=>setMonth(event.target.value)}/></Field>
-    {rates.payPeriodsPerMonth===2&&<Field label="Cutoff"><select className={input} value={half} onChange={event=>setHalf(Number(event.target.value) as 1|2)}><option value={1}>1st Cutoff ({month?shortRange(cutoffFor(month,1,rates).from,cutoffFor(month,1,rates).to):''})</option><option value={2}>2nd Cutoff ({month?shortRange(cutoffFor(month,2,rates).from,cutoffFor(month,2,rates).to):''})</option></select></Field>}
+    <Field label="Cutoff"><select className={input} value={choice} onChange={event=>setChoice(Number(event.target.value))}>{choices.map((item,i)=><option key={i} value={i}>{rates.payPeriodsPerMonth===2?`${item.half===1?'1st':'2nd'} Cutoff `:''}({shortRange(item.from,item.to)})</option>)}</select></Field>
    </>:<Field label="Release Date"><TextInput type="date" value={releaseDate} max={deadline||undefined} onChange={event=>setReleaseDate(event.target.value)}/></Field>}
    {cutoff&&<div className="grid gap-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-[12px]">
     <div className="flex justify-between gap-3"><span className="text-gray-500">{regular?'Cutoff':'Release'}</span><b className="text-gray-800">{runLabel({runType,...cutoff})}</b></div>
