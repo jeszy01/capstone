@@ -33,8 +33,8 @@ export function deMinimisCategory(allowanceType:string):DeMinimisCategory|null{
  return null;
 }
 
-/** The exempt amount of one category for one cutoff: a monthly ceiling ÷ pay periods per month, an annual ceiling ÷ pay periods per year. */
-export function deMinimisCutoffCeiling(category:DeMinimisCategory,date:string,payPeriodsPerMonth:number){
- const rule=deMinimisRuleFor(date),periods=Math.max(1,payPeriodsPerMonth);
- return category==='uniform'||category==='medicalAssistance'?rule.annual[category]/(12*periods):rule.monthly[category]/periods;
+/** A category's BIR limit on date: per calendar month (rice, laundry, medical for dependents) or per year (uniform, medical assistance). */
+export function deMinimisLimit(category:DeMinimisCategory,date:string){
+ const rule=deMinimisRuleFor(date);
+ return category==='uniform'||category==='medicalAssistance'?{per:'year' as const,amount:rule.annual[category]}:{per:'month' as const,amount:rule.monthly[category]};
 }

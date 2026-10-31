@@ -8,13 +8,16 @@ import { HR2_MAX_RECORDS, isHr2Date, mergeHr2Store, validateHr2Records } from '.
 import { FINANCE_STATUSES, financeStatus, runDetail, runSummary } from './financeRules.js';
 import { cutoffPayDate, runStatus } from './payrollFlow.js';
 import { buildRegister, registerLine } from './payrollRegister.js';
+import { payslipLines } from './payslipLines.js';
+import { bonusTaxType } from './bonusTax.js';
 import { departmentBreakdown, employeeOverview, pendingApprovals } from './dashboardRules.js';
 import { RECEIPT_MAX_BYTES, checkReceipt, receiptFileName } from './fundingReceipts.js';
-import { essClaimFields, essClaimView, nextClaimNumber } from './claimRules.js';
+import { claimantError, claimPaymentError, claimTotals, paymentProofError, essClaimFields, essClaimNotice, essClaimView, keepServerClaimFields, nextClaimNumber, paidClaim, receiptOf, stampClaimDecisions, withoutReceipt } from './claimRules.js';
 import { CORRECTION_STATUSES, correctionDecision, correctionFields, correctionView } from './correctionRules.js';
 import { GRADE_STRUCTURE_KEY, POSITION_GRADES_KEY, startingDailyRate } from './gradeStructure.js';
 import { dependentShares, hmoExpiryChanges, hmoHistoryType, manilaToday, maxicareFollowUpDue, MAXICARE_FOLLOW_UP_WORKING_DAYS, nextSponsoredDependent, validDependentSplit } from './hmoRules.js';
 import { lockedRuleChange } from './withholdingRuleLock.js';
+import { BATCHES_KEY, batchPaymentError, cancelBatch, createBatch, newBatchError, payBatch } from './reimbursementRules.js';
 import { heldReply, transactions } from './transaction.js';
 
 const { DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, ALLOWED_ORIGINS = '' } = process.env;
@@ -169,8 +172,25 @@ async function saveAppData(req, key, isDel, value) {
     if (key === 'payroll:runs' || key === 'claims:records') {
       if (isDel) throw new AccessError(key === 'payroll:runs' ? 'Payroll runs cannot be deleted.' : 'Claims cannot be deleted.');
       next = keepMissingRuns(existed ? appValue(row.value) : null, next);
+      // Receipt files live in claim_receipts; a browser copy saved before they moved does not bring them back.
+      if (key === 'claims:records' && Array.isArray(next)) next = next.map(withoutReceipt);
+      // Payments and who decided a claim are kept by the server; a browser save cannot set or change them.
+      if (key === 'claims:records' && Array.isArray(next)) next = keepServerClaimFields(existed ? appValue(row.value) : null, next);
     }
-    events = await appDataEvents(req.user, key, existed ? appValue(row.value) : null, next, existed);
+    // For claims, the employee records with the user's email: nobody decides or pays their own claim.
+    const actor = key === 'claims:records'
+      ? { ...req.user, employeeIds: (await client.query(`select id from employees where $1 <> '' and lower(email) = lower($1)`, [String(req.user.email ?? '').trim()])).rows.map(r => String(r.id)) }
+      : req.user;
+    events = await appDataEvents(actor, key, existed ? appValue(row.value) : null, next, existed);
+    // Who approved, returned or rejected a claim, and when: the approver cannot also record its payment.
+    if (key === 'claims:records') next = stampClaimDecisions(next, events, req.user, new Date().toISOString());
+    // The employee is told in ESS when their claim is approved, returned or rejected (saved with the decision).
+    if (key === 'claims:records') for (const [action, , claimId] of events) {
+      const claim = next.find(item => String(item?.id) === String(claimId)), notice = essClaimNotice(action, claim);
+      if (!notice) continue;
+      const { rows: [owner] } = await client.query('select employee_number from employees where id::text = $1', [String(claim.employeeId)]);
+      if (owner) await client.query('insert into ess_notifications(employee_no, title, message) values($1,$2,$3)', [owner.employee_number, notice.title, notice.message]);
+    }
     // A withholding tax version a payroll run was computed with cannot be changed or removed (see withholdingRuleLock.js).
     if (key === 'payroll:withholding-tax-rules') {
       const { rows: [runs] } = await client.query(`select value from app_data where key='payroll:runs' and not deleted`);
@@ -217,6 +237,10 @@ app.get('/employees', auth, allow('employees.view'), async (req, res) => {
   res.json({ data: rows.map(row => visibleEmployee(req.user.role, row)) });
 });
 
+// Records the day an employee becomes inactive or resigned (kept while they stay so), and clears it when they are active again.
+const markSeparation = id => pool.query(
+  `update employees set separated_on = case when lower(trim(coalesce(status, ''))) = 'active' and lower(trim(coalesce(employment_status, ''))) <> 'resigned'
+   then null else coalesce(separated_on, (now() at time zone 'Asia/Manila')::date) end where id = $1`, [id]);
 app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
   const b = req.body;
   if (!b.employee_number || !b.first_name || !b.last_name)
@@ -226,6 +250,7 @@ app.post('/employees', auth, allow('employees.manage'), async (req, res) => {
       `insert into employees(employee_number,first_name,middle_name,last_name,email,position,department,hire_date,employment_status,status,
        phone,address,birth_date,sss_number,philhealth_number,pagibig_number,tin,bank_name,bank_account_number)
        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning *`, empVals(b));
+    await markSeparation(r.id);
     // The salary follows the position's salary grade automatically.
     const assigned = await tryAutoAssignSalary(r, req.user.id);
     const { rows: [saved] } = assigned ? await pool.query('select * from employees where id=$1', [r.id]) : { rows: [r] };
@@ -249,6 +274,7 @@ app.put('/employees/:id', auth, allow('employees.manage'), async (req, res) => {
      philhealth_number=$15,pagibig_number=$16,tin=$17,bank_name=$18,bank_account_number=$19 where id=$20 returning id`,
     [...empVals(b), req.params.id]);
   if (!r) return fail(res, 404, 'NOT_FOUND', 'Employee not found');
+  await markSeparation(r.id);
   // An employee still without a salary gets the one for their (new) position.
   const { rows: [saved] } = await pool.query('select * from employees where id=$1', [r.id]);
   const assigned = await tryAutoAssignSalary(saved, req.user.id);
@@ -275,6 +301,10 @@ await pool.query(`
   alter table users add column if not exists passkey_locked_until timestamptz;
   alter table employees add column if not exists salary_grade_id uuid;
   alter table employees add column if not exists updated_at timestamptz;
+  -- The day an employee became inactive or resigned (claims are accepted for 30 days after); earlier leavers take their last update.
+  alter table employees add column if not exists separated_on date;
+  update employees set separated_on = coalesce(updated_at, now())::date
+    where separated_on is null and not (lower(trim(coalesce(status, ''))) = 'active' and lower(trim(coalesce(employment_status, ''))) <> 'resigned');
 
   create table if not exists audit_logs(
     id uuid primary key default gen_random_uuid(), action text not null, actor_id uuid, entity text not null,
@@ -328,6 +358,8 @@ await pool.query(`
     created_by uuid, created_at timestamptz not null default now(), updated_at timestamptz,
     approved_by uuid, approved_at timestamptz, legacy_id text);
   create unique index if not exists uq_compensation_rewards_legacy_id on compensation_rewards(legacy_id) where legacy_id is not null;
+  -- A bonus or incentive's tax type (bonusTax.js); null on bonuses entered before tax types, which use taxable.
+  alter table compensation_rewards add column if not exists tax_category text;
 
   create table if not exists compensation_history(
     id uuid primary key default gen_random_uuid(), employee_id uuid not null, source text not null, event_type text not null,
@@ -982,9 +1014,14 @@ async function publishPayslips(client, req, payrollRun, include, at) {
   const runId = String(payrollRun.id), rows = payrollRows(payrollRun);
   const done = payrollRun.essReleased && typeof payrollRun.essReleased === 'object' ? payrollRun.essReleased : {};
   const sent = [];
+  // Employee status as saved when the payroll was computed; rows computed before it was kept take the employee record's.
+  const { rows: staff } = await client.query('select employee_number, employment_status, status from employees where employee_number = any($1)', [rows.map(r => String(r.input.empId))]);
+  const statusOf = row => row.employmentStatus || staff.find(e => String(e.employee_number) === String(row.input.empId))?.employment_status || staff.find(e => String(e.employee_number) === String(row.input.empId))?.status || null;
   for (const row of rows.filter(r => include(r) && !done[String(r.input.empId)])) {
     const line = registerLine(row);
-    const payslip = { runId, period: runPeriod(payrollRun), from: payrollRun.from, to: payrollRun.to, payDate: payrollRun.payDate ?? payrollRun.to, ...line };
+    // The register figures, plus the payslip's earnings and deduction groups as PBMS shows them.
+    const { earnings, deductionGroups } = payslipLines(row);
+    const payslip = { runId, period: runPeriod(payrollRun), from: payrollRun.from, to: payrollRun.to, payDate: payrollRun.payDate ?? payrollRun.to, ...line, employmentStatus: statusOf(row), earnings, deductionGroups };
     const { rowCount } = await client.query('insert into ess_payslips(run_id, employee_no, payslip, released_by) values($1,$2,$3,$4) on conflict do nothing',
       [runId, line.empId, JSON.stringify(payslip), String(req.user.id)]);
     if (rowCount) await client.query('insert into ess_notifications(employee_no, title, message, run_id) values($1,$2,$3,$4)',
@@ -1350,8 +1387,15 @@ function rewardValues(b, type) {
   if (!isBonusType(type)) throw new HttpError(400, 'INVALID_REWARD_TYPE', 'Type must be Allowance, Incentive, or Bonus.');
   const cutoffStart = compDate(b.cutoff_start, 'cutoff_start'), cutoffEnd = compDate(b.cutoff_end, 'cutoff_end');
   if (cutoffStart > cutoffEnd) throw new HttpError(400, 'INVALID_CUTOFF', 'The cutoff start must be on or before its end.');
+  const base = { ...values, cutoff_start: cutoffStart, cutoff_end: cutoffEnd, effective_date: cutoffEnd, notes: required(b.notes, 'notes').trim() };
+  // The tax type decides whether it is taxable; a request without one (an older client) still sends taxable.
+  if (b.tax_category !== undefined && b.tax_category !== null && b.tax_category !== '') {
+    const taxType = bonusTaxType(String(b.tax_category));
+    if (!taxType) throw new HttpError(400, 'INVALID_TAX_CATEGORY', 'Choose the bonus tax type.');
+    return { ...base, tax_category: taxType.id, taxable: !taxType.benefit };
+  }
   if (typeof b.taxable !== 'boolean') throw new HttpError(400, 'INVALID_TAXABLE', 'Taxable must be true or false.');
-  return { ...values, cutoff_start: cutoffStart, cutoff_end: cutoffEnd, effective_date: cutoffEnd, notes: required(b.notes, 'notes').trim(), taxable: b.taxable };
+  return { ...base, tax_category: null, taxable: b.taxable };
 }
 async function findReward(id) {
   const reward = await first('compensation_rewards', { id });
@@ -2527,11 +2571,32 @@ const manilaDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Mani
 const essEmployee = async employeeNo => {
   const number = text(employeeNo);
   if (!number) throw new HttpError(400, 'VALIDATION_ERROR', 'employee_no is required.');
-  const { rows: [employee] } = await pool.query('select id, employee_number, department, first_name, last_name from employees where lower(employee_number)=lower($1)', [number]);
+  const { rows: [employee] } = await pool.query('select id, employee_number, department, first_name, last_name, status, employment_status, separated_on from employees where lower(employee_number)=lower($1)', [number]);
   if (!employee) throw new HttpError(404, 'EMPLOYEE_NOT_FOUND', 'employee_no is not a PBMS employee.');
   return employee;
 };
-// Reads and saves the claims list in one locked transaction; change returns the claim it added or changed.
+// Claim receipt files, one per claim (a resubmitted claim replaces its file). The claims list keeps only the name.
+await pool.query(`
+  create table if not exists claim_receipts(
+    claim_id text primary key, file_name text not null, mime_type text not null, data text not null,
+    created_at timestamptz not null default now(), updated_at timestamptz not null default now());`);
+const saveReceipt = (client, receipt) => client.query(
+  `insert into claim_receipts(claim_id,file_name,mime_type,data) values($1,$2,$3,$4)
+   on conflict(claim_id) do update set file_name=$2, mime_type=$3, data=$4, updated_at=now()`,
+  [receipt.claimId, receipt.name, receipt.mimeType, receipt.dataUrl]);
+// Saves a claims list: receipt files go to claim_receipts and the list keeps the claims without them.
+async function saveClaimsList(client, claims) {
+  const list = [];
+  for (const claim of claims) {
+    const receipt = receiptOf(claim);
+    if (receipt) await saveReceipt(client, receipt);
+    // The receipt's fingerprint lets HR see the same file used on another claim.
+    list.push(withoutReceipt(receipt ? { ...claim, receiptHash: receiptFingerprint(receipt.dataUrl) } : claim));
+  }
+  await client.query(`insert into app_data(key,value,deleted) values('claims:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(list)]);
+}
+// Reads and saves the claims list in one locked transaction; change returns the claim it added or changed. change may
+// be async and use the transaction's connection (client).
 async function withClaims(change) {
   const client = await pool.connect();
   try {
@@ -2539,8 +2604,8 @@ async function withClaims(change) {
     await client.query('select pg_advisory_xact_lock(hashtext($1))', ['app_data:claims:records']);
     const { rows: [row] } = await client.query(`select value, deleted from app_data where key='claims:records'`);
     const claims = row && !row.deleted && Array.isArray(appValue(row.value)) ? appValue(row.value) : [];
-    const { claims: next, claim, created } = change(claims);
-    if (next !== claims) await client.query(`insert into app_data(key,value,deleted) values('claims:records',$1,false) on conflict(key) do update set value=$1, deleted=false, updated_at=now()`, [JSON.stringify(next)]);
+    const { claims: next, claim, created } = await change(claims, client);
+    if (next !== claims) await saveClaimsList(client, next);
     await client.query('commit');
     return { claim, created };
   } catch (e) {
@@ -2548,8 +2613,142 @@ async function withClaims(change) {
     throw e;
   } finally { client.release(); }
 }
+const receiptFingerprint = dataUrl => crypto.createHash('sha256').update(dataUrl).digest('hex');
+// Receipts saved inside the claims list before claim_receipts existed move there once, at startup.
+const movedReceipts = await withClaims(claims => claims.some(claim => receiptOf(claim)) ? { claims: [...claims], claim: claims.filter(claim => receiptOf(claim)).length } : { claims, claim: 0 });
+if (movedReceipts.claim) console.log(`Moved ${movedReceipts.claim} claim receipt(s) to claim_receipts.`);
+// Claims whose receipt has no fingerprint yet get one from claim_receipts, once.
+await withClaims(async (claims, client) => {
+  const missing = claims.filter(claim => claim?.hasReceipt && !claim.receiptHash);
+  if (!missing.length) return { claims, claim: 0 };
+  const { rows } = await client.query('select claim_id, data from claim_receipts where claim_id = any($1)', [missing.map(claim => String(claim.id))]);
+  const prints = new Map(rows.map(row => [String(row.claim_id), receiptFingerprint(row.data)]));
+  return { claims: claims.map(claim => (claim && prints.has(String(claim.id)) && !claim.receiptHash ? { ...claim, receiptHash: prints.get(String(claim.id)) } : claim)), claim: prints.size };
+});
+
+// Claim totals by month, type and status, without employees or receipts: HR Analytics and the Claims report for roles
+// that may not view claims (Finance).
+app.get('/claims/totals', auth, async (req, res) => {
+  if (!can(req.user.role, 'claims.view') && !can(req.user.role, 'payroll.view')) return fail(res, 403, 'FORBIDDEN', FORBIDDEN_MESSAGE);
+  const { rows: [stored] } = await pool.query(`select value from app_data where key='claims:records' and not deleted`);
+  ok(res, claimTotals(stored && Array.isArray(appValue(stored.value)) ? appValue(stored.value) : []));
+});
+
+// Proof of a reimbursement (bank confirmation, e-wallet screenshot or signed cash voucher), one per claim.
+await pool.query(`
+  create table if not exists claim_payment_proofs(
+    claim_id text primary key, file_name text not null, mime_type text not null, data text not null,
+    uploaded_by uuid, uploaded_at timestamptz not null default now());`);
+// The employee records with the signed-in user's email: nobody batches or pays their own claim.
+const ownEmployeeIds = async user => new Set((await pool.query(`select id from employees where $1 <> '' and lower(email) = lower($1)`, [String(user.email ?? '').trim()])).rows.map(r => String(r.id)));
+const readBatches = async client => { const { rows: [row] } = await client.query('select value, deleted from app_data where key=$1', [BATCHES_KEY]); const v = row && !row.deleted ? appValue(row.value) : []; return Array.isArray(v) ? v : []; };
+const writeBatches = (client, batches) => client.query(`insert into app_data(key,value,deleted) values($1,$2,false) on conflict(key) do update set value=$2, deleted=false, updated_at=now()`, [BATCHES_KEY, JSON.stringify(batches)]);
+const notifyClaimEmployee = async (client, action, claim) => {
+  const notice = essClaimNotice(action, claim);
+  const { rows: [owner] } = await client.query('select employee_number from employees where id::text = $1', [String(claim?.employeeId)]);
+  if (owner && notice) await client.query('insert into ess_notifications(employee_no, title, message) values($1,$2,$3)', [owner.employee_number, notice.title, notice.message]);
+};
+const refused = (problem, code) => new HttpError(/your own claim|You approved/.test(problem) ? 403 : /not found/.test(problem) ? 404 : /already|not an approved/.test(problem) ? 409 : 400, code, problem);
+
+// ---- Reimbursement batches (see reimbursementRules.js) ----
+// Approved claims paid together by one bank transfer that PBMS does not send: create, download its bank file, mark paid.
+app.post('/claims/batches', auth, allow('claims.pay'), async (req, res) => {
+  const b = input(req), at = new Date().toISOString(), ownIds = await ownEmployeeIds(req.user);
+  const { claim: batch } = await withClaims(async (claims, client) => {
+    const batches = await readBatches(client);
+    const problem = newBatchError({ claims, claimIds: b.claim_ids, payDate: b.pay_date, userId: req.user.id, ownIds, batches, today: manilaDate() });
+    if (problem) throw refused(problem, 'BATCH_REFUSED');
+    const made = createBatch({ claims, claimIds: b.claim_ids.map(String), payDate: b.pay_date, batches, user: req.user, at });
+    await writeBatches(client, [made.batch, ...batches]);
+    return { claims: made.claims, claim: made.batch };
+  });
+  await audit('reimbursement.batch_created', req.user.id, 'Reimbursement', batch.id, { description: `Created reimbursement batch ${batch.number}: ${batch.claimIds.length} claim(s), ${pesoText(batch.total)}, to pay on ${batch.payDate}.` }, ipDevice(req));
+  res.status(201).json({ data: batch });
+});
+// Marks a batch paid once the bank transfer is done: claims the bank did not pay (failed_claim_ids) go back to the queue.
+app.post('/claims/batches/:id/payment', auth, allow('claims.pay'), async (req, res) => {
+  const payment = input(req), at = new Date().toISOString(), ownIds = await ownEmployeeIds(req.user);
+  const proofProblem = payment.proof ? paymentProofError(payment.proof) : '';
+  if (proofProblem) throw new HttpError(400, 'BATCH_PAYMENT_REFUSED', proofProblem);
+  const { claim: batch } = await withClaims(async (claims, client) => {
+    const batches = await readBatches(client), current = batches.find(item => String(item?.id) === String(req.params.id));
+    const problem = batchPaymentError({ batch: current, claims, payment: { ...payment, failedClaimIds: payment.failed_claim_ids }, userId: req.user.id, ownIds, today: manilaDate() });
+    if (problem) throw refused(problem, 'BATCH_PAYMENT_REFUSED');
+    const paid = payBatch({ batch: current, claims, payment: { ...payment, failedClaimIds: payment.failed_claim_ids ?? [] }, user: req.user, at, hasProof: Boolean(payment.proof) });
+    if (payment.proof) await client.query(
+      `insert into claim_payment_proofs(claim_id,file_name,mime_type,data,uploaded_by) values($1,$2,$3,$4,$5)
+       on conflict(claim_id) do update set file_name=$2, mime_type=$3, data=$4, uploaded_by=$5, uploaded_at=now()`,
+      [`batch:${current.id}`, String(payment.proof.name).trim().slice(0, 200), payment.proof.mime_type, `data:${payment.proof.mime_type};base64,${payment.proof.data}`, req.user.id]);
+    for (const claim of paid.claims.filter(item => item && paid.batch.paidClaimIds.includes(String(item.id)))) await notifyClaimEmployee(client, 'claim.paid', claim);
+    await writeBatches(client, batches.map(item => item === current ? paid.batch : item));
+    return { claims: paid.claims, claim: paid.batch };
+  });
+  await audit('reimbursement.batch_paid', req.user.id, 'Reimbursement', batch.id, { description: `Marked reimbursement batch ${batch.number} paid: ${batch.paidClaimIds.length} claim(s), ${pesoText(batch.paidTotal)}, bank reference ${batch.reference}${batch.failedClaimIds.length ? `; ${batch.failedClaimIds.length} not paid, back in the queue` : ''}.` }, ipDevice(req));
+  ok(res, batch);
+});
+app.post('/claims/batches/:id/cancel', auth, allow('claims.pay'), async (req, res) => {
+  const reason = text(input(req).reason), at = new Date().toISOString();
+  if (reason.length < 3) throw new HttpError(400, 'VALIDATION_ERROR', 'Give a reason for cancelling the batch.');
+  const { claim: batch } = await withClaims(async (claims, client) => {
+    const batches = await readBatches(client), current = batches.find(item => String(item?.id) === String(req.params.id));
+    if (!current) throw new HttpError(404, 'BATCH_NOT_FOUND', 'This batch was not found. Reload the page and try again.');
+    if (current.status !== 'Exported') throw new HttpError(409, 'BATCH_CLOSED', `Batch ${current.number} is already ${current.status.toLowerCase()}.`);
+    const cancelled = cancelBatch({ batch: current, claims, user: req.user, at, reason });
+    await writeBatches(client, batches.map(item => item === current ? cancelled.batch : item));
+    return { claims: cancelled.claims, claim: cancelled.batch };
+  });
+  await audit('reimbursement.batch_cancelled', req.user.id, 'Reimbursement', batch.id, { description: `Cancelled reimbursement batch ${batch.number}: ${reason}. Its claims are back in the queue.` }, ipDevice(req));
+  ok(res, batch);
+});
+
+// Records the reimbursement of an approved claim, paid outside PBMS: method, reference, date and an optional proof.
+// The claim, the proof and the employee's ESS notification are saved together; the payment is logged.
+app.post('/claims/:id/payment', auth, allow('claims.pay'), async (req, res) => {
+  const payment = input(req), at = new Date().toISOString();
+  const { rows: mine } = await pool.query(`select id from employees where $1 <> '' and lower(email) = lower($1)`, [String(req.user.email ?? '').trim()]);
+  const ownIds = new Set(mine.map(r => String(r.id)));
+  const { claim } = await withClaims(async (claims, client) => {
+    const current = claims.find(item => item && String(item.id) === String(req.params.id));
+    if (!current) throw new HttpError(404, 'CLAIM_NOT_FOUND', 'This claim was not found. Reload the page and try again.');
+    if (current.batchId && current.paymentStatus !== 'Paid') throw new HttpError(409, 'CLAIM_IN_BATCH', `${current.claimNumber} is in reimbursement batch ${current.batchNumber}. Mark the batch paid, or cancel it first.`);
+    const problem = claimPaymentError({ claim: current, payment, userId: req.user.id, own: ownIds.has(String(current.employeeId)), today: manilaDate() });
+    if (problem) throw new HttpError(problem.startsWith('This is your own') || problem.startsWith('You approved') ? 403 : problem.startsWith('Only an approved') ? 409 : 400, 'CLAIM_PAYMENT_REFUSED', problem);
+    const claim = paidClaim(current, payment, req.user, at);
+    if (payment.proof) await client.query(
+      `insert into claim_payment_proofs(claim_id,file_name,mime_type,data,uploaded_by) values($1,$2,$3,$4,$5)
+       on conflict(claim_id) do update set file_name=$2, mime_type=$3, data=$4, uploaded_by=$5, uploaded_at=now()`,
+      [String(claim.id), claim.paymentProofName, payment.proof.mime_type, `data:${payment.proof.mime_type};base64,${payment.proof.data}`, req.user.id]);
+    const notice = essClaimNotice('claim.paid', claim);
+    const { rows: [owner] } = await client.query('select employee_number from employees where id::text = $1', [String(claim.employeeId)]);
+    if (owner && notice) await client.query('insert into ess_notifications(employee_no, title, message) values($1,$2,$3)', [owner.employee_number, notice.title, notice.message]);
+    return { claims: claims.map(item => item === current ? claim : item), claim };
+  });
+  await audit('claim.paid', req.user.id, 'Reimbursement', claim.id, { description: `Reimbursed claim ${claim.claimNumber} (${pesoText(claim.amount)}) by ${claim.paymentMethod}, reference ${claim.paymentReference}, on ${claim.paymentDate}.` }, ipDevice(req));
+  ok(res, withoutReceipt(claim));
+});
+app.get('/claims/:id/payment-proof', auth, allow('claims.view'), async (req, res) => {
+  const { rows: [stored] } = await pool.query(`select value from app_data where key='claims:records' and not deleted`);
+  const claim = (stored && Array.isArray(appValue(stored.value)) ? appValue(stored.value) : []).find(item => String(item?.id) === String(req.params.id));
+  const { rows: [proof] } = await pool.query('select file_name, mime_type, data from claim_payment_proofs where claim_id = any($1) order by claim_id = $2 desc limit 1', [[String(req.params.id), `batch:${claim?.batchId ?? ''}`], String(req.params.id)]);
+  if (!proof) return fail(res, 404, 'PROOF_NOT_FOUND', 'No proof of payment was attached to this claim.');
+  ok(res, { name: proof.file_name, mime_type: proof.mime_type, data_url: proof.data });
+});
+
+// One claim's receipt file, loaded when someone opens it.
+app.get('/claims/:id/receipt', auth, allow('claims.view'), async (req, res) => {
+  const { rows: [receipt] } = await pool.query('select file_name, mime_type, data from claim_receipts where claim_id=$1', [req.params.id]);
+  if (!receipt) return fail(res, 404, 'RECEIPT_NOT_FOUND', 'This claim has no receipt on file.');
+  ok(res, { name: receipt.file_name, mime_type: receipt.mime_type, data_url: receipt.data });
+});
+
+// An employee who has left may submit claims for LEAVER_CLAIM_DAYS days after leaving (see claimantError).
+const essClaimant = async employeeNo => {
+  const employee = await essEmployee(employeeNo), problem = claimantError(employee, manilaDate());
+  if (problem) throw new HttpError(403, 'EMPLOYEE_NOT_ACTIVE', problem);
+  return employee;
+};
 app.post('/integrations/ess/claims', essAuth, async (req, res) => {
-  const b = input(req), employee = await essEmployee(b.employee_no);
+  const b = input(req), employee = await essClaimant(b.employee_no);
   const parsed = essClaimFields(b, manilaDate());
   if (parsed.error) return fail(res, 400, 'VALIDATION_ERROR', parsed.error);
   const reference = text(b.ess_reference).slice(0, 100) || null;
@@ -2570,7 +2769,7 @@ app.post('/integrations/ess/claims', essAuth, async (req, res) => {
   res.status(created ? 201 : 200).json({ data: essClaimView(claim) });
 });
 app.put('/integrations/ess/claims/:claimNumber', essAuth, async (req, res) => {
-  const b = input(req), employee = await essEmployee(b.employee_no);
+  const b = input(req), employee = await essClaimant(b.employee_no);
   const parsed = essClaimFields(b, manilaDate());
   if (parsed.error) return fail(res, 400, 'VALIDATION_ERROR', parsed.error);
   const { claim } = await withClaims(claims => {
@@ -2681,6 +2880,12 @@ app.get('/api/health', async (_req, res) => {
   const { rows: [row] } = await pool.query(`select value, deleted from app_data where key='attendance:hr2'`);
   const records = row && !row.deleted ? appValue(row.value)?.records ?? [] : [];
   res.json({ ok: true, database: db.database, employees: db.employees, attendance: records.length });
+});
+// Routes registered after the handler above (claims, ESS and other integrations) get the same error replies.
+app.use((err, _req, res, next) => {
+  if (err instanceof HttpError || err instanceof AccessError) return fail(res, err.status, err.code, err.message);
+  if (err?.type === 'entity.too.large') return fail(res, 413, 'FILE_TOO_LARGE', 'The file is too large.');
+  next(err);
 });
 app.use((err, _req, res, _next) => { console.error(err); fail(res, 500, 'INTERNAL_ERROR', 'Internal server error'); });
 app.listen(process.env.PORT || 3000);

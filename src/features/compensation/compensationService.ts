@@ -2,14 +2,15 @@ import {apiClient} from '../../services/api/apiClient';
 import {read} from '../../utils/storage';
 import {dailyFromSalary,withGradeSalaries} from './compensationState';
 import type {BonusIncentive,CompensationHistory,CompensationProposal,EmployeeCompensation,SalaryGrade} from './compensationState';
+import type {BonusTaxTypeId} from '../../../backend-render/bonusTax.js';
 
 type Envelope<T>={data:T};
 type ServerGrade={id:string;grade:string;position?:string|null;monthly_salary:number|string;daily_rate?:number|string|null;status:'Active'|'Inactive';created_at:string};
 type ServerAssignment={id:string;employee_id:string;salary_code:string;position:string;basic_salary:number|string;daily_rate:number|string;effective_date:string;created_at:string};
 type ServerProposal={id:string;created_by?:string|null;salary_code?:string|null;employee_id:string;proposal_type:CompensationProposal['type'];previous_salary:number|string;new_salary:number|string;effective_date:string;notes:string;status:CompensationProposal['status'];rejection_reason?:string|null;created_at:string;reviewed_by?:string|null};
 type ServerHistory={id:string;employee_id:string;source:string;event_type:string;previous_salary:number|string;new_salary:number|string;adjustment_amount:number|string;reason:string;effective_date:string;status:string;recorded_at:string;applied_at?:string|null;actor_name?:string|null;proposal_id?:string|null;assignment_id?:string|null};
-type ServerReward={id:string;employee_id:string;reward_type:string;amount:number|string;effective_date:string;notes:string;status:string;created_at:string;allowance_type?:string|null;frequency?:string|null;taxable?:boolean|null;cutoff_start?:string|null;cutoff_end?:string|null;created_by?:string|null};
-type RewardInput=Pick<BonusIncentive,'employeeId'|'type'|'amount'|'effectiveDate'|'notes'|'status'|'allowanceType'|'frequency'|'taxable'|'cutoffStart'|'cutoffEnd'>;
+type ServerReward={id:string;employee_id:string;reward_type:string;amount:number|string;effective_date:string;notes:string;status:string;created_at:string;allowance_type?:string|null;frequency?:string|null;taxable?:boolean|null;tax_category?:string|null;cutoff_start?:string|null;cutoff_end?:string|null;created_by?:string|null};
+type RewardInput=Pick<BonusIncentive,'employeeId'|'type'|'amount'|'effectiveDate'|'notes'|'status'|'allowanceType'|'frequency'|'taxable'|'cutoffStart'|'cutoffEnd'>&Pick<Partial<BonusIncentive>,'taxCategory'>;
 type ServerBundle={salary_grades:ServerGrade[];assignments:ServerAssignment[];proposals:ServerProposal[];history:ServerHistory[];rewards:ServerReward[];legacy_import_complete:boolean;legacy_import_counts?:Record<string,number>|null};
 type LegacyAppDataRow={key:string;value:unknown;deleted?:boolean};
 
@@ -23,11 +24,11 @@ const rewardFromServer=(row:ServerReward):BonusIncentive=>{
  const bonus=row.reward_type==='Bonus'||row.reward_type==='Incentive';
  const effectiveDate=String(row.effective_date).slice(0,10);
  const status=(bonus?(row.status==='Planned'?'Pending':row.status):row.status==='Approved'?'Active':row.status==='Planned'?'Inactive':row.status) as BonusIncentive['status'];
- return {id:row.id,employeeId:row.employee_id,type:bonus?row.reward_type as BonusIncentive['type']:'Allowance',amount:money(row.amount),effectiveDate,notes:row.notes??'',status,createdAt:row.created_at,allowanceType:bonus?'':row.allowance_type||(row.reward_type==='Allowance'?'':row.reward_type),frequency:row.frequency==='Per Cutoff'?'Per Cutoff':'Monthly',taxable:row.taxable??true,cutoffStart:String(row.cutoff_start??effectiveDate).slice(0,10),cutoffEnd:String(row.cutoff_end??effectiveDate).slice(0,10),...(row.created_by?{createdBy:row.created_by}:{})};
+ return {id:row.id,employeeId:row.employee_id,type:bonus?row.reward_type as BonusIncentive['type']:'Allowance',amount:money(row.amount),effectiveDate,notes:row.notes??'',status,createdAt:row.created_at,allowanceType:bonus?'':row.allowance_type||(row.reward_type==='Allowance'?'':row.reward_type),frequency:row.frequency==='Per Cutoff'?'Per Cutoff':'Monthly',taxable:row.taxable??true,...(bonus&&row.tax_category?{taxCategory:row.tax_category as BonusTaxTypeId}:{}),cutoffStart:String(row.cutoff_start??effectiveDate).slice(0,10),cutoffEnd:String(row.cutoff_end??effectiveDate).slice(0,10),...(row.created_by?{createdBy:row.created_by}:{})};
 };
 const rewardPayload=(reward:RewardInput)=>reward.type==='Allowance'
  ?{employee_id:reward.employeeId,reward_type:'Allowance',allowance_type:reward.allowanceType,frequency:reward.frequency,taxable:reward.taxable,amount:reward.amount,effective_date:reward.effectiveDate,status:reward.status,notes:reward.notes}
- :{employee_id:reward.employeeId,reward_type:reward.type,amount:reward.amount,cutoff_start:reward.cutoffStart,cutoff_end:reward.cutoffEnd,notes:reward.notes,taxable:reward.taxable};
+ :{employee_id:reward.employeeId,reward_type:reward.type,amount:reward.amount,cutoff_start:reward.cutoffStart,cutoff_end:reward.cutoffEnd,notes:reward.notes,taxable:reward.taxable,...(reward.taxCategory?{tax_category:reward.taxCategory}:{})};
 
 async function action<T>(payload:Record<string,unknown>){return apiClient.post<Record<string,unknown>,Envelope<T>>('/compensation',payload).then(response=>response.data)}
 

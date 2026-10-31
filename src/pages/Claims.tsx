@@ -5,13 +5,15 @@ import {Button,Card,Empty,ErrorAlert,Field,LoadingState,Modal,Segmented,ghost,in
 import type {Employee} from '../types/domain';
 import {employeeService} from '../features/employees/employeeService';
 import {can} from '../features/auth/permissions';
+import {getCurrentUser} from '../features/auth/authService';
 import {notifyClaimDecided} from '../features/notifications/notificationService';
 import {employeeName,normalizeClaims,updateClaim} from '../features/claims/claimsTypes';
+import {claimWarnings} from '../../backend-render/claimRules.js';
 import type {ClaimReview,ExpenseClaim} from '../features/claims/claimsTypes';
-import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,rowHeader,tableHead} from '../features/claims/claimsUi';
+import {ClaimStatusBadge,EmployeeCell,cell,claimDate,flushCard,openClaimFile,rowHeader,tableHead} from '../features/claims/claimsUi';
 import {peso} from '../utils/storage';
 
-// Returned claims stay open: Finance can still approve them once corrected.
+// Returned claims wait for the employee to correct and resubmit them from ESS; meanwhile they can only be rejected.
 const isOpen=(claim:ExpenseClaim)=>claim.approvalStatus==='Pending Approval'||claim.approvalStatus==='Returned';
 const isPaid=(claim:ExpenseClaim)=>claim.paymentStatus==='Paid'||claim.paymentStatus==='Included in Payroll';
 const FILTERS=[
@@ -31,7 +33,10 @@ export default function Claims(){
  const[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
  const[selected,setSelected]=useState<ExpenseClaim|null>(null);
  const[pending,setPending]=useState<Pending|null>(null),[reason,setReason]=useState(''),[saving,setSaving]=useState(false),[actionError,setActionError]=useState('');
- const financeAuthorized=can('claims.approve');
+ const canDecide=can('claims.approve');
+ // The signed-in user's own claims (employee records with their email): another reviewer decides them.
+ const email=getCurrentUser()?.email?.trim().toLowerCase();
+ const own=new Set(email?employees.filter(employee=>employee.email?.trim().toLowerCase()===email).map(employee=>employee.id):[]);
  // ?status=pending (from the Dashboard) opens on Pending.
  const[params]=useSearchParams();
  const[filter,setFilter]=useState<Filter>(params.get('status')==='pending'?'pending':'all');
@@ -57,10 +62,10 @@ export default function Claims(){
     <Segmented label="Filter claims by status" options={FILTERS} value={filter} onChange={setFilter} idPrefix="claims-filter" panelId="claims-list"/>
    </div>
    <section id="claims-list" role="tabpanel" aria-labelledby={`claims-filter-${filter}`} className="min-w-0">
-    {loading?<LoadingState>Loading claims…</LoadingState>:<ClaimsTable claims={list} employees={employees} financeAuthorized={financeAuthorized} onUpdate={(id,patch)=>void update(id,patch)} onReject={claim=>openPending('reject',claim)} onReturn={claim=>openPending('return',claim)} onView={setSelected}/>}
+    {loading?<LoadingState>Loading claims…</LoadingState>:<ClaimsTable claims={list} employees={employees} warningsOf={claim=>claimWarnings(claim,claims)} canDecide={canDecide} own={own} onUpdate={(id,patch)=>void update(id,patch)} onReject={claim=>openPending('reject',claim)} onReturn={claim=>openPending('return',claim)} onView={setSelected}/>}
    </section>
   </Card>
-  {selected&&<DetailsModal claim={selected} employees={employees} onClose={()=>setSelected(null)}/>}
+  {selected&&<DetailsModal claim={selected} employees={employees} warnings={claimWarnings(selected,claims)} onClose={()=>setSelected(null)}/>}
   {pending&&<Modal title={pending.kind==='reject'?'Reject claim?':'Return claim for correction?'} onClose={()=>{if(!saving)setPending(null)}}>
    <p className="mb-3 mt-0 text-[13px] text-gray-600">{pending.kind==='reject'?`Reject claim ${pending.claim.claimNumber} for ${peso(pending.claim.amount)}? A rejected claim cannot be approved or reimbursed later.`:`Return claim ${pending.claim.claimNumber} to the employee? They correct it in ESS and resubmit it.`}</p>
    <Field label="Reason (shown to the employee in ESS)"><textarea className={`${input} min-h-24`} maxLength={500} autoFocus value={reason} onChange={event=>setReason(event.target.value)}/></Field>
@@ -69,7 +74,7 @@ export default function Claims(){
  </div>;
 }
 
-function ClaimsTable({claims,employees,financeAuthorized,onUpdate,onReject,onReturn,onView}:{claims:ExpenseClaim[];employees:Employee[];financeAuthorized:boolean;onUpdate:(id:string,patch:ClaimReview)=>void;onReject:(claim:ExpenseClaim)=>void;onReturn:(claim:ExpenseClaim)=>void;onView:(claim:ExpenseClaim)=>void}){
+function ClaimsTable({claims,employees,warningsOf,canDecide,own,onUpdate,onReject,onReturn,onView}:{claims:ExpenseClaim[];employees:Employee[];warningsOf:(claim:ExpenseClaim)=>string[];canDecide:boolean;own:Set<string>;onUpdate:(id:string,patch:ClaimReview)=>void;onReject:(claim:ExpenseClaim)=>void;onReturn:(claim:ExpenseClaim)=>void;onView:(claim:ExpenseClaim)=>void}){
  return <div role="region" aria-label="Claims table" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><table className="w-full min-w-[900px] text-left text-[13px]"><caption className="sr-only">Claims with claim number, employee, type, date, amount, status, receipt, and available actions. Open a claim to read its business purpose.</caption>
   <thead><tr className={tableHead}>{['Claim No.','Employee','Type','Date','Amount','Status','Receipt','Actions'].map(header=><th key={header} scope="col" className={`whitespace-nowrap px-4 py-3.5 ${header==='Amount'?'text-right':''}`}>{header}</th>)}</tr></thead>
   <tbody>{claims.length===0?<tr><td colSpan={8}><Empty>No claims with this status.</Empty></td></tr>:claims.map(claim=><tr key={claim.id} className="border-b border-gray-100 transition-colors hover:bg-blue-50/35">
@@ -78,13 +83,13 @@ function ClaimsTable({claims,employees,financeAuthorized,onUpdate,onReject,onRet
    <td className={`${cell} whitespace-nowrap text-gray-700`}>{claim.claimType}</td>
    <td className={`${cell} whitespace-nowrap text-gray-600`}>{claimDate(claim.date)}</td>
    <td className={`${cell} whitespace-nowrap text-right font-semibold tabular-nums text-gray-900`}>{peso(claim.amount)}</td>
-   <td className={cell}><ClaimStatusBadge claim={claim}/>{claim.approvalStatus==='Returned'&&claim.notes&&<div className="mt-1 max-w-[220px] text-[11px] text-amber-700">{claim.notes}</div>}</td>
-   <td className={`${cell} whitespace-nowrap`}>{claim.receiptName?<span className="text-gray-600" title={claim.receiptName}>Attached</span>:<span className="font-medium text-red-700">Missing</span>}</td>
-   <td className={cell}>{isOpen(claim)?<ClaimActions claim={claim} financeAuthorized={financeAuthorized} onUpdate={onUpdate} onReject={onReject} onReturn={onReturn} onView={onView}/>:<button className={ghost} onClick={()=>onView(claim)}>View</button>}</td>
+   <td className={cell}><ClaimStatusBadge claim={claim}/>{claim.approvalStatus==='Returned'&&claim.notes&&<div className="mt-1 max-w-[220px] text-[11px] text-amber-700">{claim.notes}</div>}{claim.paymentStatus==='Unpaid'&&warningsOf(claim).map(warning=><div key={warning} className="mt-1 max-w-[240px] whitespace-normal text-[11px] font-medium text-amber-700">⚠ {warning}</div>)}</td>
+   <td className={`${cell} whitespace-nowrap`}>{claim.hasReceipt?<button type="button" className="font-medium text-blue-600 underline-offset-2 hover:text-blue-800 hover:underline" title={claim.receiptName} aria-label={`View receipt ${claim.receiptName} for ${claim.claimNumber}`} onClick={()=>void viewReceipt(claim)}>View receipt</button>:claim.receiptName?<span className="text-gray-600" title={claim.receiptName}>Attached</span>:<span className="font-medium text-red-700">Missing</span>}</td>
+   <td className={cell}>{isOpen(claim)?<ClaimActions claim={claim} canDecide={canDecide&&!own.has(claim.employeeId)} ownClaim={own.has(claim.employeeId)} onUpdate={onUpdate} onReject={onReject} onReturn={onReturn} onView={onView}/>:<button className={ghost} onClick={()=>onView(claim)}>View</button>}</td>
   </tr>)}</tbody></table></div>;
 }
 
-function ClaimActions({claim,financeAuthorized,onUpdate,onReject,onReturn,onView}:{claim:ExpenseClaim;financeAuthorized:boolean;onUpdate:(id:string,patch:ClaimReview)=>void;onReject:(claim:ExpenseClaim)=>void;onReturn:(claim:ExpenseClaim)=>void;onView:(claim:ExpenseClaim)=>void}){
+function ClaimActions({claim,canDecide,ownClaim,onUpdate,onReject,onReturn,onView}:{claim:ExpenseClaim;canDecide:boolean;ownClaim:boolean;onUpdate:(id:string,patch:ClaimReview)=>void;onReject:(claim:ExpenseClaim)=>void;onReturn:(claim:ExpenseClaim)=>void;onView:(claim:ExpenseClaim)=>void}){
  const[menuPosition,setMenuPosition]=useState<{top:number;left:number}|null>(null);
  const menu=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null);
  // Close the menu on an outside click, Escape, scroll or resize, since it is positioned against the viewport.
@@ -98,21 +103,23 @@ function ClaimActions({claim,financeAuthorized,onUpdate,onReject,onReturn,onView
  },[menuPosition]);
  const toggleMenu=(event:React.MouseEvent<HTMLButtonElement>)=>{if(menuPosition){setMenuPosition(null);return}const rect=event.currentTarget.getBoundingClientRect();const width=150;const top=rect.bottom+8>window.innerHeight-170?Math.max(8,rect.top-170):rect.bottom+8;setMenuPosition({top,left:Math.max(8,Math.min(rect.right-width,window.innerWidth-width-8))})};
  const pick=(action:()=>void)=>()=>{setMenuPosition(null);action()};
- if(!financeAuthorized)return <div className="flex flex-wrap gap-2"><button className={ghost} onClick={()=>onView(claim)}><FileText size={14}/>View</button>{claim.receiptData&&<button className={ghost} onClick={()=>viewReceipt(claim)}>Receipt</button>}</div>;
+ if(!canDecide)return <div className="flex flex-wrap items-center gap-2"><button className={ghost} onClick={()=>onView(claim)}><FileText size={14}/>View</button>{claim.hasReceipt&&<button className={ghost} onClick={()=>void viewReceipt(claim)}>Receipt</button>}{ownClaim&&<span className="text-[11px] text-gray-500">Your claim: another reviewer decides it</span>}</div>;
+ const returned=claim.approvalStatus==='Returned';
  return <div className="flex flex-nowrap items-center gap-2">
-  <button className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-emerald-700" onClick={()=>onUpdate(claim.id,{approvalStatus:'Approved',notes:''})}><Check size={14}/>Approve</button>
+  {returned?<span className="whitespace-nowrap text-[11px] font-medium text-amber-700">Waiting for the employee</span>:<button className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-emerald-700" onClick={()=>onUpdate(claim.id,{approvalStatus:'Approved',notes:''})}><Check size={14}/>Approve</button>}
   <button className={ghost} onClick={()=>onView(claim)}>View</button>
   <button ref={trigger} type="button" aria-label={`More actions for ${claim.claimNumber}`} aria-haspopup="menu" aria-expanded={Boolean(menuPosition)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-100 bg-white text-gray-500 hover:bg-gray-50" onClick={toggleMenu}><MoreVertical size={17}/></button>
   {menuPosition&&<div ref={menu} role="menu" className="fixed z-50 min-w-[150px] rounded-lg border border-gray-100 bg-white p-1.5 text-left shadow-lg" style={{top:menuPosition.top,left:menuPosition.left}}>
-   {claim.approvalStatus!=='Returned'&&<button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] font-medium text-amber-700 hover:bg-amber-50" onClick={pick(()=>onReturn(claim))}><RotateCcw size={14}/>Return</button>}
+   {!returned&&<button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] font-medium text-amber-700 hover:bg-amber-50" onClick={pick(()=>onReturn(claim))}><RotateCcw size={14}/>Return</button>}
    <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] font-medium text-red-700 hover:bg-red-50" onClick={pick(()=>onReject(claim))}><ThumbsDown size={14}/>Reject</button>
   </div>}
  </div>;
 }
 
 function Detail({label,children}:{label:string;children:React.ReactNode}){return <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</dt><dd className="m-0 mt-1 text-[13px] text-gray-800">{children}</dd></div>}
-function DetailsModal({claim,employees,onClose}:{claim:ExpenseClaim;employees:Employee[];onClose:()=>void}){
+function DetailsModal({claim,employees,warnings,onClose}:{claim:ExpenseClaim;employees:Employee[];warnings:string[];onClose:()=>void}){
  return <Modal title={`Claim ${claim.claimNumber}`} wide onClose={onClose}>
+  {warnings.length>0&&<div role="note" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Check before approving</div><ul className="mb-0 mt-1 list-disc pl-5">{warnings.map(warning=><li key={warning}>{warning}</li>)}</ul></div>}
   <dl className="m-0 grid gap-4 sm:grid-cols-2">
    <Detail label="Employee">{employeeName(employees,claim.employeeId)}</Detail>
    <Detail label="Department">{claim.department||'—'}</Detail>
@@ -120,8 +127,9 @@ function DetailsModal({claim,employees,onClose}:{claim:ExpenseClaim;employees:Em
    <Detail label="Expense Date">{claimDate(claim.date)}</Detail>
    <Detail label="Amount"><span className="font-semibold tabular-nums">{peso(claim.amount)}</span></Detail>
    <Detail label="Status"><ClaimStatusBadge claim={claim}/></Detail>
-   {claim.paymentStatus!=='Unpaid'&&<Detail label="Payment Date">{claimDate(claim.paymentDate)}</Detail>}
-   <Detail label="Receipt">{claim.receiptName?<span className="flex flex-wrap items-center gap-2"><span className="break-all">{claim.receiptName}</span>{claim.receiptData&&<button className="text-blue-600 underline" onClick={()=>viewReceipt(claim)}>View receipt</button>}</span>:<span className="font-medium text-red-700">Missing</span>}</Detail>
+   {claim.decidedBy&&<Detail label="Decided By">{claim.decidedBy}</Detail>}
+   {claim.paymentStatus!=='Unpaid'&&<><Detail label="Payment Date">{claimDate(claim.paymentDate)}</Detail><Detail label="Paid By">{[claim.paymentMethod,claim.paymentReference&&`ref. ${claim.paymentReference}`].filter(Boolean).join(' · ')||'—'}</Detail><Detail label="Recorded By">{claim.paidBy||'—'}</Detail><Detail label="Proof of Payment">{claim.hasPaymentProof?<button className="text-blue-600 underline" onClick={()=>void openClaimFile(claim,'proof')}>View proof</button>:'—'}</Detail></>}
+   <Detail label="Receipt">{claim.receiptName?<span className="flex flex-wrap items-center gap-2"><span className="break-all">{claim.receiptName}</span>{claim.hasReceipt&&<button className="text-blue-600 underline" onClick={()=>void viewReceipt(claim)}>View receipt</button>}</span>:<span className="font-medium text-red-700">Missing</span>}</Detail>
    <div className="sm:col-span-2"><Detail label="Business Purpose"><p className="m-0 rounded-lg bg-gray-50 p-3 text-gray-500">{claim.businessPurpose||'—'}</p></Detail></div>
    <Detail label="Submitted">{claim.source==='ESS'?'By the employee through ESS':'Encoded in PBMS (before ESS)'}</Detail>
    {claim.notes&&<div className="sm:col-span-2"><Detail label="Review Notes"><p className="m-0 rounded-lg bg-amber-50 p-3 text-amber-800">{claim.notes}</p></Detail></div>}
@@ -130,5 +138,4 @@ function DetailsModal({claim,employees,onClose}:{claim:ExpenseClaim;employees:Em
  </Modal>;
 }
 
-function viewReceipt(claim:ExpenseClaim){if(!claim.receiptData)return;const popup=window.open('','_blank','width=900,height=800');if(!popup)return;const src=escapeHtml(claim.receiptData);const safe=claim.receiptData.startsWith('data:application/pdf')?`<embed src="${src}" type="application/pdf" width="100%" height="90%"/>`:`<img src="${src}" alt="${escapeHtml(claim.receiptName)}" style="max-width:100%;max-height:90%;object-fit:contain"/>`;popup.document.write(`<title>${escapeHtml(claim.receiptName)}</title><body style="margin:20px;font-family:Arial"><h2>${escapeHtml(claim.claimNumber)} — ${escapeHtml(claim.receiptName)}</h2>${safe}</body>`);popup.document.close()}
-function escapeHtml(value:string){return value.replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[char]??char))}
+const viewReceipt=(claim:ExpenseClaim)=>openClaimFile(claim,'receipt');

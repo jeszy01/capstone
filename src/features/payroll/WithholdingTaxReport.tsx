@@ -1,107 +1,123 @@
 import {useEffect,useMemo,useState} from 'react';
-import {Calculator,Download,Eye,LoaderCircle,Printer,TriangleAlert} from 'lucide-react';
-import {Button,Card,Empty,Modal,ghost,input} from '../../components/common/ui';
-import type {Employee,PayrollInput,PayrollResult} from '../../types/domain';
-import {numberValue,peso,read} from '../../utils/storage';
-import {can} from '../auth/permissions';
-import {employeeService} from '../employees/employeeService';
-import {loadRates} from '../settings/payrollSettings';
-import {RUNS_KEY,isApprovedRun,periodLabel} from './payrollRuns';
-import type {PayrollRun,RunRow} from './payrollRuns';
-import {loadWithholdingRules,validateRuleSet} from './withholdingTax';
-import {calculateRunRow} from './taxHistory';
-import {BirWorksheets} from './BirWorksheets';
-import {confirmWithPasskey} from '../auth/passkeyGate';
+import {CalendarRange,Download,Eye,FileText,Printer,Users} from 'lucide-react';
+import {Card,Empty,Field,Modal,Tabs,TextInput,ghost,input} from '../../components/common/ui';
 import {StatusBadge} from '../../components/common/StatusBadge';
+import type {Employee} from '../../types/domain';
+import {peso,read} from '../../utils/storage';
+import {formatDate} from '../../utils/date';
+import {employeeService} from '../employees/employeeService';
+import {confirmWithPasskey} from '../auth/passkeyGate';
+import {RUNS_KEY,runLabel,runStatus} from './payrollRuns';
+import type {PayrollRun,RunRow} from './payrollRuns';
+import {loadWithholdingRules} from './withholdingTax';
+import {employeeYearRows,methodLabel,payrollGroups,tableLabel,taxSteps} from './withholdingTaxView';
+import type {EmployeeYearRow} from './withholdingTaxView';
+import {employeeYears} from './birReports';
+import {BirWorksheets} from './BirWorksheets';
 
-const nf=(value:number)=>peso(value);
-const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
-type Entry={key:string;run:PayrollRun;row:RunRow;result:PayrollResult;employee?:Employee;recalculated:boolean;error?:string};
-const rowKey=(runId:string,empId:string,index:number)=>`${runId}:${empId}:${index}`;
-function employeeFor(employees:Employee[],input:PayrollInput){return employees.find(employee=>employee.id===input.empId||employee.employeeNo===input.empId)}
-function reportStatus(entry:Entry){return entry.error?'Validation error':isApprovedRun(entry.run)?'Actual':entry.run.status==='Rejected'?'Rejected':entry.recalculated||entry.result.taxBreakdown?'Estimate':'Pending estimate'}
-function validationForRun(run:PayrollRun,employees:Employee[],rosterReady:boolean,rules=loadWithholdingRules()):string[]{
- const errors:string[]=[];
- const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(`${value}T00:00:00Z`))&&new Date(`${value}T00:00:00Z`).toISOString().slice(0,10)===value;
- if(!validDate(run.from)||!validDate(run.to)||run.to<run.from)errors.push('Payroll run has an invalid period date.');
- if(!run.rows.length)errors.push('Payroll run contains no employee rows.');
- if(!rosterReady)errors.push('Employee records could not be loaded; tax cannot be computed from verified employee data.');
- for(const rule of rules)errors.push(...validateRuleSet(rule).map(message=>`${rule.id}: ${message}`));
- const seen=new Set<string>();
- run.rows.forEach((row,index)=>{
-  const id=row.input.empId?.trim();const label=row.input.name||id||`row ${index+1}`;
-  if(!id)errors.push(`${label}: employee ID is required.`);else if(seen.has(id))errors.push(`${label}: duplicate employee ID in this payroll run.`);else seen.add(id);
-  if(!row.input.name?.trim())errors.push(`${label}: employee name is required.`);
-  if(!employeeFor(employees,row.input))errors.push(`${label}: no matching employee master record was found.`);
-  if(!Number.isFinite(Number(row.input.dailyRate))||numberValue(row.input.dailyRate)<=0)errors.push(`${label}: a positive daily rate is required.`);
-  if(!Number.isFinite(Number(row.hmo))||Number(row.hmo)<0)errors.push(`${label}: HMO deduction must be a valid non-negative amount.`);
-  if(!row.result||![row.result.gross,row.result.deductions,row.result.net,row.result.tax].every(value=>Number.isFinite(Number(value))))errors.push(`${label}: saved payroll result is incomplete; rebuild the payroll row before computing tax.`);
-  const numericFields=(Object.keys(row.input) as Array<keyof PayrollInput>).filter(key=>!['id','empId','name','withholdingTax'].includes(String(key)));
-  for(const field of numericFields){const value=row.input[field];if(value!==undefined&&(!Number.isFinite(Number(value))||Number(value)<0))errors.push(`${label}: ${String(field)} must be a valid non-negative number.`)}
- });
- return [...new Set(errors)];
-}
-export function withTaxOnly(original:PayrollResult,calculated:PayrollResult):PayrollResult{
- const tax=calculated.tax;const deductions=round(original.deductions-original.tax+tax);const net=round(original.gross-deductions);
- return{...original,tax,taxBreakdown:calculated.taxBreakdown,deductions,net,shortfall:net<0?round(-net):0};
-}
+// Withholding Tax: the tax each payroll withheld, grouped by payroll; each employee's year to date; and the BIR forms.
+// Review Payroll computes the tax and submitting re-checks it, so this tab only shows the saved figures.
+const VIEWS=[{id:'payroll',label:'By Payroll',shortLabel:'By Payroll',icon:CalendarRange},{id:'employee',label:'By Employee',shortLabel:'By Employee',icon:Users},{id:'bir',label:'BIR Forms',shortLabel:'BIR Forms',icon:FileText}] as const;
+type View=(typeof VIEWS)[number]['id'];
+const th='whitespace-nowrap px-3 py-2.5 text-[10px] uppercase tracking-wide';
+const td='px-3 py-2.5 text-[12px]';
+const num=`${td} text-right tabular-nums`;
+const employeeFor=(employees:Employee[],empId:string)=>employees.find(employee=>employee.id===empId||employee.employeeNo===empId);
+const csvCell=(value:unknown)=>`"${String(value??'').replace(/"/g,'""')}"`;
+/** A signed amount: −₱2,940.00 rather than ₱-2,940.00. */
+const signed=(amount:number)=>amount<0?`−${peso(-amount)}`:peso(Math.abs(amount));
+const download=(name:string,rows:unknown[][])=>{const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([rows.map(row=>row.map(csvCell).join(',')).join('\n')],{type:'text/csv;charset=utf-8'}));link.download=name;link.click();URL.revokeObjectURL(link.href)};
 
 export function WithholdingTaxReport({from,to,query}:{from:string;to:string;query:string}){
- const[selection,setSelection]=useState<Entry|null>(null);
+ const[view,setView]=useState<View>('payroll');
  const[runs]=useState<PayrollRun[]>(()=>read<PayrollRun[]>(RUNS_KEY,[]));
  const[employees,setEmployees]=useState<Employee[]>(()=>read<Employee[]>('employees:records',[]));
- const[employeeError,setEmployeeError]=useState('');const[employeeLoading,setEmployeeLoading]=useState(true);
- const[periodId,setPeriodId]=useState('');const[department,setDepartment]=useState('');const[runStatus,setRunStatus]=useState('');
- const[computing,setComputing]=useState(false);const[notice,setNotice]=useState('');const[validationErrors,setValidationErrors]=useState<string[]>([]);const[validationByRow,setValidationByRow]=useState<Record<string,string>>({});
- const[estimates,setEstimates]=useState<Record<string,PayrollResult>>({});
- const canCompute=can('payroll.generate');
- useEffect(()=>{let active=true;employeeService.getAll().then(rows=>{if(active){setEmployees(rows);setEmployeeError('')}}).catch(error=>{if(active)setEmployeeError(error instanceof Error?error.message:'Employee records could not be loaded.')}).finally(()=>{if(active)setEmployeeLoading(false)});return()=>{active=false}},[]);
- const availableRuns=useMemo(()=>runs.filter(run=>run.from<=to&&run.to>=from).sort((a,b)=>b.from.localeCompare(a.from)),[runs,from,to]);
- useEffect(()=>{if(periodId&&!availableRuns.some(run=>run.id===periodId))setPeriodId('')},[availableRuns,periodId]);
- const periodRuns=useMemo(()=>periodId?availableRuns.filter(run=>run.id===periodId):availableRuns,[availableRuns,periodId]);
+ const[department,setDepartment]=useState(''),[year,setYear]=useState(to.slice(0,4));
+ const[detail,setDetail]=useState<{run:PayrollRun;row:RunRow}|null>(null),[person,setPerson]=useState<EmployeeYearRow|null>(null);
+ useEffect(()=>{let active=true;employeeService.getAll().then(rows=>{if(active)setEmployees(rows)}).catch(()=>undefined);return()=>{active=false}},[]);
  const departments=useMemo(()=>[...new Set(employees.map(employee=>employee.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),[employees]);
- const entries=useMemo<Entry[]>(()=>periodRuns.flatMap(run=>run.rows.map((row,index)=>{
-  const key=rowKey(run.id,row.input.empId,index);const employee=employeeFor(employees,row.input);const result=estimates[key]??row.result;
-  const error=validationByRow[key];return{key,run,row,result,employee,recalculated:Boolean(estimates[key]),error};
- })).filter(entry=>(!query||`${entry.row.input.name} ${entry.row.input.empId}`.toLowerCase().includes(query.trim().toLowerCase()))&&(!department||entry.employee?.department===department)&&(!runStatus||entry.run.status===runStatus)).sort((a,b)=>b.run.from.localeCompare(a.run.from)||a.row.input.name.localeCompare(b.row.input.name)),[periodRuns,employees,estimates,validationByRow,query,department,runStatus]);
- const compute=()=>{
-  setComputing(true);setNotice('');setValidationErrors([]);setValidationByRow({});
-  try{
-   if(!periodRuns.length){setValidationErrors(['No payroll run matches the selected payroll period.']);return}
-   const activeRules=loadWithholdingRules();const activeRates=loadRates();const allErrors:string[]=[];const rowErrors:Record<string,string>={};const nextEstimates:Record<string,PayrollResult>={};let locked=0;
-   for(const run of periodRuns){
-    const errors=validationForRun(run,employees,!employeeLoading&&!employeeError,activeRules);
-    if(errors.length){allErrors.push(...errors);for(const row of run.rows)rowErrors[rowKey(run.id,row.input.empId,run.rows.indexOf(row))]=errors.find(error=>error.toLowerCase().includes(row.input.empId.toLowerCase()))??errors[0];continue}
-    // An approved run keeps the tax it was approved with; Review Payroll already computed it, year-end adjustment included.
-    if(isApprovedRun(run)){locked++;continue}
-    run.rows.forEach((row,index)=>{
-     const calculated=calculateRunRow(row,run,runs,activeRates,activeRules);
-     nextEstimates[rowKey(run.id,row.input.empId,index)]=calculated;
-    });
-   }
-   setValidationErrors(allErrors);setValidationByRow(rowErrors);setEstimates(previous=>({...previous,...nextEstimates}));
-   const count=Object.keys(nextEstimates).length;
-   setNotice(count?`Computed ${count} estimate(s) for runs awaiting approval.${locked?` ${locked} approved run(s) keep the tax they were approved with.`:''}`:locked?`The selected run(s) are approved and keep the tax they were approved with.`:'No tax was computed; correct the validation errors.');
-  }catch(error){setValidationErrors([error instanceof Error?error.message:'Tax computation failed.']);}
-  finally{setComputing(false)}
+ const departmentOf=(empId:string)=>employeeFor(employees,empId)?.department||'Unassigned';
+ const matches=(empId:string,name:string)=>(!query.trim()||`${name} ${empId}`.toLowerCase().includes(query.trim().toLowerCase()))&&(!department||departmentOf(empId)===department);
+ const groups=useMemo(()=>payrollGroups(runs,from,to,row=>matches(row.input.empId,row.input.name)),[runs,from,to,query,department,employees]); // eslint-disable-line react-hooks/exhaustive-deps
+ const people=useMemo(()=>employeeYearRows(runs,year).filter(line=>matches(line.empId,line.name)),[runs,year,query,department,employees]); // eslint-disable-line react-hooks/exhaustive-deps
+ const exportCsv=async()=>{
+  if(!await confirmWithPasskey('export','Withholding Tax CSV'))return;
+  download(`withholding-tax-${from}-to-${to}.csv`,[['Payroll','Pay date','Status','Employee ID','Employee','Department','Taxable pay','Method','Tax'],...groups.flatMap(group=>group.rows.map(row=>[runLabel(group.run),group.payDate,runStatus(group.run),row.input.empId,employeeFor(employees,row.input.empId)?.name??row.input.name,departmentOf(row.input.empId),row.result.taxBreakdown?.taxableCompensation??'',methodLabel(group.run,row),row.result.tax]))]);
  };
- const exportCsv=async()=>{if(!await confirmWithPasskey('export','Withholding Tax CSV'))return;const data=[['Employee ID','Employee','Department','Payroll Period','Gross Compensation','Taxable Compensation','Withholding Tax','Payroll Run Status','Computation Status','Rule / Method'],...entries.map(entry=>[entry.row.input.empId,entry.employee?.name??entry.row.input.name,entry.employee?.department??'Unassigned',periodLabel(entry.run.from,entry.run.to),entry.result.gross,entry.result.taxBreakdown?.taxableCompensation??'',entry.result.tax,entry.run.status,reportStatus(entry),entry.result.taxBreakdown?`${entry.result.taxBreakdown.ruleId} / ${entry.result.taxBreakdown.status}`:'Not computed'])];const csv=data.map(row=>row.map(value=>`"${String(value??'').replace(/"/g,'""')}"`).join(',')).join('\n');const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));link.download=`withholding-tax-${from}-to-${to}.csv`;link.click();URL.revokeObjectURL(link.href)};
+ const departmentFilter=<Field label="Department"><select className={input} value={department} onChange={event=>setDepartment(event.target.value)}><option value="">All departments</option>{departments.map(value=><option key={value} value={value}>{value}</option>)}</select></Field>;
  return <>
-  <Card className="overflow-hidden border-blue-100 bg-white p-0">
-   <div className="flex flex-wrap items-end justify-between gap-3 border-b border-blue-50 px-5 py-4"><div><h2 className="m-0 text-[15px] font-semibold text-gray-900">Withholding Tax</h2><p className="mb-0 mt-1 text-[12px] text-gray-500">Compute from saved payroll inputs and effective BIR rules. Pending runs are estimates; only approved, unpaid runs update actual deductions.</p></div><div className="flex flex-wrap items-end gap-2">{canCompute&&<Button type="button" disabled={computing||employeeLoading||Boolean(employeeError)||!periodRuns.length} className="!bg-blue-600 !text-white hover:!bg-blue-700" onClick={compute}>{computing?<LoaderCircle size={15} className="animate-spin"/>:<Calculator size={15}/>}Compute Tax</Button>}<button type="button" className={ghost} onClick={exportCsv}><Download size={15}/>Export CSV</button><button type="button" className={ghost} onClick={()=>window.print()}><Printer size={15}/>Print</button></div></div>
-   <div className="grid gap-3 border-b border-blue-50 p-4 md:grid-cols-3"><label className="text-[11px] font-semibold text-gray-600">Payroll period<select aria-label="Payroll period" className={`${input} mt-1.5`} value={periodId} onChange={event=>setPeriodId(event.target.value)}><option value="">All periods in selected date range</option>{availableRuns.map(run=><option key={run.id} value={run.id}>{periodLabel(run.from,run.to)} · {run.status}</option>)}</select></label><label className="text-[11px] font-semibold text-gray-600">Department<select aria-label="Department" className={`${input} mt-1.5`} value={department} onChange={event=>setDepartment(event.target.value)}><option value="">All departments</option>{departments.map(value=><option key={value} value={value}>{value}</option>)}</select></label><label className="text-[11px] font-semibold text-gray-600">Payroll run status<select aria-label="Payroll run status" className={`${input} mt-1.5`} value={runStatus} onChange={event=>setRunStatus(event.target.value)}><option value="">All statuses</option><option value="Pending Approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label></div>
-   {employeeError&&<p role="alert" className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">Employee details could not be loaded: {employeeError}. Verify the employee service before computing tax.</p>}
-   {notice&&<p role="status" className="mx-4 mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-[12px] text-blue-900">{notice}</p>}
-   {validationErrors.length>0&&<div role="alert" className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800"><div className="flex items-center gap-2 font-semibold"><TriangleAlert size={15}/>Tax computation needs attention</div><ul className="mb-0 mt-2 list-disc space-y-1 pl-5">{validationErrors.map((error,index)=><li key={`${index}-${error}`}>{error}</li>)}</ul></div>}
-   <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-3"><div><h3 className="m-0 text-[14px] font-semibold text-gray-900">Employee Withholding Tax Records ({entries.length})</h3><p className="mb-0 mt-1 text-[11px] text-gray-500">{periodRuns.length?`${periodRuns.length} run(s) · ${from} through ${to}`:'No payroll runs in the selected date range.'}</p></div><span className="text-[11px] text-gray-500">{query?`Search: ${query}`:'All employees'}</span></div>
-   <div className="overflow-x-auto"><table className="w-full min-w-[1200px] text-left text-[12px]"><thead><tr className="border-y border-blue-100 bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">{['Employee ID','Employee','Department','Payroll period','Gross compensation','Taxable compensation','Withholding tax','Status','Rule / method','Details'].map(label=><th key={label} className="whitespace-nowrap px-3 py-3">{label}</th>)}</tr></thead><tbody>{!entries.length?<tr><td colSpan={10}><Empty>{runs.length?'No payroll rows match the selected period, department, status and search filters.':'No dated payroll runs were found. Use Payroll to create an actual payroll run; tax records are not fabricated or inferred from unrelated records.'}</Empty></td></tr>:entries.map(entry=><tr key={entry.key} className="border-b border-gray-100 hover:bg-blue-50/40"><td className="px-3 py-3 font-medium">{entry.row.input.empId}</td><th className="px-3 py-3 text-left font-semibold text-gray-900">{entry.employee?.name??(entry.row.input.name||'Name unavailable')}</th><td className="px-3 py-3">{entry.employee?.department||'Unassigned'}</td><td className="px-3 py-3">{periodLabel(entry.run.from,entry.run.to)}</td><td className="px-3 py-3 tabular-nums">{nf(entry.result.gross)}</td><td className="px-3 py-3 tabular-nums">{entry.result.taxBreakdown?nf(entry.result.taxBreakdown.taxableCompensation):'—'}</td><td className="px-3 py-3 font-semibold tabular-nums">{nf(entry.result.tax)}</td><td className="px-3 py-3"><StatusBadge status={reportStatus(entry)}/></td><td className="px-3 py-3">{entry.result.taxBreakdown?`${entry.result.taxBreakdown.ruleId} · ${entry.result.taxBreakdown.status}`:'Not computed'}</td><td className="px-3 py-3"><button type="button" className={ghost} onClick={()=>setSelection(entry)}><Eye size={14}/>View</button></td></tr>)}</tbody></table></div>
-   <p className="px-5 py-3 text-[10px] text-gray-500">Approved runs keep the tax they were approved with. Pending runs are session estimates only. Rejected runs can be inspected as estimates but never create payroll deductions.</p>
-  </Card>
-  <BirWorksheets runs={runs} employees={employees}/>
-  {selection&&<TaxDetail entry={selection} onClose={()=>setSelection(null)}/>}
+  <Tabs label="Withholding tax views" value={view} onChange={setView} tabs={VIEWS} className=""/>
+  {view==='payroll'&&<Card className="mt-4 min-w-0 overflow-hidden border-blue-100 !p-0">
+   <div className="flex flex-wrap items-end justify-between gap-3 border-b border-blue-50 px-5 py-4">
+    <div className="w-full sm:w-56">{departmentFilter}</div>
+    <div className="flex gap-2"><button type="button" className={ghost} disabled={!groups.length} onClick={()=>void exportCsv()}><Download size={15}/>Export CSV</button><button type="button" className={ghost} onClick={()=>window.print()}><Printer size={15}/>Print</button></div>
+   </div>
+   {!groups.length?<Empty>No payroll in {formatDate(from)} – {formatDate(to)}.</Empty>:groups.map(group=><section key={group.run.id} className="border-b border-blue-50 last:border-0">
+    <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-5 py-3">
+     <div className="flex flex-wrap items-center gap-2"><h3 className="m-0 text-[13px] font-semibold text-gray-900">{runLabel(group.run)}</h3><StatusBadge status={runStatus(group.run)}/></div>
+     <div className="text-[12px] text-gray-500">Pay date {formatDate(group.payDate)} · {group.rows.length} employee{group.rows.length===1?'':'s'}</div>
+    </div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left">
+     <thead><tr className="border-b border-gray-100 text-gray-500"><th className={th}>Employee</th><th className={th}>Department</th><th className={`${th} text-right`}>Taxable pay</th><th className={th}>Method</th><th className={`${th} text-right`}>Tax</th><th className={th}><span className="sr-only">Details</span></th></tr></thead>
+     <tbody>{group.rows.map(row=><tr key={row.input.empId} className="border-b border-gray-100">
+      <th scope="row" className={`${td} text-left font-semibold text-gray-900`}>{employeeFor(employees,row.input.empId)?.name??row.input.name}<div className="text-[11px] font-normal text-gray-500">{row.input.empId}</div></th>
+      <td className={td}>{departmentOf(row.input.empId)}</td>
+      <td className={num}>{peso(row.result.taxBreakdown?.taxableCompensation??0)}</td>
+      <td className={td}>{methodLabel(group.run,row)}</td>
+      <td className={`${num} font-semibold`}>{peso(row.result.tax)}</td>
+      <td className={`${td} text-right`}><button type="button" className={ghost} onClick={()=>setDetail({run:group.run,row})}><Eye size={14}/>View</button></td>
+     </tr>)}</tbody>
+     <tfoot><tr className="font-semibold text-gray-900"><td className={td} colSpan={2}>Total</td><td className={num}>{peso(group.taxable)}</td><td className={td}/><td className={num}>{peso(group.tax)}</td><td className={td}/></tr></tfoot>
+    </table></div>
+   </section>)}
+  </Card>}
+  {view==='employee'&&<Card className="mt-4 min-w-0 overflow-hidden border-blue-100 !p-0">
+   <div className="flex flex-wrap items-end gap-3 border-b border-blue-50 px-5 py-4"><div className="w-32"><Field label="Year"><TextInput type="number" min="2023" max="2100" value={year} onChange={event=>setYear(event.target.value)}/></Field></div><div className="w-full sm:w-56">{departmentFilter}</div></div>
+   {!people.length?<Empty>No approved payroll paid in {year}.</Empty>:<div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left">
+    <thead><tr className="border-b border-blue-100 bg-gray-50 text-gray-500"><th className={th}>Employee</th><th className={th}>Department</th><th className={`${th} text-right`}>Taxable pay to date</th><th className={`${th} text-right`}>Tax withheld to date</th><th className={th}>Method</th><th className={th}><span className="sr-only">Details</span></th></tr></thead>
+    <tbody>{people.map(line=><tr key={line.empId} className="border-b border-gray-100">
+     <th scope="row" className={`${td} text-left font-semibold text-gray-900`}>{employeeFor(employees,line.empId)?.name??line.name}<div className="text-[11px] font-normal text-gray-500">{line.empId}</div></th>
+     <td className={td}>{departmentOf(line.empId)}</td>
+     <td className={num}>{peso(line.taxable)}</td>
+     <td className={`${num} font-semibold`}>{peso(line.withheld)}</td>
+     <td className={td}>{line.method}</td>
+     <td className={`${td} text-right`}><button type="button" className={ghost} onClick={()=>setPerson(line)}><Eye size={14}/>View</button></td>
+    </tr>)}</tbody>
+   </table></div>}
+  </Card>}
+  {view==='bir'&&<BirWorksheets runs={runs} employees={employees}/>}
+  {detail&&<TaxDetail run={detail.run} row={detail.row} name={employeeFor(employees,detail.row.input.empId)?.name??detail.row.input.name} onClose={()=>setDetail(null)}/>}
+  {person&&<EmployeeYear line={person} year={year} runs={runs} employees={employees} onOpen={(run,row)=>{setPerson(null);setDetail({run,row})}} onClose={()=>setPerson(null)}/>}
  </>;
 }
-function TaxDetail({entry,onClose}:{entry:Entry;onClose:()=>void}){
- const b=entry.result.taxBreakdown;
- return <Modal title={`Withholding Tax — ${entry.employee?.name??entry.row.input.name}`} wide onClose={onClose}><div className="mb-4 grid gap-2 rounded-xl bg-gray-50 p-3 text-[12px] sm:grid-cols-3"><div><b>{entry.row.input.empId} · {entry.employee?.department||'Unassigned'}</b><div>{entry.employee?.position??entry.row.position}</div></div><div>Payroll: {periodLabel(entry.run.from,entry.run.to)}</div><div>Status: {reportStatus(entry)} · Run {entry.run.status}</div></div>{entry.error&&<div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">{entry.error}</div>}{!b?<Empty>Tax has not been computed for this payroll row. Use Compute Tax after correcting any validation issues.</Empty>:<><div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-[12px] text-blue-900">Method: {b.status}. {b.explanation}<div className="mt-1">Rule: {b.ruleId} · {b.ruleSource} · {b.period}</div>{entry.run.status!=='Approved'&&<div className="mt-1 font-semibold">Estimate only: this run is not approved, so this computation has not generated an actual payroll deduction.</div>}</div><dl className="grid gap-2 sm:grid-cols-2">{[['Gross compensation',b.grossCompensation],['Taxable regular compensation',b.taxableRegular],['Taxable supplementary compensation',b.taxableSupplementary],['13th-month/other benefit payments',b.benefitPayments],['13th-month exemption applied',b.benefitExemptionApplied],['Other tax-exempt benefits',b.taxExemptBenefits],['Employee mandatory contributions',b.mandatoryContributions],['Taxable compensation',b.taxableCompensation],['Tax before year-end adjustment',b.taxBeforeAdjustment],...(b.yearToDateTaxableCompensation===undefined?[]:[['Year-to-date taxable compensation',b.yearToDateTaxableCompensation],['Annual tax liability',b.annualTaxLiability??0],['Tax withheld before adjustment',b.priorTaxWithheld??0]]),['Withholding tax for this payroll',b.withholdingTax]].map(([label,value])=><div key={String(label)} className="flex justify-between gap-3 rounded-md border border-gray-100 px-3 py-2 text-[12px]"><dt className="text-gray-600">{label}</dt><dd className="m-0 font-semibold tabular-nums">{nf(Number(value))}</dd></div>)}</dl></>}</Modal>;
+
+/** One row's withholding, step by step, from the figures saved on the payroll. */
+function TaxDetail({run,row,name,onClose}:{run:PayrollRun;row:RunRow;name:string;onClose:()=>void}){
+ const rules=loadWithholdingRules(),b=row.result.taxBreakdown,steps=taxSteps(run,row,rules);
+ return <Modal title={name} wide onClose={onClose}>
+  <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-gray-600"><span>{row.input.empId}</span><span>{runLabel(run)}</span><span>Pay date {formatDate(run.payDate??run.to)}</span><StatusBadge status={runStatus(run)}/><span>{methodLabel(run,row)}</span>{b&&<span>{tableLabel(b.ruleId,rules)}</span>}</div>
+  {!steps.length?<Empty>No tax computed for this row.</Empty>:<ol className="m-0 list-none rounded-xl border border-gray-200 p-0">{steps.map((step,index)=><li key={index} className={`flex items-start justify-between gap-4 border-b border-gray-100 px-4 py-2.5 text-[13px] last:border-0 ${step.total?'bg-gray-50 font-semibold text-gray-900':'text-gray-700'}`}>
+   <div>{step.label}{step.note&&<div className="mt-0.5 text-[11px] font-normal text-gray-500">{step.note}</div>}</div>
+   {step.amount!==undefined&&<div className="whitespace-nowrap tabular-nums">{signed(step.amount)}</div>}
+  </li>)}</ol>}
+ </Modal>;
+}
+
+/** An employee's approved payrolls of the year, with the year's tax due once the year-end payroll is done. */
+function EmployeeYear({line,year,runs,employees,onOpen,onClose}:{line:EmployeeYearRow;year:string;runs:PayrollRun[];employees:Employee[];onOpen:(run:PayrollRun,row:RunRow)=>void;onClose:()=>void}){
+ const annual=employeeYears(runs,employees,year,loadWithholdingRules()).find(item=>item.employeeNo===line.empId);
+ const ended=line.payrolls.some(({row})=>row.result.taxBreakdown?.status==='Year-end adjusted');
+ return <Modal title={`${employeeFor(employees,line.empId)?.name??line.name} · ${year}`} wide onClose={onClose}>
+  <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full text-left">
+   <thead><tr className="border-b border-gray-100 bg-gray-50 text-gray-500"><th className={th}>Payroll</th><th className={th}>Pay date</th><th className={`${th} text-right`}>Taxable pay</th><th className={th}>Method</th><th className={`${th} text-right`}>Tax</th><th className={th}><span className="sr-only">Details</span></th></tr></thead>
+   <tbody>{line.payrolls.map(({run,row})=><tr key={run.id} className="border-b border-gray-100">
+    <td className={`${td} !whitespace-normal`}>{runLabel(run)}</td><td className={td}>{formatDate(run.payDate??run.to)}</td>
+    <td className={num}>{peso(row.result.taxBreakdown?.taxableCompensation??0)}</td><td className={td}>{methodLabel(run,row)}</td>
+    <td className={`${num} font-semibold`}>{peso(row.result.tax)}</td>
+    <td className={`${td} text-right`}><button type="button" className={ghost} onClick={()=>onOpen(run,row)}><Eye size={14}/>View</button></td>
+   </tr>)}</tbody>
+   <tfoot><tr className="font-semibold text-gray-900"><td className={td} colSpan={2}>Total</td><td className={num}>{peso(line.taxable)}</td><td className={td}/><td className={num}>{peso(line.withheld)}</td><td className={td}/></tr></tfoot>
+  </table></div>
+  {ended&&annual&&<dl className="mt-4 rounded-xl border border-gray-200 text-[13px]">{[['Tax due for the year',annual.taxDue],['Tax withheld',annual.totalWithheld],[annual.balance<0?'Over-withheld':'Balance',Math.abs(annual.balance)]].map(([label,value])=><div key={String(label)} className="flex justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-0"><dt className="text-gray-600">{label}</dt><dd className="m-0 font-semibold tabular-nums">{peso(Number(value))}</dd></div>)}</dl>}
+ </Modal>;
 }

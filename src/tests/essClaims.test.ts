@@ -32,9 +32,9 @@ describe('ESS claim intake',()=>{
 
 describe('PBMS review of ESS claims',()=>{
  const save=(before:unknown[],after:unknown[])=>appDataEvents(hr,'claims:records',before,after,true);
- it('lets HR approve, return with a reason and pay',async()=>{
+ it('lets HR approve and return with a reason; payment is recorded with Process, not in a save',async()=>{
   expect(await save([claim()],[claim({approvalStatus:'Returned',notes:'Receipt is unreadable'})])).toHaveLength(1);
-  expect(await save([claim({approvalStatus:'Approved'})],[claim({approvalStatus:'Approved',paymentStatus:'Paid',paymentMethod:'Paid Separately',paymentDate:'2026-10-21'})])).toHaveLength(1);
+  await expect(save([claim({approvalStatus:'Approved'})],[claim({approvalStatus:'Approved',paymentStatus:'Paid',paymentMethod:'Paid Separately',paymentDate:'2026-10-21'})])).rejects.toThrow('Record the reimbursement with Process');
  });
  it("refuses creating, deleting or editing the employee's claim in PBMS",async()=>{
   await expect(save([],[claim()])).rejects.toThrow('through ESS');

@@ -45,7 +45,10 @@ export async function refreshCurrentUser():Promise<boolean>{
  const role=roleLabel(row.role);
  const name=row.name||row.email||current.name;
  const displayName=row.display_name===undefined?current.displayName??null:row.display_name;
+ // The email is kept without reloading the page: it only marks the user's own claims.
+ const email=row.email??null;
+ if(email!==(current.email??null))write('session:user',{...getCurrentUser(),email});
  if(role===current.role&&name===current.name&&displayName===(current.displayName??null))return false;
- write('session:user',{...current,role,name,displayName});
+ write('session:user',{...current,role,name,displayName,email});
  return true;
 }

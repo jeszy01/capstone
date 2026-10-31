@@ -13,7 +13,8 @@ import {numberValue,peso,read,write} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
 import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,isThirteenthMonthRun,passkeyMessage,releaseToEss,runLabel,runStatus,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
-import {processRun,submitBlocked} from './computeRun';
+import {calcRow,processRun,submitBlocked} from './computeRun';
+import {loadRates} from '../settings/payrollSettings';
 import {loadReviewChecks,lockTimesheet} from './runChecks';
 import {cutoffSynced} from '../attendance/attendanceService';
 import type {RunCheck} from './runChecks';
@@ -23,10 +24,11 @@ import {RunStepper} from './RunProgress';
 import {PayrollRegister} from './PayrollRegister';
 
 // Amounts HR may type in while a run is Computed; each change needs a reason.
-type EditKey='otherDeductions'|'taxExemptBenefits'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
-const EDIT_LABELS:Record<EditKey,string>={otherDeductions:'Other Deductions',taxExemptBenefits:'Tax-exempt benefits',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
+type EditKey='otherDeductions'|'priorEmployerTaxableCompensation'|'priorEmployerBenefitsPaid'|'priorEmployerWithheld'|'priorEmployerPayrollPeriods';
+const EDIT_LABELS:Record<EditKey,string>={otherDeductions:'Other Deductions',priorEmployerTaxableCompensation:'Prior-employer taxable YTD',priorEmployerBenefitsPaid:'Prior-employer benefits YTD',priorEmployerWithheld:'Prior-employer tax withheld',priorEmployerPayrollPeriods:'Prior-employer payroll periods'};
 const PRIOR_KEYS:EditKey[]=['priorEmployerTaxableCompensation','priorEmployerBenefitsPaid','priorEmployerWithheld','priorEmployerPayrollPeriods'];
-const EDIT_KEYS:EditKey[]=['otherDeductions','taxExemptBenefits',...PRIOR_KEYS];
+// Tax-exempt amounts are not typed in: an exemption comes from a de minimis allowance or the 13th month and benefits.
+const EDIT_KEYS:EditKey[]=['otherDeductions',...PRIOR_KEYS];
 const sameInput=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 // The amounts as computed, before any hand-typed change.
 const originalInput=(row:RunRow):PayrollInput=>({...row.input,...Object.fromEntries((row.manualAdjustments??[]).map(change=>[change.field,change.original]))});
@@ -114,7 +116,8 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   const next=rows.map(row=>{
    const manualAdjustments=changes.filter(change=>change.empId===row.input.empId).map(({field,label,original,amount,empId})=>({field,label,original,amount,reason:(reasons[reasonKey(empId,field)]??'').trim()}));
    const {manualAdjustments:_previous,...rest}=row;
-   return {...rest,...(manualAdjustments.length?{manualAdjustments}:{})};
+   // Amounts typed in change the pay, so the row's tax and net pay are computed again before saving.
+   return {...rest,result:calcRow(row,run,loadRates()),...(manualAdjustments.length?{manualAdjustments}:{})};
   });
   await updateRun(run.id,item=>{expectStatus(item,'Computed');return {...item,rows:next,totals:totalsOf(next)}});
   if(changes.length)recordAudit({action:'Changed payroll amounts by hand',module:'Payroll',description:`${title}: ${changes.map(change=>`${change.name} ${change.label} ${peso(change.original)} → ${peso(change.amount)} (${(reasons[reasonKey(change.empId,change.field)]??'').trim()})`).join('; ')}.`});

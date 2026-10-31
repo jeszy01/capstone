@@ -6,11 +6,15 @@ import {can} from '../features/auth/permissions';
 import {employeeService} from '../features/employees/employeeService';
 import {employeePositionOptions} from '../features/employees/positionOptions';
 import {loadThirteenthMonthRules} from '../features/payroll/thirteenthMonth';
+import {loadMinimumWages,wageOrderOn} from '../features/payroll/minimumWage';
+import {DE_MINIMIS_LABELS,deMinimisCeilingLabel,deMinimisRuleFor} from '../features/payroll/deMinimis';
+import type {DeMinimisCategory} from '../features/payroll/deMinimis';
 import {ContributionsSection,HolidaySection,PayScheduleSection,ThirteenthMonthSection,WithholdingSection,WorkingTimeSection} from '../features/settings/SettingsEditors';
 import type {SectionProps} from '../features/settings/SettingsEditors';
 import {DEFAULT_WITHHOLDING_RULES,loadWithholdingRules,ruleForDate} from '../features/payroll/withholdingTax';
 import {loadRates,loadRunOptions,loadTimeSettings} from '../features/settings/payrollSettings';
 import {peso} from '../utils/storage';
+import {formatDate} from '../utils/date';
 
 // Read-only reference of the payroll rules. Every value is read from the saved settings, so it shows what payroll uses.
 type Table={title:string;columns:string[];rows:string[][]};
@@ -29,7 +33,7 @@ const clock=(time:string)=>{const[h,m]=time.split(':').map(Number);const hour=h%
 const today=()=>new Date().toISOString().slice(0,10);
 
 function tables(section:SectionId):Table[]{
- const rates=loadRates(),time=loadTimeSettings();
+ const rates=loadRates(),time=loadTimeSettings(),wage=wageOrderOn(today());
  // Hours past 8 on a premium day add 30% of the day's rate (Labor Code Art. 87).
  const over=(first:number)=>pct(first*1.3);
  if(section==='time')return [
@@ -38,8 +42,9 @@ function tables(section:SectionId):Table[]{
    ['Meal break','60 minutes','Art. 85'],
    ['Daily rate divisor',`${rates.daysPerMonth} days per month`,'DOLE rate factors'],
    ['Night differential',`+${rates.ndRate}% (${clock(time.ndStart)} to ${clock(time.ndEnd)})`,'Art. 86'],
-   ['NCR minimum wage',rates.statutoryMinimumWage?`${whole(rates.statutoryMinimumWage)} per day`:'Not set','Wage Order NCR-28'],
+   ['Minimum wage',wage?`${peso(wage.dailyRate)} per day`:'Not set',wage?.wageOrder??'Wage order'],
   ]},
+  {title:'Minimum wage orders',columns:['Effective from','Daily rate','Wage order'],rows:loadMinimumWages().map(order=>[formatDate(order.effectiveFrom),peso(order.dailyRate),order.wageOrder])},
   {title:'Overtime rates',columns:['Day type','First 8 hours','Over 8 hours','Basis'],rows:[
    ['Ordinary day','100%',pct(rates.otMultiplier),'Art. 87'],
    ['Rest day or special day',pct(rates.holidaySpecialWorked),pct(rates.otRestMultiplier),'Art. 93'],
@@ -76,12 +81,43 @@ function tables(section:SectionId):Table[]{
  ]}];
  if(section==='withholding'){
   const rule=ruleForDate(today(),loadWithholdingRules()),basis=rule.id===DEFAULT_WITHHOLDING_RULES.id?'RR 11-2018':rule.source;
+  const deMinimis=deMinimisRuleFor(today()),leaveRegular=rule.paidLeaveAs==='regular';
+  const contributions=rates.payPeriodsPerMonth===2&&!rates.contributionsEveryCutoff?'deducted in the 2nd cutoff of the month':'split over the cutoffs';
+  // How PBMS computes withholding, in the order of the computation: the baseline the accountant reviews. Rows marked
+  // "accountant" are company choices still to be confirmed.
   return [
-   {title:'Tax setting',columns:SETTING,rows:[
-    ['Tax column in Payroll Register',loadRunOptions().showTax?'On':'Off','Company workflow'],
-    ['13th month tax-free up to',whole(rule.annualBenefitsExemption),'RA 10963'],
+   {title:'1. Pay classification',columns:SETTING,rows:[
+    ['Tax year','By pay date: a payroll paid in January counts in the new year','RR 11-2018 Sec. 2.79(B)(1)'],
+    ['Regular pay',`Basic salary and taxable allowances${leaveRegular?', paid leave':''}`,'RR 11-2018 Sec. 2.79(B)(3)'],
+    ['Supplementary pay',`Overtime, night differential, holiday pay, taxable bonuses${leaveRegular?'':', paid leave'}`,'RR 11-2018 Sec. 2.79(B)(3); holiday pay and leave: accountant'],
+    ['Bonuses','By tax type: Christmas bonus, productivity incentive, loyalty award, gift or similar benefit count toward the 13th month exemption; commissions and other bonuses are taxable','RR 11-2018 Sec. 2.78.1(B)(11)'],
+   ]},
+   {title:'2. Exemptions',columns:SETTING,rows:[
+    ['Minimum wage earner',`Daily rate at or below the minimum wage (${wage?wage.wageOrder:'not set'}): minimum wage, holiday pay, overtime, night differential and paid leave are tax-free`,'RR 11-2018 Sec. 2.78.1(B)(13); paid leave: accountant'],
+    ['13th month and other benefits',`Tax-free up to ${whole(rule.annualBenefitsExemption)} a year; the excess is taxed at the rate of the latest regular pay bracket`,'RA 10963; RR 11-2018 Sec. 2.78.1(B)(11)'],
+    ['De minimis',`${(Object.keys(DE_MINIMIS_LABELS) as DeMinimisCategory[]).map(category=>`${DE_MINIMIS_LABELS[category]} ${deMinimisCeilingLabel(category,today())}`).join('; ')}; monetized leave up to ${deMinimis.monetizedLeaveDays} days a year. Only for allowance types set as de minimis; each limit counts per month or per year, and the excess counts as other benefits`,deMinimis.source],
+    ['SSS, PhilHealth, Pag-IBIG',`Employee shares are not taxed, ${contributions}`,'RR 11-2018 Sec. 2.78.1(B)(12)'],
+   ]},
+   {title:'3. Taxable pay',columns:SETTING,rows:[
+    ['Taxable pay','Pay less non-taxable pay and employee contributions','RR 11-2018 Sec. 2.79(B)(3)'],
+    ['Rounding','To the centavo each cutoff','Accountant'],
+   ]},
+   {title:'4. Tax bracket and method',columns:SETTING,rows:[
+    ['Tax table',`Version from ${formatDate(rule.effectiveFrom)}`,basis],
+    ['Tax bracket','From regular pay less contributions; its rate applies to all taxable pay of the cutoff','RR 11-2018 Sec. 2.79(B)(3)'],
+    ['Cumulative average','When regular pay is below the first bracket and supplementary pay was paid this year, when supplementary pay is at least the regular pay, or for a new hire with a previous employer. It stays for the rest of the year','RR 11-2018 Sec. 2.79(B)(5)(a)'],
+    ['Tax history','Approved payrolls, each counted once. A payroll waits while an earlier one is not approved','Company workflow'],
    ]},
    {title:'Monthly tax table',columns:['Monthly pay over','Base tax','Plus rate on excess','Basis'],rows:rule.tables.monthly.map(row=>[whole(row.over),row.base?peso(row.base):'₱0',`${row.rate}%`,basis])},
+   {title:'5. Year-end adjustment',columns:SETTING,rows:[
+    ['Year-end adjustment','In the last regular payroll paid in the year: annual tax less tax withheld','RR 11-2018 Sec. 2.79(B)(5)(b)'],
+    ['Employee who left','Annualized in the last pay','RR 11-2018 Sec. 2.79(B)(5)(b)'],
+    ['Over-withheld tax','Refunded in the year-end payroll or the last pay','RR 11-2018 Sec. 2.79(B)(5)(b)'],
+    ['Tax owed above the last pay','Withheld up to the pay left; the company pays the rest','RR 11-2018 Sec. 2.79(B)(5)(b)'],
+   ]},
+   {title:'Payroll Register',columns:SETTING,rows:[
+    ['Tax column in Payroll Register',loadRunOptions().showTax?'On':'Off','Company workflow'],
+   ]},
   ];
  }
  const rules=loadThirteenthMonthRules(),months=rules.minimumServiceMonths;
@@ -162,7 +198,7 @@ export default function PayrollSettings(){
       <h2 className="m-0 mb-4 text-[17px] font-semibold text-gray-900">{table.title}</h2>
       <div className="overflow-x-auto rounded-xl border border-gray-200"><table className="w-full min-w-[520px] text-left text-[13px]">
        <thead><tr className="border-b bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">{table.columns.map(column=><th key={column} className="px-4 py-3">{column}</th>)}</tr></thead>
-       <tbody>{table.rows.map((row,index)=><tr key={index} className="border-b border-gray-100 last:border-0">{row.map((cell,i)=><td key={i} className={`px-4 py-3 ${i===0?'font-medium text-gray-800':i===row.length-1?'text-[12px] text-gray-500':'text-gray-700'}`}>{cell}</td>)}</tr>)}</tbody>
+       <tbody>{table.rows.map((row,index)=><tr key={index} className="border-b border-gray-100 last:border-0">{row.map((cell,i)=><td key={i} className={`px-4 py-3 ${i===0?'font-medium text-gray-800':i===row.length-1?'min-w-[150px] !whitespace-normal text-[12px] text-gray-500':'min-w-[220px] !whitespace-normal text-gray-700'}`}>{cell}</td>)}</tr>)}</tbody>
       </table></div>
      </Card>)}
     </>}

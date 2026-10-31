@@ -15,9 +15,10 @@ const blank:PayrollInput={empId:'EMP-1',name:'Test',dailyRate:1000,daysWorked:11
 
 describe('allowances',()=>{
  it('splits cutoff allowance pay by each allowance taxable choice',()=>{
-  const items=[allowance({amount:2500,taxable:false}),allowance({amount:400,allowanceType:'Transportation',frequency:'Per Cutoff'}),allowance({amount:999,status:'Inactive'}),allowance({amount:999,effectiveDate:'2099-01-01'})];
+  // Rice Allowance is the allowance policy's rice type (de minimis); Transportation is marked taxable.
+  const items=[allowance({amount:2500,taxable:false,allowanceType:'Rice Allowance'}),allowance({amount:400,allowanceType:'Transportation',frequency:'Per Cutoff'}),allowance({amount:999,status:'Inactive'}),allowance({amount:999,effectiveDate:'2099-01-01'})];
   const pay=allowancePay(activeAllowances(items,['e1'],'2026-10-15'),2,'2026-10-15');
-  expect(pay).toEqual({exempt:1250,taxable:400,otherBenefits:0});
+  expect(pay).toMatchObject({exempt:1250,taxable:400,otherBenefits:0});
  });
  it('pays exempt allowances and non-taxable bonuses without taxing them as regular pay',()=>{
   const base=calculatePayroll(blank,DEFAULT_RATES,[],{periodStart:'2026-10-01',periodEnd:'2026-10-15',rules:[rule]});

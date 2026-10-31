@@ -64,6 +64,10 @@ export function buildReviewChecks(run:PayrollRun,rows:RunRow[],data:CheckData):R
  }):[];
  const payouts=rows.flatMap(row=>{const details=data.payoutFor(row.input.empId);const missing=details?missingPayout(details):'payout details';return missing?[`${row.input.name}: no ${missing}`]:[]});
  const negative=rows.filter(row=>row.result.net<0).map(row=>`${row.input.name}: ${peso(row.result.net)}`);
+ // Tax the pay cannot cover; allowances taxed because their type has no tax treatment; bonuses without a tax type.
+ const uncovered=rows.filter(row=>row.result.taxBreakdown?.taxNotWithheld).map(row=>`${row.input.name}: ${peso(row.result.taxBreakdown!.taxNotWithheld!)} ${row.result.taxBreakdown!.employerPaysTax?'paid by the company':'withheld in later payrolls'}`);
+ const allowances=rows.filter(row=>row.unclassifiedAllowances?.length).map(row=>`${row.input.name}: ${row.unclassifiedAllowances!.join(', ')}`);
+ const bonuses=rows.filter(row=>row.untypedBonuses?.length).map(row=>`${row.input.name}: ${row.untypedBonuses!.join(', ')}`);
  const previous=regular?data.runs.filter(item=>item.id!==run.id&&!isThirteenthMonthRun(item)&&isApprovedRun(item)&&item.to<run.from).sort((a,b)=>b.to.localeCompare(a.to))[0]:undefined;
  const bigChanges=previous?rows.flatMap(row=>{
   const before=previous.rows.find(item=>item.input.empId===row.input.empId)?.result.net;
@@ -76,6 +80,9 @@ export function buildReviewChecks(run:PayrollRun,rows:RunRow[],data:CheckData):R
   {id:'attendance',title:'Missing or incomplete attendance (these days are not paid)',items:attendance},
   {id:'payout',title:'Missing payout details',items:payouts},
   {id:'negative',title:'Negative net pay',items:negative},
+  {id:'tax',title:'Tax the pay cannot cover',items:uncovered},
+  {id:'allowances',title:'Allowances taxed: set their tax treatment in Allowances',items:allowances},
+  {id:'bonuses',title:'Bonuses without a tax type (not taxed): choose one in Awards',items:bonuses},
   {id:'change',title:`Net pay changed by ${Math.round(BIG_CHANGE*100)}% or more since the last run${previous?` (${formatDate(previous.to)})`:''}`,items:bigChanges},
  ].filter(check=>check.items.length);
 }

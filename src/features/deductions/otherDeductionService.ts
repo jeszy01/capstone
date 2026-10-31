@@ -15,3 +15,5 @@ const round=(value:number)=>Math.round((value+Number.EPSILON)*100)/100;
 export const appliesToCutoff=(item:OtherDeduction,from:string,to:string)=>item.status==='Active'&&item.startDate<=to&&(!item.endDate||item.endDate>=from);
 /** The other authorized deductions for one employee in a payroll cutoff (the register's Other Deductions column). */
 export const otherDeductionsForCutoff=(items:OtherDeduction[],employeeId:string,from:string,to:string)=>round(items.filter(item=>item.employeeId===employeeId&&appliesToCutoff(item,from,to)).reduce((sum,item)=>sum+item.amountPerCutoff,0));
+/** The same deductions one by one, for the payslip: the deduction type, or the description for type Other. */
+export const otherDeductionItemsForCutoff=(items:OtherDeduction[],employeeId:string,from:string,to:string)=>items.filter(item=>item.employeeId===employeeId&&appliesToCutoff(item,from,to)&&item.amountPerCutoff).map(item=>({label:item.deductionType==='Other'?item.description.trim()||'Other':item.deductionType,amount:round(item.amountPerCutoff)}));

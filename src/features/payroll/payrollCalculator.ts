@@ -7,8 +7,11 @@ import {deMinimisRuleFor} from './deMinimis';
 const round=(v:number)=>Math.round((v+Number.EPSILON)*100)/100;
 const clamp=(v:number,lo:number,hi:number)=>Math.min(hi,Math.max(lo,v));
 
-/** benefitOnly: a 13th month or other-benefits payment made apart from a regular payroll period (a 13th month run). */
-export interface PayrollTaxContext{periodStart?:string;periodEnd?:string;period?:PayrollPeriod;priorYear?:AnnualTaxHistory;finalPeriod?:boolean;rules?:WithholdingTaxRuleSet[];benefitOnly?:boolean}
+/**
+ * benefitOnly: a 13th month or other-benefits payment made apart from a regular payroll period (a 13th month run).
+ * minimumWage: the daily minimum wage of the cutoff's wage order (minimumWageFor); without it, the rates' single rate.
+ */
+export interface PayrollTaxContext{periodStart?:string;periodEnd?:string;period?:PayrollPeriod;priorYear?:AnnualTaxHistory;finalPeriod?:boolean;rules?:WithholdingTaxRuleSet[];benefitOnly?:boolean;minimumWage?:number}
 export function computeTax(monthlyTaxable:number,table:Array<{over:number;base:number;rate:number}>):number{
  const b=[...table].sort((a,c)=>c.over-a.over).find(x=>monthlyTaxable>=x.over);
  return b?round(b.base+b.rate/100*(monthlyTaxable-b.over)):0;
@@ -69,10 +72,10 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const pagibig=has?round(Math.min(monthly,R.pagibigMax)*pagibigEmployeeRate(monthly,R)/100*share):0;
  const periodStart=taxContext.periodStart??new Date().toISOString().slice(0,10),periodEnd=taxContext.periodEnd??periodStart;
  const period=taxContext.period??(taxContext.periodStart||taxContext.periodEnd?detectPayrollPeriod(periodStart,periodEnd,R.payPeriodsPerMonth):(R.payPeriodsPerMonth===1?'monthly':'semi-monthly'));
- // A minimum wage earner (daily rate at or below the statutory minimum wage set in Payroll Settings) is exempt on the
+ // A minimum wage earner (daily rate at or below the minimum wage of the wage order in Payroll Settings) is exempt on the
  // statutory minimum wage, holiday pay, overtime and night differential (NIRC Sec. 24(A)(2), RR 11-2018); paid leave is
  // treated as part of the minimum wage. Taxable allowances, bonuses and benefits above ₱90,000 stay taxable.
- const minimumWage=numberValue(R.statutoryMinimumWage),mwe=minimumWage>0&&rate>0&&rate<=minimumWage;
+ const minimumWage=taxContext.minimumWage??numberValue(R.statutoryMinimumWage),mwe=minimumWage>0&&rate>0&&rate<=minimumWage;
  const earnedBasicPay=Math.max(0,basic-absences-late-undertime);
  // Paid leave is classified per the withholding rule version in Payroll Settings (supplementary unless set to regular).
  const leaveIsRegular=ruleForDate(periodEnd,taxContext.rules??loadWithholdingRules()).paidLeaveAs==='regular';
@@ -85,8 +88,13 @@ export function calculatePayroll(r:PayrollInput,R:PayrollRates,_brackets:Array<{
  const otherBenefits=round(otherBenefitAllowances+monetizedLeave-monetizedLeaveExempt);
  const computedTax=calculateWithholdingTax({regularCompensation:regular,supplementaryCompensation:supplementary,thirteenthMonthAndOtherBenefits:round(thirteenth+otherBenefits),taxExemptBenefits:round(taxExempt+monetizedLeaveExempt),mandatoryContributions:sss+phil+pagibig,period,periodStart,periodEnd,priorYear:taxContext.priorYear,finalPeriod:taxContext.finalPeriod,rules:taxContext.rules,benefitOnly:taxContext.benefitOnly});
  const withDeMinimis={...computedTax,deMinimisExempt:round(exemptAllowances+monetizedLeaveExempt),monetizedLeaveExempt};
- const taxBreakdown=mwe?{...withDeMinimis,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:withDeMinimis;
- const tax=taxBreakdown.withholdingTax;
+ const computed=mwe?{...withDeMinimis,minimumWageEarner:true,mweExempt:{basic:round(earnedBasicPay),holidayPay:round(numberValue(r.holidayPay)),overtime,nightDifferential,leavePay}}:withDeMinimis;
+ // Tax is withheld only from the pay left after time not paid and contributions; it comes before loans and other
+ // deductions. Any more is not withheld: on the year-end or final pay the employer pays it (RR 11-2018 Sec.
+ // 2.79(B)(5)(b), Step 4), otherwise later payrolls of the year withhold it.
+ const payForTax=round(Math.max(0,gross-absences-late-undertime-sss-phil-pagibig));
+ const tax=computed.withholdingTax>payForTax?payForTax:computed.withholdingTax;
+ const taxBreakdown=tax===computed.withholdingTax?computed:{...computed,taxNotWithheld:round(computed.withholdingTax-tax),...(taxContext.finalPeriod?{employerPaysTax:true}:{})};
  const loans=round(numberValue(r.sssLoan)+numberValue(r.pagibigLoan)+numberValue(r.companyLoan)+numberValue(r.cashAdvance)+numberValue(r.govSssLoan)+numberValue(r.govPagibigLoan));
  const deductions=round(absences+late+undertime+sss+phil+pagibig+tax+loans+numberValue(r.otherDeductions));
  const net=round(gross-deductions);

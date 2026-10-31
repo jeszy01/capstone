@@ -28,7 +28,7 @@ function payYear(monthly:number,payments:Payment[],extra:Partial<PayrollInput>={
  const add=(id:string,from:string,to:string,input:Partial<PayrollInput>,thirteenth:boolean)=>{
   const row={input:{...BLANK_PAYROLL_INPUT,empId:'E',name:'E',...input}};
   const run={id,runType:thirteenth?'thirteenth-month' as const:'regular' as const,from,to};
-  const final=isFinalTaxRow(run,{});
+  const final=isFinalTaxRow(run,{},DEFAULT_RATES);
   const history=yearToDateHistory(runs,row,{year:'2026',from,to,final},DEFAULT_RATES,rules);
   const result=calculatePayroll(row.input,DEFAULT_RATES,[],{periodStart:from,periodEnd:to,priorYear:history,finalPeriod:final,rules,...(thirteenth?{period:'semi-monthly' as const,benefitOnly:true}:{})});
   taxes[id]=result.tax;
@@ -90,7 +90,7 @@ describe('13th month runs in the year-to-date history',()=>{
  it('does not switch to the cumulative-average method because of a 13th month run approved before the fix',()=>{
   // A saved 13th month row from before the fix carries the "Cumulative average" status; it no longer decides the method.
   const saved={id:'old',runType:'thirteenth-month',from:'2026-05-31',to:'2026-05-31',status:'Approved',totals:{gross:0,deductions:0,net:0},preparedBy:'',createdAt:'',
-   rows:[{position:'',rest:0,hmo:0,input:{...BLANK_PAYROLL_INPUT,empId:'E',name:'E',thirteenthMonthAndOtherBenefits:20000},result:calculatePayroll({...BLANK_PAYROLL_INPUT,empId:'E',name:'E',thirteenthMonthAndOtherBenefits:20000},DEFAULT_RATES,[],{periodStart:'2026-05-31',periodEnd:'2026-05-31',period:'semi-monthly',rules})}]} as PayrollRun;
+   rows:[{position:'',rest:0,hmo:0,input:{...BLANK_PAYROLL_INPUT,empId:'E',name:'E',thirteenthMonthAndOtherBenefits:100000},result:calculatePayroll({...BLANK_PAYROLL_INPUT,empId:'E',name:'E',thirteenthMonthAndOtherBenefits:100000},DEFAULT_RATES,[],{periodStart:'2026-05-31',periodEnd:'2026-05-31',period:'semi-monthly',rules})}]} as PayrollRun;
   expect(saved.rows[0].result.taxBreakdown?.status).toBe('Cumulative average');
   const history=yearToDateHistory([saved],{input:{...BLANK_PAYROLL_INPUT,empId:'E',name:'E'}},{year:'2026',from:'2026-06-01',to:'2026-06-15',final:false},DEFAULT_RATES,rules);
   expect(history.cumulativeAverage).toBeUndefined();

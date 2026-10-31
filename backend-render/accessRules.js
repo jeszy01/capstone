@@ -28,9 +28,11 @@ export const isSettingsKey = key => (key.startsWith('payroll:') && !PAYROLL_DATA
 // The settings values payroll needs for its calculations. Roles without Payroll Settings access read only these,
 // read-only, through GET /app-data?scope=payroll-rules.
 export const PAYROLL_RULE_KEYS = ['payroll:rates', 'payroll:time-settings', 'payroll:holidays', 'payroll:withholding-tax-rules', 'payroll:tax-brackets',
-  'payroll:thirteenth-month-rules', 'compensation:thirteenth-month-rules', 'payroll:run-options'];
+  'payroll:thirteenth-month-rules', 'compensation:thirteenth-month-rules', 'payroll:run-options', 'payroll:minimum-wages'];
 export const readableKey = (user, key) => !key.startsWith('audit:') && (key !== 'admin:users' || can(user.role, 'users.manage'))
-  && (!isSettingsKey(key) || can(user.role, 'settings.view'));
+  && (!isSettingsKey(key) || can(user.role, 'settings.view'))
+  // Employees' claims and receipts: only roles that review or pay claims.
+  && (!(key.startsWith('claims:') || key.startsWith('reimbursement:')) || can(user.role, 'claims.view'));
 // Key order differs between browsers, so values are compared with sorted keys.
 const stable = value => JSON.stringify(value, (_k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
 const without = (row, keys) => { const copy = { ...row }; for (const k of keys) delete copy[k]; return copy; };
@@ -244,16 +246,18 @@ function claimEvents(user, before, after) {
     need(user, 'claims.encode');
     const label = `${claim.claimNumber || id} (${pesoText(claim.amount)})`;
     const was = claimApproval(old), now = claimApproval(claim);
+    // user.employeeIds: the employee records with the signed-in user's email. Nobody decides or pays their own claim.
+    const own = Array.isArray(user.employeeIds) && user.employeeIds.includes(String(claim.employeeId));
     if (was !== now) {
       need(user, 'claims.approve');
+      if (own) throw forbid('This is your own claim. Another reviewer must approve, return or reject it.');
+      // A returned claim waits for the employee to correct it and resubmit it from ESS; meanwhile it can only be rejected.
+      if (was === 'Returned' && now !== 'Rejected') throw forbid('This claim was returned to the employee. It can be approved after they correct and resubmit it from ESS.');
       if (!['Pending Approval', 'Returned'].includes(was) || !CLAIM_DECISIONS.includes(now)) throw forbid('This claim status change is not allowed.');
       events.push([`claim.${now.toLowerCase()}`, 'Claims', id, `${now} claim ${label}.`]);
     }
-    if (paid(claim)) {
-      need(user, 'claims.pay');
-      if (now !== 'Approved') throw forbid('Only approved claims can be paid.');
-      events.push(['claim.paid', 'Reimbursement', id, `Marked claim ${label} as Paid.`]);
-    }
+    // A reimbursement is recorded with POST /claims/:id/payment (method, reference, proof), not in a browser save.
+    if (old.paymentStatus !== claim.paymentStatus) throw forbid('Record the reimbursement with Process on the Reimbursement page.');
   }
   return events;
 }
@@ -321,7 +325,7 @@ function attendanceEvents(user, before, after, existed) {
 }
 const SETTINGS_LABELS = { 'payroll:rates': 'Payroll rates', 'payroll:time-settings': 'Working time', 'payroll:holidays': 'Holiday calendar',
   'payroll:tax-brackets': 'Tax brackets', 'payroll:withholding-tax-rules': 'Withholding tax', 'payroll:thirteenth-month-rules': '13th month rules',
-  'compensation:thirteenth-month-rules': '13th month rules', 'payroll:run-options': 'Payroll run options' };
+  'compensation:thirteenth-month-rules': '13th month rules', 'payroll:run-options': 'Payroll run options', 'payroll:minimum-wages': 'Minimum wage orders' };
 const humanize = key => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
 const settingText = v => v === undefined || v === null ? 'none' : Array.isArray(v) ? `${v.length} entries` : typeof v === 'object' ? 'updated' : String(v);
 function describeChanges(before, after) {
@@ -373,6 +377,8 @@ export async function appDataEvents(user, key, before, after, existed) {
   if (isSettingsKey(key)) return settingsEvents(user, key, before, after);
   if (key.startsWith('settings:')) return systemSettingsEvents(user, key, before, after);
   if (key === 'claims:records') return claimEvents(user, before, after);
+  // Reimbursement batches change only through their server actions (create, mark paid, cancel).
+  if (key === 'reimbursement:batches') { if (stable(before) === stable(after)) return []; throw forbid('Reimbursement batches change only with Create batch, Mark paid and Cancel.'); }
   if (key.startsWith('claims:') || key.startsWith('reimbursement:')) { need(user, 'claims.encode'); return []; }
   // HR2 attendance arrives only through POST /integrations/hr2/attendance; nobody changes it from a browser.
   if (key === 'attendance:hr2') throw forbid('HR2 attendance is received from HR2 only and cannot be changed here.');

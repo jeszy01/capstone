@@ -3,7 +3,7 @@
 // Entry module; they are not the official BIR file formats.
 import type {Employee} from '../../types/domain';
 import {numberValue} from '../../utils/storage';
-import {isApprovedRun} from './payrollRuns';
+import {isApprovedRun,payDateOf,runStatus,taxYearOf} from './payrollRuns';
 import type {PayrollRun,RunRow} from './payrollRuns';
 import {DEFAULT_WITHHOLDING_RULES,ruleForDate,taxFromTable} from './withholdingTax';
 import type {WithholdingTaxRuleSet} from './withholdingTax';
@@ -32,18 +32,26 @@ export function rowTotals(row:RunRow):CompensationTotals{
   benefitsExempt:b?.benefitExemptionApplied??0,deMinimis,contributions:b?.mandatoryContributions??0,otherExempt,
  };
  const nonTaxable=Object.values(lines).reduce((sum,value)=>sum+value,0);
- return {...lines,compensation:r2(r.gross-(r.absences??0)-(r.late??0)-(r.undertime??0)),nonTaxable:r2(nonTaxable),taxable:r2(b?.taxableCompensation??0),withheld:r2(r.tax)};
+ // Tax the employer pays for an employee whose last pay could not cover it is remitted with the tax withheld.
+ const employerPaid=b?.employerPaysTax?b.taxNotWithheld??0:0;
+ return {...lines,compensation:r2(r.gross-(r.absences??0)-(r.late??0)-(r.undertime??0)),nonTaxable:r2(nonTaxable),taxable:r2(b?.taxableCompensation??0),withheld:r2(r.tax+employerPaid)};
 }
 
-const approvedIn=(runs:PayrollRun[],inPeriod:(run:PayrollRun)=>boolean)=>runs.filter(run=>isApprovedRun(run)&&inPeriod(run));
-/** The month a run's compensation is paid in: its pay date, or the cutoff's last day. */
-export const remittanceMonth=(run:PayrollRun)=>(run.payDate||run.to).slice(0,7);
+/** Approved runs in the period, each once (a run saved twice is not counted twice). */
+const approvedIn=(runs:PayrollRun[],inPeriod:(run:PayrollRun)=>boolean)=>{const seen=new Set<string>();return runs.filter(run=>{if(seen.has(run.id)||!isApprovedRun(run)||!inPeriod(run))return false;seen.add(run.id);return true})};
+/** Approved, but the payouts are not yet all recorded as paid. */
+const notYetPaid=(run:PayrollRun)=>!['Paid','Closed'].includes(runStatus(run));
+/** The month a run's compensation is paid in: its pay date (for a run saved without one, its cutoff's pay date). */
+export const remittanceMonth=(run:PayrollRun)=>payDateOf(run).slice(0,7);
 
-/** BIR Form 1601-C for one month (YYYY-MM): compensation paid in the month and tax withheld. */
+/**
+ * BIR Form 1601-C for one month (YYYY-MM): compensation paid in the month and tax withheld. unpaid: runs counted that
+ * are approved but not yet recorded as paid; withholding applies to compensation paid (RR 2-98 Sec. 2.83.6).
+ */
 export function monthlyRemittance(runs:PayrollRun[],month:string){
  const included=approvedIn(runs,run=>remittanceMonth(run)===month);
  const employees=new Set(included.flatMap(run=>run.rows.map(row=>row.input.empId)));
- return {month,runs:included.length,employees:employees.size,totals:included.flatMap(run=>run.rows).map(rowTotals).reduce(add,ZERO_TOTALS)};
+ return {month,runs:included.length,unpaid:included.filter(notYetPaid).length,employees:employees.size,totals:included.flatMap(run=>run.rows).map(rowTotals).reduce(add,ZERO_TOTALS)};
 }
 
 export interface EmployeeYear{
@@ -53,12 +61,16 @@ export interface EmployeeYear{
  annualTaxable:number;taxDue:number;totalWithheld:number;
  /** Tax due less all tax withheld: positive is still owed, negative was over-withheld. */
  balance:number;
+ /** Total compensation less non-taxable and taxable compensation: 0 when the 2316 lines add up. */
+ difference:number;
+ /** Approved runs of the year not yet recorded as paid. */
+ unpaidRuns:number;
 }
-/** BIR Form 2316 figures for each employee paid in the year, and the alphalist rows. */
+/** BIR Form 2316 figures for each employee paid in the year (by pay date, taxYearOf), and the alphalist rows. */
 export function employeeYears(runs:PayrollRun[],employees:Employee[],year:string,rules:WithholdingTaxRuleSet[]=[DEFAULT_WITHHOLDING_RULES]):EmployeeYear[]{
- const included=approvedIn(runs,run=>run.to.slice(0,4)===year);
- const byEmployee=new Map<string,RunRow[]>();
- for(const run of included)for(const row of run.rows)byEmployee.set(row.input.empId,[...(byEmployee.get(row.input.empId)??[]),row]);
+ const included=approvedIn(runs,run=>taxYearOf(run)===year);
+ const byEmployee=new Map<string,RunRow[]>(),unpaid=new Map<string,number>();
+ for(const run of included)for(const row of run.rows){byEmployee.set(row.input.empId,[...(byEmployee.get(row.input.empId)??[]),row]);if(notYetPaid(run))unpaid.set(row.input.empId,(unpaid.get(row.input.empId)??0)+1)}
  const annualTable=ruleForDate(`${year}-12-31`,rules).annualTable;
  return [...byEmployee.entries()].map(([employeeNo,rows])=>{
   const employee=employees.find(item=>item.employeeNo===employeeNo||item.id===employeeNo);
@@ -68,7 +80,7 @@ export function employeeYears(runs:PayrollRun[],employees:Employee[],year:string
   const annualTaxable=r2(present.taxable+previousTaxable);
   const taxDue=taxFromTable(annualTaxable,annualTable),totalWithheld=r2(present.withheld+previousWithheld);
   const separated=rows.some(row=>row.separated)||employee?.status==='Inactive'||employee?.employmentStatus==='Resigned';
-  return {employeeNo,name:employee?.name??rows[0].input.name,tin:employee?.tin??'',status:separated?'Separated' as const:'Active' as const,minimumWageEarner:rows.some(row=>row.result.taxBreakdown?.minimumWageEarner),present,previousTaxable,previousWithheld,annualTaxable,taxDue,totalWithheld,balance:r2(taxDue-totalWithheld)};
+  return {employeeNo,name:employee?.name??rows[0].input.name,tin:employee?.tin??'',status:separated?'Separated' as const:'Active' as const,minimumWageEarner:rows.some(row=>row.result.taxBreakdown?.minimumWageEarner),present,previousTaxable,previousWithheld,annualTaxable,taxDue,totalWithheld,balance:r2(taxDue-totalWithheld),difference:r2(present.compensation-present.nonTaxable-present.taxable),unpaidRuns:unpaid.get(employeeNo)??0};
  }).sort((a,b)=>a.name.localeCompare(b.name));
 }
 

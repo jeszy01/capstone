@@ -1,6 +1,6 @@
 import type {Employee} from '../../types/domain';
 import {numberValue,read,write} from '../../utils/storage';
-import {isApprovedRun,isThirteenthMonthRun} from './payrollRuns';
+import {isApprovedRun,isThirteenthMonthRun,taxYearOf} from './payrollRuns';
 import type {PayrollRun} from './payrollRuns';
 
 // 13th month pay = basic salary earned in the calendar year ÷ 12, less amounts already released that year.
@@ -33,11 +33,13 @@ export interface ThirteenthMonthLine{empId:string;name:string;position:string;ba
 
 /**
  * Basic salary earned comes from approved regular payroll runs of the year up to the release date, so unpaid
- * days are already excluded and partial-year or separated employees are pro-rated by what they earned.
+ * days are already excluded and partial-year or separated employees are pro-rated by what they earned. A run counts in
+ * the year it is paid (taxYearOf), so a cutoff spanning the new year (Dec 26 - Jan 9, paid Jan 15) counts once, in
+ * the new year; counting it by its start date left its pay out of every year's 13th month.
  */
 export function computeThirteenthMonth({runs,employees,rules,releaseDate}:{runs:PayrollRun[];employees:Employee[];rules:ThirteenthMonthRules;releaseDate:string}):ThirteenthMonthLine[]{
  const year=releaseDate.slice(0,4);
- const counted=runs.filter(run=>isApprovedRun(run)&&run.from.slice(0,4)===year&&run.to<=releaseDate);
+ const counted=runs.filter(run=>isApprovedRun(run)&&taxYearOf(run)===year&&run.to<=releaseDate);
  const managerial=new Set(rules.managerialPositions.map(item=>item.trim().toLowerCase()));
  const lines=new Map<string,ThirteenthMonthLine>();
  for(const run of counted)for(const row of run.rows){

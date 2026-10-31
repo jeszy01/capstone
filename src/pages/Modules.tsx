@@ -26,6 +26,10 @@ import {confirmWithPasskey} from '../features/auth/passkeyGate';
 import {can} from '../features/auth/permissions';
 import {probationOverdue} from '../features/employees/probation';
 import {OtherDeductions} from '../features/deductions/OtherDeductions';
+import {CutoffPicker} from '../features/deductions/CutoffPicker';
+import {cutoffOptions,defaultCutoff} from '../features/deductions/cutoffOptions';
+import {hr2SyncedThrough} from '../features/attendance/attendanceService';
+import {localToday} from '../components/common/tableUi';
 
 const today=()=>new Date().toISOString().slice(0,10);
 /** Deductions of the latest regular payroll run by type, largest first, with each type's share of the total. */
@@ -157,12 +161,20 @@ export function Deductions(){
  const tabs=[{id:'attendance',label:'Attendance Deductions',shortLabel:'Attendance',icon:Clock},{id:'statutory',label:'Statutory Contributions',shortLabel:'Statutory',icon:Landmark},{id:'hmo',label:'HMO',shortLabel:'HMO',icon:HeartPulse},{id:'tax',label:'Withholding Tax',shortLabel:'Tax',icon:Receipt},{id:'loans',label:'Loans & Cash Advances',shortLabel:'Loans',icon:HandCoins},{id:'other',label:'Other Authorized Deductions',shortLabel:'Other',icon:ListPlus}] as const;
  type DeductionsView=(typeof tabs)[number]['id'];
  // ?tab=loans&loans=government opens a subtab directly (the old Government Loans page redirects here).
- const[params]=useSearchParams();
+ const[params,setParams]=useSearchParams();
  const[loansView,setLoansView]=useState<LoansView>(params.get('loans')==='government'?'government':'employee');
- const[employees,setEmployees]=useState<Employee[]>([]),[records,setRecords]=useState<AttendanceRecord[]>([]),[range,setRange]=useState(cutoffRange),[q,setQ]=useState(''),[tab,setTab]=useState<DeductionsView>(()=>tabs.find(item=>item.id===params.get('tab'))?.id??'attendance'),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0),[page,setPage]=useState(1);
+ // The period is picked by cutoff (opening on the latest one with a payroll run) or by custom dates. ?from=&to= keeps it
+ // on reload and in shared links; every Deductions tab uses the same period.
  const[rates]=useState<PayrollRates>(loadRates);
- const[assignments]=useState<EmployeeCompensation[]>(()=>read<EmployeeCompensation[]>('compensation:employee-assignments',[]));
- const[grades]=useState(()=>read<{position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]));
+ const cutoffs=useMemo(()=>cutoffOptions(read<PayrollRun[]>(RUNS_KEY,[]),localToday(),rates),[rates]);
+ const linkedRange=isIsoDate(params.get('from')??'')&&isIsoDate(params.get('to')??'')&&params.get('from')!<=params.get('to')!?{from:params.get('from')!,to:params.get('to')!}:null;
+ const[customDates,setCustomDates]=useState(()=>Boolean(linkedRange&&!cutoffs.some(option=>option.from===linkedRange.from&&option.to===linkedRange.to)));
+ const[employees,setEmployees]=useState<Employee[]>([]),[records,setRecords]=useState<AttendanceRecord[]>([]),[range,setRange]=useState(()=>{const start=linkedRange??defaultCutoff(cutoffs);return start?{from:start.from,to:start.to}:cutoffRange()}),[q,setQ]=useState(''),[tab,setTab]=useState<DeductionsView>(()=>tabs.find(item=>item.id===params.get('tab'))?.id??'attendance'),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0),[page,setPage]=useState(1);
+ // Salary assignments and grades from Compensation, as payroll loads them, so late, undertime and contributions here
+ // use the same daily rate as the payroll and payslip. The saved copies show until the server answers.
+ const[assignments,setAssignments]=useState<EmployeeCompensation[]>(()=>read<EmployeeCompensation[]>('compensation:employee-assignments',[]));
+ const[grades,setGrades]=useState(()=>read<{code?:string;position?:string;fixedSalary:number;status?:string}[]>('compensation:salary-grades',[]));
+ useEffect(()=>{let mounted=true;compensationService.load().then(bundle=>{if(!mounted)return;setAssignments(bundle.assignments);setGrades(bundle.grades)}).catch(()=>undefined);return()=>{mounted=false}},[]);
  useEffect(()=>{let mounted=true;setLoading(true);setError('');employeeService.getAll().then(async employeeRows=>[employeeRows,await fetchAttendance({from:range.from,to:range.to},employeeRows)] as const).then(([employeeRows,attendanceRows])=>{if(!mounted)return;setEmployees(employeeRows);setRecords(attendanceRows)}).catch(cause=>{if(!mounted)return;setError(cause instanceof Error&&cause.message?cause.message:'Employee and attendance records could not be loaded.')} ).finally(()=>{if(mounted)setLoading(false)});return()=>{mounted=false}},[retry,range.from,range.to]);
  // HMO cutoff deductions come from HMO & Benefits enrollments and plans; saved HMO changes, returning to the window
  // and a periodic check refresh them without a reload.
@@ -182,7 +194,9 @@ export function Deductions(){
  const pageSize=10,pageCount=Math.max(1,Math.ceil(rows.length/pageSize)),pageRows=rows.slice((page-1)*pageSize,page*pageSize);
  const totals=rows.reduce((sum,row)=>({late:sum.late+row.late,undertime:sum.undertime+row.undertime,sss:sum.sss+row.sss,phil:sum.phil+row.phil,pagibig:sum.pagibig+row.pagibig}),{late:0,undertime:0,sss:0,phil:0,pagibig:0});
  // Date inputs give ISO values (YYYY-MM-DD); only complete dates are applied.
- const updateRange=(key:'from'|'to',value:string)=>{if(!isIsoDate(value))return;setRange(current=>({...current,[key]:value}));setPage(1)};
+ const selectRange=(next:{from:string;to:string})=>{setRange(next);setPage(1);const search=new URLSearchParams(params);search.set('from',next.from);search.set('to',next.to);setParams(search,{replace:true})};
+ // The last day HR2 has sent attendance for; later days of the period have no attendance yet.
+ const attendanceThrough=hr2SyncedThrough();
  const exportCsv=async()=>{
   const period=formatDateRange(range.from,range.to);
   if(!await confirmWithPasskey('export',`${tab==='attendance'?'Attendance Deductions':tab==='hmo'?'HMO':'Statutory Contributions'} CSV (${period})`))return;
@@ -198,12 +212,12 @@ export function Deductions(){
  return <div className="space-y-5"><PageHeader title="Deductions" description="Review every deduction for the selected period: attendance, statutory contributions, HMO, withholding tax, loans and other authorized deductions."/>
   <div className="hidden text-[13px] font-semibold text-gray-900 print:block">{tabs.find(item=>item.id===tab)?.label} · {formatDateRange(range.from,range.to)}</div>
   <section aria-label="Deduction filters and actions" className="grid gap-3 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm sm:grid-cols-2 xl:grid-cols-[minmax(145px,0.8fr)_minmax(145px,0.8fr)_minmax(220px,1.5fr)_auto_auto]">
-   <Field label="From"><TextInput aria-label="From date" type="date" value={range.from} onChange={event=>updateRange('from',event.target.value)}/></Field>
-   <Field label="To"><TextInput aria-label="To date" type="date" value={range.to} onChange={event=>updateRange('to',event.target.value)}/></Field>
+   <CutoffPicker options={cutoffs} value={range} custom={customDates} onChange={selectRange} onCustom={custom=>{setCustomDates(custom);if(!custom){const start=cutoffs.find(option=>option.from===range.from&&option.to===range.to)??defaultCutoff(cutoffs);if(start)selectRange({from:start.from,to:start.to})}}}/>
    <label className="block text-[12px] font-semibold text-gray-600">Employee search<div className="mt-1.5 flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10"><Search aria-hidden="true" size={16} className="shrink-0 text-blue-500"/><input aria-label="Search employee name or number" placeholder="Search employee..." value={q} onChange={event=>{setQ(event.target.value);setPage(1)}} className="min-w-0 flex-1 bg-transparent text-[13px] text-gray-900 outline-none placeholder:text-gray-400"/></div></label>
    {tab!=='tax'&&tab!=='loans'&&tab!=='other'&&<button type="button" className={`${ghost} self-end border-blue-100 text-gray-900 hover:border-blue-200 hover:bg-blue-50`} onClick={exportCsv}><Download aria-hidden="true" size={15}/>Export CSV</button>}
    <button type="button" className={`${ghost} self-end border-blue-100 text-gray-900 hover:border-blue-200 hover:bg-blue-50`} onClick={()=>window.print()}><Printer aria-hidden="true" size={15}/>Print</button>
   </section>
+  {tab==='attendance'&&(!attendanceThrough||range.to>attendanceThrough)&&<p role="status" className="m-0 text-[12px] text-amber-800">{attendanceThrough?`Attendance received through ${formatDate(attendanceThrough)}.`:'No attendance received from HR2 yet.'}</p>}
   <Tabs label="Deduction categories" value={tab} onChange={id=>{setTab(id);setPage(1)}} tabs={tabs} idPrefix="deductions-tab" panelId="deductions-panel"/>
   <section id="deductions-panel" role="tabpanel" aria-labelledby={`deductions-tab-${tab}`} className="min-w-0">
    {tab==='other'?<OtherDeductions employees={employees} from={range.from} to={range.to} query={q}/>:tab==='hmo'?<HmoDeductionsTable rows={hmoRows} from={range.from} to={range.to} loading={hmoLoading} error={hmoError} onRetry={()=>setHmoTick(value=>value+1)}/>:tab==='tax'?<WithholdingTaxReport from={range.from} to={range.to} query={q}/>:tab==='loans'?<div className="space-y-4"><Tabs label="Loan types" value={loansView} onChange={setLoansView} tabs={LOAN_VIEWS} className=""/>{loansView==='employee'?<LoansCashAdvances periodStart={range.from} periodEnd={range.to} query={q}/>:<GovernmentLoans periodStart={range.from} periodEnd={range.to} query={q}/>}</div>:loading?<Card><LoadingState>Loading employee and attendance records…</LoadingState></Card>:error?<ErrorAlert title="Deductions are unavailable." onRetry={()=>setRetry(value=>value+1)}>{error}</ErrorAlert>:<Card className="min-w-0 overflow-hidden border-blue-100 p-0">
