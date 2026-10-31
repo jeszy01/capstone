@@ -54,7 +54,7 @@ export function PayrollRuns({employees}:{employees:Employee[]}){
     <Link className={ghost} to={`/payroll?tab=payslip&run=${run.id}`}>Payslips</Link>
     {total>0&&sent===total?<StatusBadge status="Released"/>
      :canRelease&&(['Approved','Funded'].includes(status)?<Link className={button} to={open}>Export file</Link>
-      :status==='Exported'?<Link className={button} to={open}>{failed?'Fix failed payouts':'Attach bank result'}</Link>
+      :status==='Exported'?<Link className={button} to={failed?open:`/payroll/bank-result?run=${run.id}`}>{failed?'Fix failed payouts':'Attach bank result'}</Link>
       :releaseOpen(run)&&<button type="button" className={button} disabled={Boolean(busy)} onClick={()=>{setError('');setPasskey('');setReleasing(run)}}>Release payslips ({sent}/{total})</button>)}
     {details}
     {canDelete&&<button type="button" className={`${ghost} text-red-700`} disabled={Boolean(busy)} onClick={()=>{setError('');setDeleting(run)}}>Delete</button>}

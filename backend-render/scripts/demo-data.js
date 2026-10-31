@@ -8,6 +8,8 @@
 //   DEMO-004 approved overtime (+ pending overtime, not paid) DEMO-010 high earner (withholding tax), allowances
 //   DEMO-005 absences                                        DEMO-011 leave without pay all October (1 paid day)
 //   DEMO-006 sick leave (Oct 2)                              DEMO-012 resigned October 9 (Inactive, not in payroll)
+// Claims (submitted from ESS) cover every claim and reimbursement status: pending, returned, rejected, approved and
+// waiting for reimbursement, and reimbursed.
 //   node scripts/demo-data.js seed    adds (or resets) the demo employees and their records
 //   node scripts/demo-data.js clean   removes them (refused while a payroll run includes one)
 // Needs DATABASE_URL set to the Render database's External Database URL. Reload PBMS afterwards.
@@ -63,6 +65,20 @@ const EMPLOYEES = [
   ['DEMO-011', 'Rosa', 'Navarro', 'HR Manager', 'HR', 'On Leave', 'On Leave', '2019-10-01', 5, '1985-05-21'],
   ['DEMO-012', 'Paolo', 'Castillo', 'Dispatcher', 'Fleet and Transportation', 'Resigned', 'Inactive', '2024-04-01', 1, '1999-10-10'],
 ];
+// [no, type, amount, expense date, purpose, approval, paid on, review notes, receipt attached]
+const CLAIMS = [
+  ['DEMO-001', 'Transportation', 350, '2026-10-20', 'Tricycle and jeepney fare for parcel pickups in Marikina', 'Pending Approval', '', '', true],
+  ['DEMO-003', 'Transportation', 180, '2026-10-21', 'Fare to the Pasig warehouse for a facilities repair', 'Pending Approval', '', '', false],
+  ['DEMO-004', 'Food', 480, '2026-10-22', 'Meals during the overnight Batangas delivery run', 'Pending Approval', '', '', true],
+  ['DEMO-005', 'Office Supplies', 1250, '2026-10-14', 'Headset replacement for the support hotline', 'Returned', '', 'The receipt is blurry. Attach a clearer copy and resubmit.', true],
+  ['DEMO-002', 'Food', 300, '2026-10-09', 'Lunch on a regular work day', 'Rejected', '', 'Personal meal, not a business expense.', true],
+  ['DEMO-007', 'Transportation', 620, '2026-10-16', 'Grab ride to the SSS branch to file employee loan forms', 'Approved', '', '', true],
+  ['DEMO-008', 'Office Supplies', 890, '2026-10-13', 'Printer ink and bond paper for payroll reports', 'Approved', '', '', true],
+  ['DEMO-009', 'Food', 1500, '2026-10-19', 'Team meal for the fleet safety meeting', 'Approved', '', '', true],
+  ['DEMO-010', 'Transportation', 2100, '2026-10-02', 'Parking and toll fees for the bank and BIR visits', 'Approved', '2026-10-15', '', true],
+  ['DEMO-006', 'Office Supplies', 450, '2026-09-22', 'Folders and labels for the records room', 'Approved', '2026-09-30', '', true],
+];
+const isDemoClaim = claim => String(claim?.id ?? '').startsWith('demo-claim-');
 const digits = (no, length) => no.replace(/\D/g, '').padStart(length, '0');
 
 const hhmm = minutes => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -116,6 +132,10 @@ const writeApp = (client, key, value) => client.query(
   `insert into app_data(key,value,deleted) values($1,$2,false)
    on conflict(key) do update set value=$2, deleted=false, updated_at=now()`, [key, JSON.stringify(value)]);
 
+async function setClaims(client, claims) {
+  const stored = await readApp(client, 'claims:records', []);
+  await writeApp(client, 'claims:records', [...(Array.isArray(stored) ? stored : []).filter(claim => !isDemoClaim(claim)), ...claims]);
+}
 async function setAttendance(client, records) {
   const store = await readApp(client, 'attendance:hr2', {});
   const all = [...(store.records ?? []).filter(record => !isDemo(record.employee_no)), ...records];
@@ -207,6 +227,15 @@ async function seed(client) {
            ($2,'Pag-IBIG','DEMO-009-HDMF',21600,900,'2026-09-01',21600,'Active','demo-pagibig-notice.pdf','Demo data',now())`,
     [ids['DEMO-008'], ids['DEMO-009']]);
 
+  const departments = Object.fromEntries(EMPLOYEES.map(([no, , , , department]) => [no, department]));
+  const claims = CLAIMS.map(([no, claimType, amount, date, businessPurpose, approvalStatus, paidOn, notes, receipt], index) => {
+    const n = String(index + 1).padStart(2, '0'), submitted = `${date}T09:00:00.000Z`;
+    return { id: `demo-claim-${n}`, claimNumber: `CLM-DEMO-${n}`, claimType, employeeId: ids[no], department: departments[no], amount, date, businessPurpose,
+      projectSite: 'Head Office', receiptName: receipt ? `receipt-demo-${n}.jpg` : '', certified: true, approvalStatus,
+      paymentStatus: paidOn ? 'Paid' : 'Unpaid', paymentMethod: '', paymentDate: paidOn, createdAt: submitted,
+      updatedAt: paidOn ? `${paidOn}T10:00:00.000Z` : submitted, notes, source: 'ESS' };
+  });
+  await setClaims(client, claims);
   const records = EMPLOYEES.flatMap(([no]) => dates.map(date => attendance(no, date)).filter(Boolean));
   await setAttendance(client, records);
   const calendar = await readApp(client, 'payroll:holidays', []);
@@ -214,7 +243,7 @@ async function seed(client) {
   const added = HOLIDAYS.filter(holiday => !list.some(item => item?.date === holiday.date));
   if (added.length) await writeApp(client, 'payroll:holidays', [...list, ...added.map(holiday => ({ id: crypto.randomUUID(), ...holiday }))].sort((a, b) => a.date.localeCompare(b.date)));
   console.log(`Seeded ${EMPLOYEES.length} demo employees with salaries on their grade steps (${days} working days a month), ${allowances.length} allowances, a bonus, a company loan, a cash advance,`);
-  console.log(`an SSS loan, a Pag-IBIG loan and ${records.length} attendance records (${FROM} to ${TO})${added.length ? `; added ${added.map(holiday => holiday.name).join(' and ')} to the Holiday Calendar` : ''}.`);
+  console.log(`an SSS loan, a Pag-IBIG loan, ${claims.length} claims and ${records.length} attendance records (${FROM} to ${TO})${added.length ? `; added ${added.map(holiday => holiday.name).join(' and ')} to the Holiday Calendar` : ''}.`);
 }
 
 async function clean(client) {
@@ -223,7 +252,8 @@ async function clean(client) {
   await removeRecords(client, ids);
   await client.query('delete from employees where employee_number like $1', [`${PREFIX}%`]);
   await setAttendance(client, []);
-  console.log(`Removed ${ids.length} demo employee(s), their records and attendance.`);
+  await setClaims(client, []);
+  console.log(`Removed ${ids.length} demo employee(s), their records, claims and attendance.`);
 }
 
 const client = await pool.connect();

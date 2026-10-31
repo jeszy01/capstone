@@ -12,6 +12,7 @@ import HmoBenefits from './features/hmo/HmoBenefits';
 import {hmoTabs} from './features/hmo/hmoNavigation';
 import ClaimsReimbursement,{ClaimsReimbursementRedirect} from './pages/ClaimsReimbursement';
 import ReviewPayroll from './features/payroll/ReviewPayroll';
+import BankResultPage from './features/payroll/BankResultPage';
 import {LogsAudits} from './pages/Admin';
 import SettingsPrivacy from './pages/SettingsPrivacy';
 import PayrollSettings from './pages/PayrollSettings';
@@ -42,6 +43,7 @@ const nav=useNavigate();const[user,setUser]=useState(getCurrentUser());const[rea
   <Route path="/hr-analytics" element={<HrAnalytics/>}/>
   <Route path="/reports" element={<Reports/>}/>
   <Route path="/payroll/review" element={<ReviewPayroll/>}/>
+  <Route path="/payroll/bank-result" element={<BankResultPage/>}/>
   <Route path="/time-attendance" element={<TimeAttendance/>}/>
   <Route path="/compensation" element={<Compensation/>}/>
   <Route path="/claims-reimbursement" element={<ClaimsReimbursementRedirect/>}/>

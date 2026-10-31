@@ -39,6 +39,12 @@ describe('payroll data HR keeps',()=>{
   expect(await appDataEvents({id:'u',role:'hr_staff'},'payroll:timesheet-locks',[],[lock],true)).toEqual([['payroll.timesheet_locked','Payroll','l1',expect.stringContaining('2026-10-01 to 2026-10-15')]]);
   await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:timesheet-locks',[lock],[],true)).rejects.toThrow('cannot be unlocked');
  });
+ it('only adds stored bank results, each with its run and cutoff',async()=>{
+  const result={id:'b1',runId:'r1',from:'2026-10-10',to:'2026-10-25',fileName:'result.csv',content:'x',attachedAt:'x',attachedBy:'HR',rows:1,paid:1,failed:0,unmatched:[]};
+  expect(await appDataEvents({id:'u',role:'hr_staff'},'payroll:bank-results',[],[result],true)).toEqual([['payroll.bank_result_stored','Payroll','r1',expect.stringContaining('2026-10-10 to 2026-10-25')]]);
+  await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:bank-results',[result],[],true)).rejects.toThrow('cannot be removed');
+  await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:bank-results',[],[{...result,runId:''}],true)).rejects.toThrow('payroll run');
+ });
  it('treats run options as an Admin-only payroll setting',async()=>{
   await expect(appDataEvents({id:'u',role:'hr_staff'},'payroll:run-options',null,{strictMode:true},false)).rejects.toThrow();
   expect((await appDataEvents({id:'a',role:'admin'},'payroll:run-options',{strictMode:false},{strictMode:true},true))[0][0]).toBe('settings.updated');

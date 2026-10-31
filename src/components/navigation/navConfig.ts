@@ -18,6 +18,7 @@ export const titles={
  ...Object.fromEntries(hmoTabs.map(tab=>[tab.to,tab.label])),
  '/employees':'Employee Directory',
  '/payroll/review':'Review Payroll',
+ '/payroll/bank-result':'Bank Result',
  '/settings-privacy':'Settings',
  '/notifications':'Notifications',
  '/help':'Help',

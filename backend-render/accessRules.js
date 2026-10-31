@@ -21,8 +21,8 @@ export class AccessError extends Error {
 // ---- Synchronized app data: payroll runs, claims, attendance and payroll settings ----
 const forbid = message => new AccessError(message);
 const need = (user, permission, message) => { if (!can(user.role, permission)) throw forbid(message); };
-// Payroll data HR keeps (runs, records, payout details and timesheet locks); every other 'payroll:' key is a setting.
-export const PAYROLL_DATA_KEYS = ['payroll:runs', 'payroll:records', 'payroll:payouts', 'payroll:timesheet-locks'];
+// Payroll data HR keeps (runs, records, payout details, timesheet locks and bank results); every other 'payroll:' key is a setting.
+export const PAYROLL_DATA_KEYS = ['payroll:runs', 'payroll:records', 'payroll:payouts', 'payroll:timesheet-locks', 'payroll:bank-results'];
 // Payroll Settings keys: every 'payroll:' key except the payroll data keys, plus the legacy 13th month rules key.
 export const isSettingsKey = key => (key.startsWith('payroll:') && !PAYROLL_DATA_KEYS.includes(key)) || key === 'compensation:thirteenth-month-rules';
 // The settings values payroll needs for its calculations. Roles without Payroll Settings access read only these,
@@ -194,6 +194,17 @@ function timesheetLockEvents(user, before, after) {
   }
   return events;
 }
+// Bank result files HR attaches to a run, kept per cutoff; results are only added, never removed or changed.
+function bankResultEvents(user, before, after) {
+  need(user, 'payroll.release', 'Only HR Staff can attach bank results.');
+  const prev = byId(before), next = byId(after), events = [];
+  for (const [id, entry] of prev) if (!next.has(id) || stable(next.get(id)) !== stable(entry)) throw forbid('A stored bank result cannot be removed or changed.');
+  for (const [id, entry] of next) if (!prev.has(id)) {
+    if (!entry.runId || !/^\d{4}-\d{2}-\d{2}$/.test(String(entry.from)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(entry.to))) throw forbid('A bank result needs its payroll run and cutoff dates.');
+    events.push(['payroll.bank_result_stored', 'Payroll', String(entry.runId), `Stored bank result ${entry.fileName ?? ''} for ${entry.from} to ${entry.to}.`]);
+  }
+  return events;
+}
 // Notifications: one copy per role ('admin', 'hr' or 'finance'). Anyone may add unread ones; a user may only mark their own role's copies
 // as read, and unread ones are never removed (a stale copy that drops them is refused, and the browser reloads the server copy).
 const NOTIFICATION_ROLES = { admin: 'admin', hr_staff: 'hr', finance: 'finance' };
@@ -355,6 +366,7 @@ export async function appDataEvents(user, key, before, after, existed) {
   // Each employee's payout method and account (Payroll > Payout details).
   if (key === 'payroll:payouts') { need(user, 'payroll.generate', 'Only HR Staff can change payout details.'); return []; }
   if (key === 'payroll:timesheet-locks') return timesheetLockEvents(user, before, after);
+  if (key === 'payroll:bank-results') return bankResultEvents(user, before, after);
   if (key === 'notifications:records') return notificationEvents(user, before, after);
   if (key.startsWith('notifications:')) throw forbid();
   if (key === 'payroll:records') { if (!can(user.role, 'payroll.generate') && !can(user.role, 'payroll.approve')) throw forbid(); return []; }

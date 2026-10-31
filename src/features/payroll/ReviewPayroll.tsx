@@ -11,7 +11,7 @@ import {recordAudit} from '../audit/auditService';
 import {StatusBadge} from '../../components/common/StatusBadge';
 import {numberValue,peso,read,write} from '../../utils/storage';
 import {formatDate} from '../../utils/date';
-import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,isThirteenthMonthRun,markPayouts,passkeyMessage,releaseToEss,runLabel,runStatus,settleRunLoans,updateRun} from './payrollRuns';
+import {APPROVED_STATUSES,PAYOUT_METHODS,RUNS_KEY,expectStatus,isThirteenthMonthRun,passkeyMessage,releaseToEss,runLabel,runStatus,updateRun} from './payrollRuns';
 import type {PayoutMethod,PayrollRun,RunRow} from './payrollRuns';
 import {processRun,submitBlocked} from './computeRun';
 import {loadReviewChecks,lockTimesheet} from './runChecks';
@@ -19,8 +19,6 @@ import {cutoffSynced} from '../attendance/attendanceService';
 import type {RunCheck} from './runChecks';
 import {addPayoutLines,bankBatch,bankName,bankRemarks,digits,downloadCsv,exportPayouts,missingPayout,payoutAccount,payoutFile,payoutLinesFor,updatePayout} from './payouts';
 import {PayoutDetailsModal} from './PayoutDetails';
-import {matchBankResult} from './bankResult';
-import type {BankResultRow} from './bankResult';
 import {RunStepper} from './RunProgress';
 import {PayrollRegister} from './PayrollRegister';
 
@@ -57,7 +55,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const[rows,setRows]=useState<RunRow[]>(run.rows);
  useEffect(()=>setRows(run.rows),[run]);
  const[reasons,setReasons]=useState<Record<string,string>>(()=>Object.fromEntries(run.rows.flatMap(row=>(row.manualAdjustments??[]).map(change=>[reasonKey(row.input.empId,change.field),change.reason]))));
- const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[settleError,setSettleError]=useState('');
+ const[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState('');
  // Submit to Finance on Payroll Runs opens this page with ?submit=1: the submit dialog opens for a Computed run.
  const[params]=useSearchParams();
  const[dialog,setDialog]=useState<Dialog|null>(()=>params.get('submit')==='1'&&status==='Computed'&&can('payroll.generate')?'submit':null),[comment,setComment]=useState('');
@@ -143,7 +141,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
  const exportMethod=(method:PayoutMethod)=>act(`export-${method}`,async()=>{
   const {run:saved,exportId}=await exportPayouts(run.id,method,by);
   const file=payoutFile(saved,exportId,deptOf);downloadCsv(file.name,file.csv);
-  setNotice(`${file.label} downloaded. Upload it to the bank portal, then attach the bank result.`);
+  setNotice(`${file.label} downloaded. Upload it to the bank portal, then attach the bank result on the Bank result page.`);
  });
  const release=()=>act('release',async()=>{
   const result=await releaseToEss(run.id,passkey);
@@ -151,28 +149,7 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
   setDialog(null);setPasskey('');
   setNotice(result.sent?`Released ${result.sent} ${result.sent===1?'payslip':'payslips'} to ESS (${result.released} of ${result.total}). Each employee is notified.`:'Every payslip of this run is already released.');
  });
- // Attach bank result: the bank portal's result file marks each matched exported payout Paid or Failed; Paid ones stay Paid.
- // The run becomes Paid (and its loan deductions are posted) once every employee is Paid.
- const[imported,setImported]=useState<{file:string;unmatched:BankResultRow[]}|null>(null);
- const importResult=(file:File)=>act('import',async()=>{
-  const result=matchBankResult(run,await file.text());
-  const paid=result.changes.filter(change=>change.status==='Paid').length,failed=result.changes.length-paid;
-  const audit=(outcome:string)=>recordAudit({action:'Attached bank result',module:'Payroll',description:`${title}: attached ${file.name} (${result.rows} ${result.rows===1?'row':'rows'}): ${paid} Paid, ${failed} Failed, ${result.unmatched.length} unmatched${result.unmatched.length?` (${result.unmatched.map(row=>`line ${row.line}: ${row.reason}`).join('; ')})`:''}. ${outcome}`});
-  setImported({file:file.name,unmatched:result.unmatched});
-  if(result.changes.length){
-   try{const saved=await markPayouts(run.id,result.changes,by);if(runStatus(saved)==='Paid')setNotice('Every employee is Paid. Release the payslips next.')}
-   catch(cause){
-    const now=read<PayrollRun[]>(RUNS_KEY,[]).find(item=>item.id===run.id);
-    if(now&&runStatus(now)==='Paid'){audit('Saved; loan deductions not posted yet.');setSettleError(message(cause,'Loan deductions could not be posted.'));return}
-    audit(`Not saved: ${message(cause,'the change could not be saved.')}`);
-    throw cause;
-   }
-  }
-  audit(result.changes.length?'Saved.':'Nothing to save.');
-  setNotice(current=>current||`Attached ${file.name}: ${paid} Paid, ${failed} Failed, ${result.unmatched.length} unmatched.${failed?' Fix the failed payouts, export them again and attach the new bank result.':''}`);
- });
  const failedLines=lines.filter(({line})=>line?.status==='Failed');
- const retrySettle=()=>act('settle',async()=>{await settleRunLoans(run);setSettleError('');setNotice('Loan deductions posted.')});
 
  const primary=(name:string,labelText:string,onClick:()=>void,disabled=false)=><Button disabled={Boolean(busy)||disabled} onClick={onClick}>{busy===name?'Working…':labelText}</Button>;
  const actions=<>
@@ -194,7 +171,6 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
    <RunStepper run={run}/>
    {error&&<p role="alert" className="m-0 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">{error}</p>}
    {notice&&<p role="status" className="m-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-800">{notice}</p>}
-   {settleError&&<div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><b>The run is Paid, but its loan deductions were not posted.</b> {settleError}{canRelease&&<button type="button" className="ml-2 rounded-lg border border-amber-300 bg-white px-3 py-1 font-semibold" disabled={Boolean(busy)} onClick={()=>void retrySettle()}>Retry</button>}</div>}
    {status==='Draft'&&<Card><Empty>Not reviewed yet. Click Review to compute payroll.</Empty></Card>}
    {['Draft','Computed','Returned'].includes(status)&&run.warnings?.length?<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-900"><div className="font-semibold">Warnings when this payroll was created</div><ul className="mb-0 mt-1 list-disc pl-5">{run.warnings.map(item=><li key={item}>{item}</li>)}</ul></div>:null}
    {run.decisionComment&&['Returned','Rejected','Computed'].includes(status)&&<p role="alert" className={`m-0 rounded-lg border p-3 text-[12px] ${status==='Rejected'?'border-red-200 bg-red-50 text-red-800':'border-amber-200 bg-amber-50 text-amber-900'}`}><b>{status==='Computed'?'Returned earlier':status} by {run.decidedBy??'Finance'}{run.decidedAt?` on ${formatDate(run.decidedAt)}`:''}:</b> {run.decisionComment}{status==='Rejected'?' Create a new payroll for this cutoff.':''}</p>}
@@ -217,15 +193,12 @@ function RunPage({run,employees,onChanged}:{run:PayrollRun;employees:Employee[];
      <div className="flex items-center gap-3"><h2 className="m-0 text-[18px] font-bold text-gray-900">Export bank file</h2><StatusBadge status={status}/></div>
      {canRelease&&run.payouts&&['Approved','Funded','Exported'].includes(status)&&<div className="flex flex-wrap gap-2">
       {PAYOUT_METHODS.map(method=>{const count=pendingOf(method);return <button key={method} type="button" className={ghost} disabled={Boolean(busy)||!count} onClick={()=>void exportMethod(method)}><Download size={14}/>{busy===`export-${method}`?'Exporting…':`${METHOD_FILES[method]} (${count})`}</button>})}
-      {status==='Exported'&&exported.length>0&&<label className={`${ghost} cursor-pointer ${busy?'pointer-events-none opacity-50':''}`}><Upload size={14}/>{busy==='import'?'Attaching…':'Attach bank result'}<input type="file" accept=".csv,.txt,text/csv,text/plain" className="sr-only" disabled={Boolean(busy)} onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file)void importResult(file)}}/></label>}
+      {status==='Exported'&&exported.length>0&&<Link className={ghost} to={`/payroll/bank-result?run=${run.id}`}><Upload size={14}/>Attach bank result</Link>}
      </div>}
     </div>
     <div className="grid gap-3 border-b border-gray-100 px-5 pb-4 sm:grid-cols-2 lg:grid-cols-4">
      {[['Batch reference',bankBatch(run)],['Pay date',payDate],['Employees',String(lines.length)],['Total amount',peso(totals.net)]].map(([labelText,value])=><div key={labelText} className="rounded-xl border border-gray-200 bg-white px-4 py-3"><div className="text-[12px] text-gray-500">{labelText}</div><div className="mt-1 text-[18px] font-bold text-gray-900">{value}</div></div>)}
     </div>
-    {imported&&imported.unmatched.length>0&&<div className="border-b border-gray-100 bg-amber-50 px-5 py-3 text-[12px] text-amber-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold">Unmatched rows · {imported.file} ({imported.unmatched.length})</span><button type="button" className="font-semibold underline" onClick={()=>setImported(null)}>Dismiss</button></div>
-     <table className="mt-2 w-full text-left"><thead><tr className="text-[11px] uppercase tracking-wide text-amber-800">{['Line','Employee No','Account','Status','Reason'].map(labelText=><th key={labelText} className="py-1 pr-3 font-semibold">{labelText}</th>)}</tr></thead>
-      <tbody>{imported.unmatched.map(row=><tr key={row.line} className="border-t border-amber-200"><td className="py-1 pr-3 tabular-nums">{row.line}</td><td className="py-1 pr-3">{row.employee||'—'}</td><td className="py-1 pr-3">{row.account||'—'}</td><td className="py-1 pr-3">{row.status||'—'}</td><td className="py-1 pr-3">{row.reason}</td></tr>)}</tbody></table></div>}
     {failedLines.length>0&&<div className="border-b border-gray-100 bg-red-50 px-5 py-3 text-[12px] text-red-800"><div className="font-semibold">Failed payouts ({failedLines.length})</div>
      <ul className="m-0 mt-1 list-none space-y-1 p-0">{failedLines.map(({row,line})=><li key={row.input.empId} className="flex flex-wrap items-center gap-2"><span className="font-semibold">{row.input.name}</span><span>{row.input.empId} · {payoutAccount(line!)} · {peso(row.result.net)}</span>{line!.reason&&<span>· {line!.reason}</span>}{canRelease&&<button type="button" className="font-semibold underline" disabled={Boolean(busy)} onClick={()=>setFixing(row.input.empId)}>Fix and retry</button>}</li>)}</ul></div>}
     {!run.payouts?<div className="px-5 py-4 text-[12px] text-gray-600">{['Approved','Funded'].includes(status)?<>This run was approved before payouts were tracked per employee. {canRelease&&<button type="button" className={`${ghost} ml-2`} disabled={Boolean(busy)} onClick={()=>void act('setup',async()=>{await addPayoutLines(run.id,await staff())})}>Set up payouts</button>}</>:'Paid before payouts were tracked per employee.'}</div>

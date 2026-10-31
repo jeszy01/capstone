@@ -2,10 +2,11 @@ import {useEffect,useMemo,useState} from 'react';
 import {Card,Empty,ErrorAlert,LoadingState,PageHeader,Segmented,input} from '../../components/common/ui';
 import type {Employee} from '../../types/domain';
 import {employeeService} from '../employees/employeeService';
-import {fetchAttendance} from './attendanceService';
+import {approvedOtMinutes,fetchAttendance} from './attendanceService';
 import type {AttendanceRecord} from './attendanceService';
 import {findAttendanceEmployee} from './attendanceState';
-import {loadHolidays,loadRates,recentCutoffs,shortRange} from '../settings/payrollSettings';
+import {roundLateUndertime,roundOvertime} from './attendanceCalculator';
+import {loadAttendanceSchedule,loadHolidays,loadRates,recentCutoffs,shortRange} from '../settings/payrollSettings';
 import type {Holiday} from '../settings/payrollSettings';
 
 const isWeekend=(date:string)=>[0,6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
@@ -32,7 +33,7 @@ function useRecords(cutoff:Cutoff|undefined){
  return {records,loading,error,reload:()=>setRetry(n=>n+1)};
 }
 
-type Row={key:string;name:string;worked:number;regular:number;rest:number;holiday:number;special:number;paidHours:number;paidTypes:Set<string>;unpaidDays:number;absent:number;total:number};
+type Row={key:string;name:string;worked:number;lateMin:number;undertimeMin:number;otMin:number;regular:number;rest:number;holiday:number;special:number;paidHours:number;paidTypes:Set<string>;unpaidDays:number;absent:number;total:number};
 const fmt=(value:number)=>value?value.toFixed(1):'—';
 const dash=<span className="text-gray-300">—</span>;
 const chip='inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium';
@@ -62,13 +63,16 @@ function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employe
  const holidays=useMemo(()=>loadHolidays(),[]);
  // A paid leave day counts the paid hours per day from Payroll Settings (the shift less its meal break).
  const leaveHours=useMemo(()=>loadRates().hoursPerDay,[]);
+ // Late, undertime and approved OT per day, rounded per the Payroll Settings rule, as payroll deducts and pays them.
+ const rounding=useMemo(()=>loadAttendanceSchedule().otRounding,[]);
  const{records,loading,error,reload}=useRecords(cutoff);
  const rows=useMemo(()=>{
   const groups=new Map<string,Row>();
   for(const record of records){
    const employee=findAttendanceEmployee(employees,record.empId),key=employee?.id??record.empId;
-   const row=groups.get(key)??{key,name:employee?.name||record.name||record.empId,worked:0,regular:0,rest:0,holiday:0,special:0,paidHours:0,paidTypes:new Set<string>(),unpaidDays:0,absent:0,total:0};
+   const row=groups.get(key)??{key,name:employee?.name||record.name||record.empId,worked:0,lateMin:0,undertimeMin:0,otMin:0,regular:0,rest:0,holiday:0,special:0,paidHours:0,paidTypes:new Set<string>(),unpaidDays:0,absent:0,total:0};
    const column=columnOf(record,holidays);
+   row.lateMin+=roundLateUndertime(record.lateMin??0,rounding);row.undertimeMin+=roundLateUndertime(record.undertimeMin??0,rounding);row.otMin+=roundOvertime(approvedOtMinutes(record),rounding);
    if(record.status==='Present'){const hours=Number(record.workedHours)||0;row.worked++;row[column]+=hours;row.total+=hours}
    // Paid leave counts the paid hours per day; unpaid leave and absences count none.
    if(record.status==='On Leave'){if(record.paidLeave){const hours=leaveHours;row.paidHours+=hours;row.total+=hours;row.paidTypes.add(record.leaveType||'Leave')}else row.unpaidDays++}
@@ -76,11 +80,11 @@ function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employe
    groups.set(key,row);
   }
   return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
- },[records,employees,holidays,leaveHours]);
+ },[records,employees,holidays,leaveHours,rounding]);
  const sum=(pick:(row:Row)=>number)=>rows.reduce((total,row)=>total+pick(row),0);
  const total=sum(row=>row.total);
- const heads=['Employee','Days worked','Regular','Rest day','Holiday','Special','Leave','Absence','Total hours'];
- const align=(label:string)=>['Employee','Leave','Absence'].includes(label)?'text-left':'text-right';
+ const heads=['Employee','Days worked','Late / Undertime','Overtime','Regular','Rest day','Holiday','Special','Leave','Absence','Total hours'];
+ const align=(label:string)=>['Employee','Late / Undertime','Leave','Absence'].includes(label)?'text-left':'text-right';
  return <>
   <div className="flex flex-wrap gap-2 pt-4">
    <span className="rounded-full bg-blue-600 px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-sm">{rows.length} employee{rows.length===1?'':'s'}</span>
@@ -89,11 +93,17 @@ function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employe
   </div>
   {error&&<ErrorAlert title="Attendance records unavailable." onRetry={reload}>{error}</ErrorAlert>}
   <Card className="mt-4 min-w-0 overflow-hidden border-blue-100 !p-0 shadow-sm">
-   <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-[13px]">
+   <div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-[13px]">
     <thead><tr className="border-b border-blue-100 bg-blue-50/70 text-[10px] uppercase tracking-wider text-blue-700">{heads.map(label=><th key={label} className={`whitespace-nowrap px-5 py-3.5 font-semibold ${align(label)}`}>{label}</th>)}</tr></thead>
     <tbody>{loading?<tr><td colSpan={heads.length}><LoadingState/></td></tr>:!rows.length?<tr><td colSpan={heads.length}><Empty>No attendance records for this cutoff.</Empty></td></tr>:rows.map(row=><tr key={row.key} className="border-b border-gray-100 transition hover:bg-blue-50/40">
      <td className="whitespace-nowrap px-5 py-4 font-semibold text-gray-800">{row.name}</td>
      <td className="px-5 py-4 text-right tabular-nums text-gray-700">{row.worked}</td>
+     <td className="px-5 py-4"><div className="flex flex-wrap gap-1">
+      {row.lateMin>0&&<span className={`${chip} bg-amber-50 text-amber-700`}>Late · {row.lateMin} min</span>}
+      {row.undertimeMin>0&&<span className={`${chip} bg-amber-50 text-amber-700`}>Undertime · {row.undertimeMin} min</span>}
+      {!row.lateMin&&!row.undertimeMin&&dash}
+     </div></td>
+     <td className="px-5 py-4 text-right tabular-nums text-gray-700">{row.otMin?(row.otMin/60).toFixed(1):dash}</td>
      {[row.regular,row.rest,row.holiday,row.special].map((value,i)=><td key={i} className="px-5 py-4 text-right tabular-nums text-gray-700">{value?value.toFixed(1):dash}</td>)}
      <td className="px-5 py-4"><div className="flex flex-wrap gap-1">
       {row.paidHours>0&&<span className={`${chip} bg-emerald-50 text-emerald-700`}>Paid · {row.paidTypes.size===1?`${[...row.paidTypes][0]} `:''}{row.paidHours.toFixed(1)}</span>}
@@ -106,6 +116,8 @@ function Timesheet({cutoff,employees}:{cutoff:Cutoff|undefined;employees:Employe
     {!loading&&rows.length>0&&<tfoot><tr className="bg-blue-50/70 font-bold text-blue-900">
      <td className="px-5 py-4">Total</td>
      <td className="px-5 py-4 text-right tabular-nums">{sum(row=>row.worked)}</td>
+     <td className="px-5 py-4 tabular-nums">{sum(row=>row.lateMin+row.undertimeMin)?`${sum(row=>row.lateMin+row.undertimeMin)} min`:'—'}</td>
+     <td className="px-5 py-4 text-right tabular-nums">{fmt(sum(row=>row.otMin)/60)}</td>
      {[sum(row=>row.regular),sum(row=>row.rest),sum(row=>row.holiday),sum(row=>row.special)].map((value,i)=><td key={i} className="px-5 py-4 text-right tabular-nums">{fmt(value)}</td>)}
      <td className="px-5 py-4 tabular-nums">{fmt(sum(row=>row.paidHours))}</td>
      <td className="px-5 py-4 tabular-nums">{sum(row=>row.absent)}</td>
