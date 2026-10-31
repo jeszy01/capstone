@@ -8,6 +8,11 @@
 //   DEMO-009 Reimbursed by bank transfer, with its reference
 //   DEMO-010 Rejected with the reason
 //   DEMO-012 resigned October 9: a claim submitted the next day, within the 30 days allowed
+// Reimbursement:
+//   DEMO-001 reimbursed in cash; DEMO-011 reimbursed by GCash
+//   RB-2026-10-001 paid by bank transfer: DEMO-004 and DEMO-008 reimbursed with the bank reference
+//   RB-2026-10-002 exported, waiting to be paid: DEMO-010 and DEMO-006 show In Payment Batch
+//   RB-2026-10-003 cancelled (wrong pay date): claims 07 (DEMO-007) and 08 (DEMO-008) went back to the queue
 //   node scripts/demo-claims.js seed    adds (or resets) the demo claims
 //   node scripts/demo-claims.js clean   removes them, their receipts, and them from any payment batch
 // Run scripts/demo-data.js seed first. Needs DATABASE_URL set to the Render database's External Database URL.
@@ -28,6 +33,18 @@ const REF = 'DEMO-CLAIM-';
 const isDemoClaim = claim => String(claim?.essReference ?? '').startsWith(REF);
 const merchant = { Transportation: 'METRO TAXI CO.', Food: 'JOLLY MEALS RESTAURANT', 'Office Supplies': 'NATIONAL OFFICE SUPPLY' };
 const decided = { decidedBy: 'Demo Admin', decidedById: '', decidedAt: '2026-10-22T02:00:00.000Z' };
+const paid = (method, reference, date) => ({ approvalStatus: 'Approved', ...decided, decidedAt: `${date}T01:00:00.000Z`, paymentStatus: 'Paid', paymentMethod: method,
+  paymentReference: reference, paymentDate: date, paidAt: `${date}T03:00:00.000Z`, paidBy: 'Demo HR', paidById: '', hasPaymentProof: false, paymentProofName: '' });
+// Reimbursement batches (one bank transfer each), by batch id; the claims below name the batch they are in.
+const BATCHES = [
+  { id: 'rb-demo-001', number: 'RB-2026-10-001', status: 'Paid', payDate: '2026-10-20', claims: ['12', '13'], createdAt: '2026-10-19T02:00:00.000Z',
+    reference: 'BPI-RB-DEMO-0001', paymentDate: '2026-10-20', paidAt: '2026-10-20T04:00:00.000Z' },
+  { id: 'rb-demo-002', number: 'RB-2026-10-002', status: 'Exported', payDate: '2026-11-05', claims: ['14', '15'], createdAt: '2026-10-30T02:00:00.000Z' },
+  { id: 'rb-demo-003', number: 'RB-2026-10-003', status: 'Cancelled', payDate: '2026-10-25', claims: ['07', '08'], createdAt: '2026-10-23T02:00:00.000Z',
+    cancelledAt: '2026-10-24T01:00:00.000Z', cancelReason: 'Wrong pay date; the claims go in the next batch.' },
+];
+const inBatch = id => { const batch = BATCHES.find(item => item.id === id); return { batchId: batch.id, batchNumber: batch.number }; };
+const isDemoBatch = batch => String(batch?.id ?? '').startsWith('rb-demo-');
 // [ref no, employee, type, amount, expense date, submitted (Manila day), purpose, receipt key, status fields]
 const CLAIMS = [
   ['01', 'DEMO-002', 'Transportation', 450, '2026-10-20', '2026-10-21', 'Taxi from the warehouse to the Pasig supplier for the stock count.', 'taxi-450', {}],
@@ -43,6 +60,12 @@ const CLAIMS = [
     paymentReference: 'BDO-DEMO-0001', paymentDate: '2026-10-10', paidAt: '2026-10-10T03:00:00.000Z', paidBy: 'Demo HR', paidById: '', hasPaymentProof: false, paymentProofName: '' }],
   ['10', 'DEMO-010', 'Food', 2500, '2026-10-02', '2026-10-03', 'Dinner with the audit team.', 'dinner-2500', { approvalStatus: 'Rejected', notes: 'Personal expense: family dinner, not a business meal.', ...decided }],
   ['11', 'DEMO-012', 'Transportation', 400, '2026-10-08', '2026-10-10', 'Taxi to return the company phone and ID on the last day.', 'taxi-400', {}],
+  ['12', 'DEMO-004', 'Office Supplies', 760, '2026-10-06', '2026-10-07', 'Tire pressure gauge and logbooks for the delivery van.', 'supplies-760', { ...paid('Bank Transfer', 'BPI-RB-DEMO-0001', '2026-10-20'), ...inBatch('rb-demo-001') }],
+  ['13', 'DEMO-008', 'Transportation', 540, '2026-10-07', '2026-10-08', 'Taxi to the BIR district office to file the monthly returns.', 'taxi-540', { ...paid('Bank Transfer', 'BPI-RB-DEMO-0001', '2026-10-20'), ...inBatch('rb-demo-001') }],
+  ['14', 'DEMO-010', 'Transportation', 1200, '2026-10-26', '2026-10-27', 'Parking and tolls for the bank and auditor meetings.', 'toll-1200', { approvalStatus: 'Approved', ...decided, decidedAt: '2026-10-29T02:00:00.000Z', ...inBatch('rb-demo-002') }],
+  ['15', 'DEMO-006', 'Office Supplies', 380, '2026-10-26', '2026-10-27', 'Folders and labels for the records room.', 'supplies-380', { approvalStatus: 'Approved', ...decided, decidedAt: '2026-10-29T02:00:00.000Z', ...inBatch('rb-demo-002') }],
+  ['16', 'DEMO-001', 'Transportation', 250, '2026-10-09', '2026-10-10', 'Jeepney and tricycle fare for parcel pickups in Marikina.', 'fare-250', paid('Cash', 'CASH-DEMO-0016', '2026-10-15')],
+  ['17', 'DEMO-011', 'Food', 420, '2026-09-28', '2026-09-29', 'Snacks for the HR onboarding session.', 'meal-420', paid('E-wallet', 'GCASH-DEMO-0017', '2026-10-02')],
 ];
 
 // A one-page PDF receipt with plain text lines (Helvetica), so View receipt shows a readable document.
@@ -84,7 +107,7 @@ async function removeDemoClaims(client, claims) {
   }
   const batches = await readApp(client, 'reimbursement:batches', []);
   if (Array.isArray(batches) && batches.length) {
-    const kept = batches.map(batch => ({ ...batch, claimIds: (batch.claimIds ?? []).filter(id => !ids.includes(String(id))) })).filter(batch => batch.claimIds.length);
+    const kept = batches.filter(batch => !isDemoBatch(batch)).map(batch => ({ ...batch, claimIds: (batch.claimIds ?? []).filter(id => !ids.includes(String(id))) })).filter(batch => batch.claimIds.length);
     await writeApp(client, 'reimbursement:batches', kept);
   }
   return { kept: claims.filter(claim => !isDemoClaim(claim)), removed: ids.length };
@@ -117,13 +140,22 @@ async function seed(client) {
     await client.query(`insert into claim_receipts(claim_id,file_name,mime_type,data) values($1,$2,'application/pdf',$3)
       on conflict(claim_id) do update set file_name=$2, mime_type='application/pdf', data=$3, updated_at=now()`, [claim.id, claim.receiptName, dataUrl]);
   await writeApp(client, 'claims:records', [...kept, ...demo.map(d => d.claim)]);
-  console.log(`Seeded ${demo.length} demo claims (${demo[0].claim.claimNumber} to ${demo.at(-1).claim.claimNumber}) with PDF receipts.`);
+  const amountOf = ref => demo.find(d => d.claim.id === `demo-claim-${ref}`).claim.amount;
+  const batches = BATCHES.map(({ claims, ...batch }) => {
+    const claimIds = claims.map(ref => `demo-claim-${ref}`), total = claims.reduce((sum, ref) => sum + amountOf(ref), 0);
+    return { ...batch, claimIds, total, createdBy: 'Demo HR', createdById: '',
+      ...(batch.status === 'Paid' ? { paidClaimIds: claimIds, failedClaimIds: [], paidTotal: total, paidBy: 'Demo HR', paidById: '', hasProof: false } : {}),
+      ...(batch.status === 'Cancelled' ? { cancelledBy: 'Demo HR' } : {}) };
+  });
+  const stored = await readApp(client, 'reimbursement:batches', []);
+  await writeApp(client, 'reimbursement:batches', [...batches, ...(Array.isArray(stored) ? stored : [])]);
+  console.log(`Seeded ${demo.length} demo claims (${demo[0].claim.claimNumber} to ${demo.at(-1).claim.claimNumber}) with PDF receipts, and ${batches.length} reimbursement batches (paid, exported, cancelled).`);
 }
 
 async function clean(client) {
   const { kept, removed } = await removeDemoClaims(client, await readApp(client, 'claims:records', []));
   await writeApp(client, 'claims:records', kept);
-  console.log(`Removed ${removed} demo claim(s) and their receipts.`);
+  console.log(`Removed ${removed} demo claim(s), their receipts and the demo reimbursement batches.`);
 }
 
 const client = await pool.connect();
